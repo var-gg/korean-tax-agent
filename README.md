@@ -80,7 +80,9 @@ Then use `docs/README.md` as the full document index.
 
 ### Architecture and workflow contracts
 - `docs/05-architecture.md`
+- `docs/06-data-model.md`
 - `docs/20-workspace-state-model.md`
+- `docs/22-core-type-gap-analysis.md`
 - `docs/09-mcp-tool-spec.md`
 - `docs/10-skill-design.md`
 

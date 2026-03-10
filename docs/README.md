@@ -26,13 +26,17 @@ These four documents explain:
 ### If you want the architecture
 Read next:
 1. `05-architecture.md`
-2. `20-workspace-state-model.md`
-3. `09-mcp-tool-spec.md`
-4. `10-skill-design.md`
+2. `06-data-model.md`
+3. `20-workspace-state-model.md`
+4. `22-core-type-gap-analysis.md`
+5. `09-mcp-tool-spec.md`
+6. `10-skill-design.md`
 
 These documents explain:
 - the major components
+- the canonical entities
 - the persistent state backbone
+- the current doc-to-code gaps
 - the MCP surface
 - the agent skill layer
 
@@ -80,10 +84,11 @@ Read:
 
 ### Architecture and workflow engine
 - `05-architecture.md` — top-level system components and flow
-- `06-data-model.md` — canonical domain modeling direction
+- `06-data-model.md` — canonical entity model including collection lifecycle
 - `09-mcp-tool-spec.md` — MCP workflow tool contract
 - `10-skill-design.md` — agent skill design expectations
 - `20-workspace-state-model.md` — persistent operational state model
+- `22-core-type-gap-analysis.md` — current code-model gaps and implementation priorities
 
 ### Agentic collection and filing execution
 - `08-hometax-submission-flow.md` — assisted filing flow
