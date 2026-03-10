@@ -1,0 +1,3 @@
+date,amount,currency,counterparty,description,direction,raw_category,evidence_ref
+2025-01-15,120000,KRW,Example Client,Project payment,income,transfer,
+2025-01-18,12900,KRW,Example SaaS,Monthly subscription,expense,software,receipt-001.pdf

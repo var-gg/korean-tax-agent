@@ -1,0 +1,17 @@
+filingYear: 2025
+storage:
+  mode: local
+  dataDir: ./.local-data
+sources:
+  hometax:
+    enabled: false
+  transactionsCsv:
+    enabled: true
+  receiptsUpload:
+    enabled: true
+review:
+  batchMode: true
+  highRiskThreshold: medium
+submission:
+  allowBrowserAssist: true
+  requireFinalApproval: true
