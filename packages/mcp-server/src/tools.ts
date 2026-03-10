@@ -2,6 +2,13 @@ import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '..
 import { computeDraftFromLedger, evaluateDraftReadiness } from '../../core/src/draft.js';
 import { classifyTransactions } from '../../core/src/classify.js';
 import { buildReviewQueue, resolveReviewItems, summarizeReviewQueue } from '../../core/src/review.js';
+import {
+  blockSyncAttempt,
+  completeSyncAttempt,
+  createAuditEvent,
+  createSourceConnection,
+  transitionSourceState,
+} from '../../core/src/state.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
@@ -31,6 +38,13 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
   likelyUserCheckpoints: string[];
   fallbackPathSuggestions: string[];
 }> {
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'source_planned',
+    actorType: 'agent',
+    summary: 'Planned recommended collection sources for the workspace.',
+  });
+
   return {
     ok: true,
     status: 'completed',
@@ -67,8 +81,8 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
     },
     nextRecommendedAction: 'tax.sources.connect',
     audit: {
-      eventType: 'source_planned',
-      eventId: `evt_plan_${input.workspaceId}_${input.filingYear}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_planned',
     },
   };
 }
@@ -152,14 +166,28 @@ export function taxSourcesConnect(
     };
   }
 
+  const baseSource = createSourceConnection({
+    workspaceId: input.workspaceId,
+    sourceType: input.sourceType as SourceConnection['sourceType'],
+    collectionMode: input.sourceType === 'hometax' ? 'browser_assist' : 'export_ingestion',
+    requestedScope: input.requestedScope,
+  });
+
   const authRequired = input.sourceType === 'hometax';
-  const sourceId = `source_${input.sourceType}_${input.workspaceId}`;
+  const nextSource = transitionSourceState(baseSource, authRequired ? 'awaiting_auth' : 'ready');
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'source_connected',
+    actorType: 'agent',
+    entityRefs: [nextSource.sourceId],
+    summary: `Source ${input.sourceType} moved to ${nextSource.state}.`,
+  });
 
   return {
     ok: true,
     status: authRequired ? 'awaiting_auth' : 'completed',
     data: {
-      sourceId,
+      sourceId: nextSource.sourceId,
       connectionState: authRequired ? 'awaiting_auth' : 'connected',
       consentRequired: false,
       authRequired,
@@ -178,8 +206,8 @@ export function taxSourcesConnect(
     },
     nextRecommendedAction: authRequired ? 'tax.sources.resume_sync' : 'tax.sources.sync',
     audit: {
-      eventType: 'source_connected',
-      eventId: `evt_connect_${input.workspaceId}_${input.sourceType}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_connected',
     },
   };
 }
@@ -192,6 +220,33 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
   fallbackOptions?: string[];
 }> {
   const authCheckpointId = `checkpoint_auth_${input.sourceId}`;
+  const initialAttempt = {
+    syncAttemptId: `sync_${input.sourceId}_${input.syncMode}`,
+    workspaceId: extractWorkspaceIdFromSourceId(input.sourceId),
+    sourceId: input.sourceId,
+    mode: input.syncMode,
+    state: 'awaiting_user_action' as const,
+    startedAt: new Date().toISOString(),
+    checkpointId: authCheckpointId,
+  };
+  const blockedAttempt = blockSyncAttempt({
+    attempt: initialAttempt,
+    blockingReason: 'user_action_required',
+    checkpointId: authCheckpointId,
+    fallbackOptions: ['Resume after login/export confirmation', 'Switch to export-ingestion flow'],
+  });
+  const audit = createAuditEvent({
+    workspaceId: blockedAttempt.workspaceId,
+    eventType: 'sync_blocked',
+    actorType: 'agent',
+    entityRefs: [blockedAttempt.syncAttemptId, blockedAttempt.sourceId],
+    summary: 'Sync is waiting for user action before continuing.',
+    metadata: {
+      blockingReason: blockedAttempt.blockingReason,
+      fallbackOptions: blockedAttempt.fallbackOptions,
+    },
+  });
+
   return {
     ok: false,
     status: 'awaiting_user_action',
@@ -203,14 +258,14 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
         step: 'await_export_or_auth_completion',
         percent: 25,
       },
-      checkpointId: authCheckpointId,
-      fallbackOptions: ['Resume after login/export confirmation', 'Switch to export-ingestion flow'],
+      checkpointId: blockedAttempt.checkpointId,
+      fallbackOptions: blockedAttempt.fallbackOptions,
     },
-    blockingReason: 'user_action_required',
-    checkpointId: authCheckpointId,
+    blockingReason: blockedAttempt.blockingReason,
+    checkpointId: blockedAttempt.checkpointId,
     pendingUserAction: 'Complete the provider step required for sync and then resume.',
     resumeToken: `resume_${input.sourceId}_${input.syncMode}`,
-    fallbackOptions: ['Resume after login/export confirmation', 'Switch to export-ingestion flow'],
+    fallbackOptions: blockedAttempt.fallbackOptions,
     progress: {
       phase: 'source_sync',
       step: 'await_export_or_auth_completion',
@@ -218,8 +273,8 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
     },
     nextRecommendedAction: 'tax.sources.resume_sync',
     audit: {
-      eventType: 'sync_started',
-      eventId: `evt_sync_${input.sourceId}_${input.syncMode}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_sync_blocked',
     },
   };
 }
@@ -231,14 +286,36 @@ export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelop
   importedArtifactCount: number;
   nextCheckpointId?: string;
 }> {
-  const syncSessionId = input.syncSessionId ?? `sync_${input.sourceId ?? 'unknown'}`;
+  const sourceId = input.sourceId;
+  const workspaceId = extractWorkspaceIdFromSourceId(sourceId);
+  const syncSessionId = input.syncSessionId ?? `sync_${sourceId ?? 'unknown'}`;
+  const completedAttempt = completeSyncAttempt({
+    attempt: {
+      syncAttemptId: syncSessionId,
+      workspaceId,
+      sourceId: sourceId ?? 'unknown_source',
+      mode: 'full',
+      state: 'running',
+      startedAt: new Date().toISOString(),
+      checkpointId: input.checkpointId,
+    },
+    attemptSummary: 'Imported 3 artifacts after resuming the sync flow.',
+  });
+  const audit = createAuditEvent({
+    workspaceId,
+    eventType: 'import_completed',
+    actorType: 'agent',
+    entityRefs: [completedAttempt.syncAttemptId, completedAttempt.sourceId],
+    summary: completedAttempt.attemptSummary,
+  });
+
   return {
     ok: true,
     status: 'completed',
     data: {
       resumed: true,
-      sourceId: input.sourceId,
-      syncSessionId,
+      sourceId,
+      syncSessionId: completedAttempt.syncAttemptId,
       importedArtifactCount: 3,
       nextCheckpointId: undefined,
     },
@@ -249,8 +326,8 @@ export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelop
     },
     nextRecommendedAction: 'tax.ledger.normalize',
     audit: {
-      eventType: 'import_completed',
-      eventId: `evt_resume_${syncSessionId}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_import_completed',
     },
   };
 }
@@ -276,6 +353,13 @@ export function taxClassifyRun(
     transactions: scopedTransactions,
     decisions: classification.decisions,
   });
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'classification_run',
+    actorType: 'system',
+    entityRefs: scopedTransactions.map((tx) => tx.transactionId),
+    summary: `Classified ${classification.decisions.length} transactions.`,
+  });
 
   return {
     ok: true,
@@ -295,8 +379,8 @@ export function taxClassifyRun(
     },
     nextRecommendedAction: reviewQueue.items.length > 0 ? 'tax.classify.list_review_items' : 'tax.filing.compute_draft',
     audit: {
-      eventType: 'classification_run',
-      eventId: `evt_classify_${Date.now()}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_classification_run',
     },
   };
 }
@@ -326,6 +410,15 @@ export function taxClassifyResolveReviewItem(
     approverIdentity: input.approverIdentity,
     existingDecisions,
   });
+  const workspaceId = resolution.updatedItems[0]?.workspaceId ?? 'unknown_workspace';
+  const audit = createAuditEvent({
+    workspaceId,
+    eventType: 'review_resolved',
+    actorType: 'user',
+    actorRef: input.approverIdentity,
+    entityRefs: input.reviewItemIds,
+    summary: `Resolved ${resolution.resolvedItems.length} review items.`,
+  });
 
   return {
     ok: true,
@@ -338,8 +431,8 @@ export function taxClassifyResolveReviewItem(
       generatedDecisions: resolution.generatedDecisions,
     },
     audit: {
-      eventType: 'review_resolved',
-      eventId: `evt_review_${Date.now()}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_review_resolved',
     },
   };
 }
@@ -371,6 +464,13 @@ export function taxFilingComputeDraft(
     reviewItems,
     assumptions: input.includeAssumptions ? ['Initial draft assumptions placeholder'] : [],
   });
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'draft_computed',
+    actorType: 'system',
+    entityRefs: [draft.draftId],
+    summary: `Computed draft ${draft.draftId}.`,
+  });
 
   return {
     ok: true,
@@ -391,8 +491,8 @@ export function taxFilingComputeDraft(
       percent: 100,
     },
     audit: {
-      eventType: 'draft_computed',
-      eventId: `evt_draft_${Date.now()}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_draft_computed',
     },
   };
 }
@@ -404,6 +504,14 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
   browserAssistReady: boolean;
 }> {
   const readiness = evaluateDraftReadiness(reviewItems);
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'draft_computed',
+    actorType: 'agent',
+    entityRefs: [input.draftId],
+    summary: `Prepared HomeTax mapping state for draft ${input.draftId}.`,
+  });
+
   return {
     ok: readiness.readyForSubmission,
     status: readiness.readyForSubmission ? 'completed' : 'blocked',
@@ -419,8 +527,8 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
     blockingReason: readiness.readyForSubmission ? undefined : 'unresolved_high_risk_review',
     nextRecommendedAction: readiness.readyForSubmission ? 'tax.browser.start_hometax_assist' : 'tax.classify.list_review_items',
     audit: {
-      eventType: 'draft_computed',
-      eventId: `evt_prepare_${input.draftId}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_prepare_hometax',
     },
   };
 }
@@ -430,6 +538,14 @@ export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MC
   checkpoint: string;
   authRequired: boolean;
 }> {
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'browser_assist_started',
+    actorType: 'agent',
+    entityRefs: [input.draftId],
+    summary: `Started HomeTax assist for draft ${input.draftId}.`,
+  });
+
   return {
     ok: true,
     status: 'awaiting_auth',
@@ -443,8 +559,8 @@ export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MC
     pendingUserAction: 'Complete HomeTax authentication and then resume browser assist.',
     nextRecommendedAction: 'tax.sources.resume_sync',
     audit: {
-      eventType: 'browser_assist_started',
-      eventId: `evt_browser_${Date.now()}`,
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_browser_assist_started',
     },
   };
 }
@@ -455,4 +571,10 @@ export function demoBuildReviewQueue() {
     transactions: [],
     decisions: [],
   });
+}
+
+function extractWorkspaceIdFromSourceId(sourceId?: string): string {
+  if (!sourceId) return 'unknown_workspace';
+  const match = sourceId.match(/^source_[^_]+_(.+)$/);
+  return match?.[1] ?? 'unknown_workspace';
 }
