@@ -1,5 +1,12 @@
 # Open Source Strategy
 
+See also:
+- `README.md`
+- `docs/README.md`
+- `docs/16-v1-prd.md`
+- `docs/21-first-agentic-scenario.md`
+
+
 ## Why this should be public
 - trust matters in tax-adjacent automation
 - users need to inspect behavior and limits

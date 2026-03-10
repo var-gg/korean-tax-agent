@@ -1,5 +1,11 @@
 # Implementation Roadmap
 
+See also:
+- `docs/20-workspace-state-model.md`
+- `docs/21-first-agentic-scenario.md`
+- `docs/09-mcp-tool-spec.md`
+
+
 ## Phase 0. Docs-first scaffold
 - define product positioning
 - define architecture and consent model
