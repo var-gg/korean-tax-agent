@@ -1,3 +1,2 @@
-export type Placeholder = {
-  note: 'mcp server scaffold';
-};
+export * from './contracts';
+export * from './tools';
