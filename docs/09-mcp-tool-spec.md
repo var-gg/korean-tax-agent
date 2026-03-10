@@ -29,13 +29,57 @@ Suggested response shape:
   "warnings": [],
   "requiresConsent": false,
   "requiresAuth": false,
+  "status": "completed",
+  "blockingReason": null,
   "nextRecommendedAction": "tax.classify.run",
+  "fallbackOptions": [],
+  "progress": {
+    "phase": "classification",
+    "step": "apply_rules",
+    "percent": 100
+  },
   "audit": {
     "eventType": "import_completed",
     "eventId": "evt_123"
   }
 }
 ```
+
+## Recommended status values
+- `completed`
+- `in_progress`
+- `paused`
+- `awaiting_consent`
+- `awaiting_auth`
+- `awaiting_user_action`
+- `blocked`
+- `failed`
+
+## Recommended blocking reasons
+- `missing_consent`
+- `missing_auth`
+- `user_action_required`
+- `ui_changed`
+- `blocked_by_provider`
+- `export_required`
+- `insufficient_metadata`
+- `unresolved_high_risk_review`
+- `draft_not_ready`
+- `unsupported_hometax_state`
+- `unsupported_source`
+
+## Progress and resume semantics
+Long-running or checkpoint-driven tools should expose enough state for the agent to pause, narrate, and resume without guessing.
+
+Suggested fields:
+- `status`
+- `progress.phase`
+- `progress.step`
+- `progress.percent`
+- `checkpointId`
+- `pendingUserAction`
+- `resumeToken` or resumable session id
+- `fallbackOptions[]`
 
 ## Proposed tool groups
 
@@ -124,10 +168,13 @@ Output:
 - connection state
 - consent requirement
 - auth requirement
+- checkpoint id when blocked on the user
 - next step
+- fallback options if the preferred path is unavailable
 
 Notes:
 - should not silently complete sensitive auth on behalf of the user
+- should return `awaiting_consent`, `awaiting_auth`, or `awaiting_user_action` rather than vague failure when the workflow is resumable
 
 #### `tax.sources.list`
 Purpose:
@@ -145,6 +192,23 @@ Output:
 - imported artifact counts
 - changed item summary
 - warnings
+- progress state
+- blocked checkpoint details when user interaction is needed
+- fallback suggestions when sync cannot continue as planned
+
+#### `tax.sources.resume_sync`
+Purpose:
+- continue a paused or checkpoint-blocked collection/sync attempt after the user completes the required action
+
+Input:
+- source id or sync session id
+- checkpoint id or resume token
+
+Output:
+- resumed state
+- progress update
+- imported artifact summary
+- next checkpoint if another user action is required
 
 #### `tax.sources.disconnect`
 Purpose:
@@ -346,6 +410,21 @@ Purpose:
 #### `tax.browser.get_checkpoint`
 Purpose:
 - inspect current HomeTax progress, blockers, and pending user actions
+
+## Collection-specific response expectations
+
+For source-planning and source-sync tools, the response should help the agent explain both progress and failure recovery.
+
+Recommended fields in `data` for collection tools:
+- `sourceType`
+- `collectionMode` (`direct_connector`, `browser_assist`, `export_ingestion`, `fact_capture`)
+- `coverageImpact`
+- `artifactsImported`
+- `coverageGaps`
+- `checkpointId`
+- `pendingUserAction`
+- `fallbackOptions[]`
+- `attemptSummary`
 
 ## Consent and auth semantics
 

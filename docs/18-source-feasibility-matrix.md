@@ -213,6 +213,115 @@ Assessment:
 - **v1-design** and **v1-prototype**
 - this is unavoidable and should be structured well
 
+## Candidate collection paths by source family
+
+### HomeTax family
+Candidate paths:
+- browser-assisted login -> navigate to filing/material pages -> collect visible summaries and downloadable artifacts
+- browser-assisted login -> guide the user through a download click -> ingest exported files into the workspace
+- browser-assisted filing prep -> compare draft totals against visible HomeTax values before submission
+
+What to validate live:
+- which screens are stable enough for selector-driven assistance
+- where the portal requires a direct user click even after login
+- whether downloadable material coverage is sufficient to reduce later manual review
+
+Recommended v1 posture:
+- treat HomeTax as the anchor source
+- support both collection and submission-prep checkpoints
+- design for partial success rather than assuming all materials can be harvested in one pass
+
+### Banking family
+Candidate paths:
+- browser-assisted login -> navigate to statement/export views -> user confirms export -> ingest result
+- direct connector abstraction with no provider promise until practical validation exists
+- local folder watch or targeted import for downloaded statements
+
+What to validate live:
+- how often exports include usable counterparty or memo fields
+- whether repeated exports are stable enough for dedupe and incremental sync
+- which banks require too much friction for browser-assisted collection to be worth it
+
+Recommended v1 posture:
+- optimize for exported statements first
+- keep direct bank connectors as an abstraction boundary, not a dependency
+
+### Card issuer family
+Candidate paths:
+- browser-assisted login -> statement/history page -> export or visible data extraction
+- local ingestion of user-downloaded statements
+- targeted evidence reconciliation against merchant names and dates
+
+What to validate live:
+- issuer-specific format variance
+- whether exported records preserve merchant text cleanly enough for classification
+- how often card data is already duplicated via other tax materials
+
+Recommended v1 posture:
+- treat card data as high-value but messy
+- prioritize ingestion and reconciliation over deep issuer-specific automation
+
+### Brokerage / securities family
+Candidate paths:
+- statement export ingestion
+- browser-assisted document retrieval for dividend, withholding, and realized transaction reports
+- structured follow-up questions when asset-level tax treatment remains ambiguous
+
+What to validate live:
+- which broker exports are consistent enough to parse
+- how often the relevant filing facts already appear in tax authority materials
+- which product categories create disproportionate complexity in v1
+
+Recommended v1 posture:
+- support ingestion of exported artifacts first
+- defer rich broker-specific automation unless a narrow high-value path proves stable
+
+### Drive / file repository family
+Candidate paths:
+- operator-approved local folder access
+- synced drive folder ingestion when available locally
+- targeted search by merchant, date, amount, or known missing evidence pattern
+
+What to validate live:
+- whether targeted retrieval is good enough without broad indexing
+- how much noisy scanning harms trust and performance
+
+Recommended v1 posture:
+- support narrowly scoped, explainable retrieval
+- avoid indiscriminate crawling as a default behavior
+
+### Email and communication family
+Candidate paths:
+- later connector-based search for narrow queries
+- user-approved export or saved attachment ingestion
+- evidence lookup only when a specific transaction or deduction lacks support
+
+What to validate live:
+- whether narrow-scope retrieval is operationally practical
+- how to keep privacy boundaries understandable
+
+Recommended v1 posture:
+- not a first-line source
+- keep as a targeted recovery path for missing evidence
+
+## Source prioritization for v1
+
+### Priority A. Build around these immediately
+- HomeTax
+- local/operator-approved files
+- exported financial statements
+- structured taxpayer fact capture
+
+### Priority B. Preserve interfaces now, validate later
+- bank/card/brokerage direct connector abstraction
+- drive connectors
+- email retrieval
+
+### Priority C. Avoid centering the product on these early
+- broad inbox mining
+- chat-platform evidence harvesting
+- institution-by-institution bespoke live connectors as the main strategy
+
 ## Strategy conclusion
 The early product should optimize for:
 - HomeTax browser-mediated collection
@@ -232,3 +341,4 @@ Questions that require real-world testing:
 - which provider login paths create unacceptable friction
 - how often exported documents contain enough metadata for confident normalization
 - which evidence sources add real draft quality improvement versus noise
+- which fallback paths preserve the most agentic user experience when primary collection fails
