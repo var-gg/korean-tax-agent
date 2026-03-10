@@ -13,6 +13,13 @@ export type WorkspaceStatus =
   | 'reviewing'
   | 'draft_ready'
   | 'submission_ready'
+  | 'initialized'
+  | 'collecting_sources'
+  | 'normalizing'
+  | 'review_pending'
+  | 'draft_ready_for_review'
+  | 'ready_for_hometax_assist'
+  | 'submission_in_progress'
   | 'submitted'
   | 'archived';
 
@@ -25,6 +32,19 @@ export type SourceType =
   | 'drive'
   | 'manual';
 
+export type CollectionMode = 'direct_connector' | 'browser_assist' | 'export_ingestion' | 'fact_capture';
+
+export type SourceState =
+  | 'planned'
+  | 'awaiting_consent'
+  | 'awaiting_auth'
+  | 'ready'
+  | 'syncing'
+  | 'paused'
+  | 'blocked'
+  | 'completed'
+  | 'disabled';
+
 export type ArtifactType =
   | 'csv'
   | 'pdf'
@@ -33,7 +53,10 @@ export type ArtifactType =
   | 'html_snapshot'
   | 'manual_entry';
 
+export type ArtifactParseState = 'pending' | 'parsed' | 'partially_parsed' | 'failed' | 'duplicate_candidate';
+
 export type NormalizedDirection = 'income' | 'expense' | 'transfer' | 'unknown';
+export type ReviewStatus = 'unreviewed' | 'review_required' | 'in_review' | 'resolved';
 
 export type DocumentType =
   | 'receipt'
@@ -42,6 +65,8 @@ export type DocumentType =
   | 'withholding_doc'
   | 'hometax_export'
   | 'other';
+
+export type ExtractionStatus = 'pending' | 'extracted' | 'partially_extracted' | 'failed';
 
 export type EntityType = 'transaction' | 'document' | 'draft_line';
 
@@ -57,9 +82,27 @@ export type DraftStatus =
   | 'submitted'
   | 'superseded';
 
+export type BlockingReason =
+  | 'missing_consent'
+  | 'missing_auth'
+  | 'user_action_required'
+  | 'ui_changed'
+  | 'blocked_by_provider'
+  | 'export_required'
+  | 'insufficient_metadata'
+  | 'unresolved_high_risk_review'
+  | 'draft_not_ready'
+  | 'unsupported_hometax_state'
+  | 'unsupported_source';
+
 export type AuditEventType =
+  | 'source_planned'
   | 'source_connected'
+  | 'sync_started'
+  | 'sync_blocked'
   | 'import_completed'
+  | 'artifact_parsed'
+  | 'coverage_gap_created'
   | 'classification_run'
   | 'review_resolved'
   | 'draft_computed'
@@ -71,6 +114,11 @@ export type ActorType = 'system' | 'user' | 'agent';
 
 export type ConsentType = 'source_access' | 'auth_step' | 'review_override' | 'final_submission';
 export type ConsentStatus = 'granted' | 'revoked' | 'expired' | 'superseded';
+
+export type AuthCheckpointState = 'pending' | 'in_progress' | 'completed' | 'expired' | 'failed';
+export type SyncMode = 'incremental' | 'full';
+export type SyncAttemptState = 'queued' | 'running' | 'paused' | 'awaiting_user_action' | 'blocked' | 'completed' | 'failed';
+export type CoverageGapState = 'open' | 'deferred' | 'resolved' | 'accepted_with_risk';
 
 export interface TaxpayerProfile {
   taxpayerId: string;
@@ -93,6 +141,8 @@ export interface FilingWorkspace {
   updatedAt: ISODateTimeString;
   currentDraftId?: string;
   unresolvedReviewCount: number;
+  openCoverageGapCount?: number;
+  lastBlockingReason?: BlockingReason;
   notes?: string[];
 }
 
@@ -100,23 +150,39 @@ export interface SourceConnection {
   sourceId: string;
   workspaceId: string;
   sourceType: SourceType;
+  sourceLabel?: string;
+  collectionMode?: CollectionMode;
+  state?: SourceState;
   authMethod?: string;
-  consentState?: string;
+  consentState?: ConsentStatus | string;
   scopeGranted?: string[];
   lastSyncAt?: ISODateTimeString;
-  connectionStatus?: string;
+  lastSuccessfulSyncAt?: ISODateTimeString;
+  lastBlockingReason?: BlockingReason;
+  connectionStatus?: SourceState | string;
+  createdAt?: ISODateTimeString;
+  updatedAt?: ISODateTimeString;
   metadata?: Record<string, unknown>;
 }
 
 export interface SourceArtifact {
   artifactId: string;
+  workspaceId?: string;
   sourceId: string;
+  syncAttemptId?: string;
   artifactType: ArtifactType;
-  acquiredAt: ISODateTimeString;
+  acquiredAt?: ISODateTimeString;
+  capturedAt?: ISODateTimeString;
+  ingestedAt?: ISODateTimeString;
   checksum?: string;
-  storageRef: string;
-  parseStatus?: string;
+  contentHash?: string;
+  storageRef?: string;
+  contentRef?: string;
+  parseStatus?: ArtifactParseState | string;
+  parseState?: ArtifactParseState | string;
+  parseSummary?: Record<string, unknown>;
   parseError?: string;
+  duplicateCandidateOf?: string;
   provenance?: Record<string, unknown>;
 }
 
@@ -136,7 +202,7 @@ export interface LedgerTransaction {
   sourceReference?: string;
   evidenceRefs: string[];
   duplicateGroupId?: string;
-  reviewStatus?: string;
+  reviewStatus?: ReviewStatus | string;
   createdAt: ISODateTimeString;
 }
 
@@ -151,9 +217,21 @@ export interface EvidenceDocument {
   amount?: number;
   currency?: string;
   fileRef: string;
-  extractionStatus?: string;
+  extractionStatus?: ExtractionStatus | string;
   extractedFields?: Record<string, unknown>;
   linkedTransactionIds: string[];
+}
+
+export interface CoverageGap {
+  gapId: string;
+  workspaceId: string;
+  gapType: string;
+  severity: ReviewSeverity;
+  description: string;
+  affectedArea: string;
+  recommendedNextAction?: string;
+  relatedSourceIds: string[];
+  state: CoverageGapState;
 }
 
 export interface ClassificationDecision {
@@ -205,18 +283,25 @@ export interface FilingDraft {
 }
 
 export interface AuditEvent {
-  auditEventId: string;
+  auditEventId?: string;
+  eventId?: string;
   workspaceId: string;
   eventType: AuditEventType;
   actorType: ActorType;
   actorId?: string;
-  targetRefs: string[];
+  actorRef?: string;
+  targetRefs?: string[];
+  entityRefs?: string[];
+  summary?: string;
   metadata?: Record<string, unknown>;
-  occurredAt: ISODateTimeString;
+  occurredAt?: ISODateTimeString;
+  createdAt?: ISODateTimeString;
 }
 
 export interface ConsentRecord {
   consentId: string;
+  workspaceId?: string;
+  sourceId?: string;
   consentType: ConsentType;
   scope: {
     sourceType?: SourceType | string;
@@ -232,14 +317,43 @@ export interface ConsentRecord {
   expiresAt?: ISODateTimeString;
 }
 
+export interface AuthCheckpoint {
+  authCheckpointId: string;
+  workspaceId: string;
+  sourceId: string;
+  provider: string;
+  authMethod?: string;
+  state: AuthCheckpointState;
+  startedAt?: ISODateTimeString;
+  completedAt?: ISODateTimeString;
+  expiresAt?: ISODateTimeString;
+  sessionBinding?: string;
+}
+
+export interface SyncAttempt {
+  syncAttemptId: string;
+  workspaceId: string;
+  sourceId: string;
+  mode: SyncMode;
+  state: SyncAttemptState;
+  startedAt: ISODateTimeString;
+  endedAt?: ISODateTimeString;
+  checkpointId?: string;
+  blockingReason?: BlockingReason;
+  attemptSummary?: string;
+  fallbackOptions?: string[];
+}
+
 export interface BrowserAssistSession {
   assistSessionId: string;
   workspaceId: string;
   draftId: string;
+  provider?: string;
   checkpoint: string;
   lastKnownSection?: string;
-  authState?: string;
+  authState?: AuthCheckpointState | string;
   pendingUserAction?: string;
   startedAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
+  endedAt?: ISODateTimeString;
 }
