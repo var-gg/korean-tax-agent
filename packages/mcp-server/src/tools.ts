@@ -1,5 +1,5 @@
 import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent.js';
-import { buildDraft, evaluateDraftReadiness } from '../../core/src/draft.js';
+import { buildDraft, computeDraftFromLedger, evaluateDraftReadiness } from '../../core/src/draft.js';
 import { classifyTransactions } from '../../core/src/classify.js';
 import { buildReviewQueue, resolveReviewItems, summarizeReviewQueue } from '../../core/src/review.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem } from '../../core/src/types.js';
@@ -150,6 +150,8 @@ export function taxClassifyResolveReviewItem(
 
 export function taxFilingComputeDraft(
   input: ComputeDraftInput,
+  transactions: LedgerTransaction[],
+  decisions: ClassificationDecision[],
   reviewItems: ReviewItem[],
 ): MCPResponseEnvelope<{
   draftId: string;
@@ -162,12 +164,16 @@ export function taxFilingComputeDraft(
 }> {
   const readiness = evaluateDraftReadiness(reviewItems);
   const filingYear = input.workspaceId.match(/(20\d{2})/)?.[1];
-  const draft = buildDraft({
+  const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
+  const scopedDecisions = decisions.filter((decision) => scopedTransactions.some((tx) => tx.transactionId === decision.entityId));
+  const draft = computeDraftFromLedger({
     workspaceId: input.workspaceId,
     filingYear: filingYear ? Number(filingYear) : new Date().getFullYear(),
     draftVersion: input.draftMode === 'new_version' ? 2 : 1,
+    transactions: scopedTransactions,
+    decisions: scopedDecisions,
+    reviewItems,
     assumptions: input.includeAssumptions ? ['Initial draft assumptions placeholder'] : [],
-    warnings: readiness.blockerReasons,
   });
 
   return {
