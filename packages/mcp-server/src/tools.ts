@@ -1,7 +1,7 @@
-import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent';
-import { buildDraft, evaluateDraftReadiness } from '../../core/src/draft';
-import { buildReviewQueue, summarizeReviewQueue } from '../../core/src/review';
-import type { ConsentRecord, ReviewItem } from '../../core/src/types';
+import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent.js';
+import { buildDraft, evaluateDraftReadiness } from '../../core/src/draft.js';
+import { buildReviewQueue, summarizeReviewQueue } from '../../core/src/review.js';
+import type { ConsentRecord, ReviewItem } from '../../core/src/types.js';
 import type {
   ComputeDraftInput,
   ConnectSourceInput,
@@ -10,7 +10,7 @@ import type {
   ResolveReviewItemInput,
   RunClassificationInput,
   StartHomeTaxAssistInput,
-} from './contracts';
+} from './contracts.js';
 
 export function taxSourcesConnect(
   input: ConnectSourceInput,

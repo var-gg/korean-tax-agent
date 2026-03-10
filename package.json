@@ -1,0 +1,18 @@
+{
+  "name": "korean-tax-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Open-source, agent-native workflow for Korean comprehensive income tax filing.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "demo": "tsx scripts/run-demo.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.2"
+  }
+}

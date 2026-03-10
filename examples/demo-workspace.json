@@ -1,0 +1,104 @@
+{
+  "workspaceId": "demo_workspace_2025",
+  "filingYear": 2025,
+  "consentRecords": [
+    {
+      "consentId": "consent_hometax_1",
+      "consentType": "source_access",
+      "scope": {
+        "sourceType": "hometax",
+        "actions": ["read_documents", "prepare_import"],
+        "filingYear": 2025
+      },
+      "status": "granted",
+      "grantedBy": "demo_user",
+      "grantedAt": "2026-03-10T08:00:00Z"
+    }
+  ],
+  "transactions": [
+    {
+      "transactionId": "tx_1",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_bank_csv",
+      "artifactId": "artifact_csv_1",
+      "occurredAt": "2025-05-03T10:00:00Z",
+      "amount": 120000,
+      "currency": "KRW",
+      "normalizedDirection": "expense",
+      "counterparty": "Stationery Shop",
+      "description": "Office supplies",
+      "rawCategory": "card",
+      "sourceReference": "bank-row-1",
+      "evidenceRefs": [],
+      "createdAt": "2026-03-10T08:00:00Z"
+    },
+    {
+      "transactionId": "tx_2",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_bank_csv",
+      "artifactId": "artifact_csv_1",
+      "occurredAt": "2025-07-18T10:00:00Z",
+      "amount": 1800000,
+      "currency": "KRW",
+      "normalizedDirection": "expense",
+      "counterparty": "Electronics Store",
+      "description": "Laptop purchase",
+      "rawCategory": "card",
+      "sourceReference": "bank-row-2",
+      "evidenceRefs": ["doc_receipt_2"],
+      "createdAt": "2026-03-10T08:00:00Z"
+    },
+    {
+      "transactionId": "tx_3",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_bank_csv",
+      "artifactId": "artifact_csv_1",
+      "occurredAt": "2025-08-01T10:00:00Z",
+      "amount": 450000,
+      "currency": "KRW",
+      "normalizedDirection": "income",
+      "counterparty": "Client A",
+      "description": "Consulting payment",
+      "rawCategory": "transfer",
+      "sourceReference": "bank-row-3",
+      "evidenceRefs": ["doc_invoice_3"],
+      "createdAt": "2026-03-10T08:00:00Z",
+      "duplicateGroupId": "dup_group_1"
+    }
+  ],
+  "decisions": [
+    {
+      "decisionId": "decision_1",
+      "entityType": "transaction",
+      "entityId": "tx_1",
+      "candidateCategory": "office_supplies",
+      "candidateTaxTreatment": "business_expense",
+      "confidence": 0.62,
+      "decidedBy": "system",
+      "decisionMode": "suggested",
+      "createdAt": "2026-03-10T08:01:00Z"
+    },
+    {
+      "decisionId": "decision_2",
+      "entityType": "transaction",
+      "entityId": "tx_2",
+      "candidateCategory": "equipment",
+      "candidateTaxTreatment": "business_expense",
+      "confidence": 0.91,
+      "decidedBy": "system",
+      "decisionMode": "auto",
+      "createdAt": "2026-03-10T08:01:00Z"
+    },
+    {
+      "decisionId": "decision_3",
+      "entityType": "transaction",
+      "entityId": "tx_3",
+      "candidateCategory": "service_income",
+      "candidateTaxTreatment": "taxable_income",
+      "confidence": 0.96,
+      "decidedBy": "system",
+      "decisionMode": "auto",
+      "createdAt": "2026-03-10T08:01:00Z"
+    }
+  ]
+}

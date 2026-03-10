@@ -1,4 +1,4 @@
-import type { ClassificationDecision, LedgerTransaction, ReviewItem, ReviewSeverity } from './types';
+import type { ClassificationDecision, LedgerTransaction, ReviewItem, ReviewSeverity } from './types.js';
 
 export type ReviewPolicy = {
   lowConfidenceThreshold: number;

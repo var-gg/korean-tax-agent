@@ -1,4 +1,4 @@
-import type { ConsentRecord } from './types';
+import type { ConsentRecord } from './types.js';
 
 export type ConsentRequirement = {
   consentType: ConsentRecord['consentType'];

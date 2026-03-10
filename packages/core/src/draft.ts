@@ -1,4 +1,4 @@
-import type { FilingDraft, ReviewItem, ReviewSeverity } from './types';
+import type { FilingDraft, ReviewItem, ReviewSeverity } from './types.js';
 
 export type DraftReadiness = {
   readyForReview: boolean;
