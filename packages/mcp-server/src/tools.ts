@@ -1,7 +1,8 @@
 import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent.js';
 import { buildDraft, evaluateDraftReadiness } from '../../core/src/draft.js';
+import { classifyTransactions } from '../../core/src/classify.js';
 import { buildReviewQueue, resolveReviewItems, summarizeReviewQueue } from '../../core/src/review.js';
-import type { ConsentRecord, ReviewItem } from '../../core/src/types.js';
+import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem } from '../../core/src/types.js';
 import type {
   ComputeDraftInput,
   ConnectSourceInput,
@@ -69,28 +70,39 @@ export function taxSourcesConnect(
   };
 }
 
-export function taxClassifyRun(input: RunClassificationInput): MCPResponseEnvelope<{
+export function taxClassifyRun(
+  input: RunClassificationInput,
+  transactions: LedgerTransaction[],
+): MCPResponseEnvelope<{
   classifiedCount: number;
   lowConfidenceCount: number;
   generatedReviewItemCount: number;
   summaryByCategory: Record<string, number>;
+  decisions: ClassificationDecision[];
+  reviewItems: ReviewItem[];
 }> {
-  void input;
+  const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
+  const classification = classifyTransactions({
+    workspaceId: input.workspaceId,
+    transactions: scopedTransactions,
+  });
+  const reviewQueue = buildReviewQueue({
+    workspaceId: input.workspaceId,
+    transactions: scopedTransactions,
+    decisions: classification.decisions,
+  });
+
   return {
     ok: true,
     data: {
-      classifiedCount: 0,
-      lowConfidenceCount: 0,
-      generatedReviewItemCount: 0,
-      summaryByCategory: {},
+      classifiedCount: classification.decisions.length,
+      lowConfidenceCount: classification.lowConfidenceCount,
+      generatedReviewItemCount: reviewQueue.items.length,
+      summaryByCategory: classification.summaryByCategory,
+      decisions: classification.decisions,
+      reviewItems: reviewQueue.items,
     },
-    warnings: [
-      {
-        code: 'stub_not_connected',
-        message: 'Classification engine is not connected yet; returning skeleton response.',
-        severity: 'medium',
-      },
-    ],
+    nextRecommendedAction: reviewQueue.items.length > 0 ? 'tax.classify.list_review_items' : 'tax.filing.compute_draft',
     audit: {
       eventType: 'classification_run',
       eventId: `evt_classify_${Date.now()}`,

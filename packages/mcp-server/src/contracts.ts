@@ -1,3 +1,5 @@
+import type { ClassificationDecision, ReviewItem } from '../../core/src/types.js';
+
 export type MCPWarning = {
   code: string;
   message: string;
@@ -98,6 +100,8 @@ export type RunClassificationData = {
   lowConfidenceCount: number;
   generatedReviewItemCount: number;
   summaryByCategory: Record<string, number>;
+  decisions?: ClassificationDecision[];
+  reviewItems?: ReviewItem[];
 };
 
 export type ListReviewItemsInput = {
@@ -186,7 +190,7 @@ export interface KoreanTaxMCPContracts {
   };
   'tax.classify.list_review_items': {
     input: ListReviewItemsInput;
-    output: MCPResponseEnvelope<{ items: Record<string, unknown>[] }>;
+    output: MCPResponseEnvelope<{ items: ReviewItem[] }>;
   };
   'tax.classify.resolve_review_item': {
     input: ResolveReviewItemInput;

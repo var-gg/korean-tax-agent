@@ -1,11 +1,12 @@
 import rawDemo from '../examples/demo-workspace.json';
-import { buildReviewQueue, summarizeReviewQueue } from '../packages/core/src/review.js';
+import { summarizeReviewQueue } from '../packages/core/src/review.js';
 import { evaluateConsent } from '../packages/core/src/consent.js';
 import { buildDraft, evaluateDraftReadiness } from '../packages/core/src/draft.js';
-import type { ClassificationDecision, ConsentRecord, LedgerTransaction } from '../packages/core/src/types.js';
+import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem } from '../packages/core/src/types.js';
 import {
   taxBrowserStartHomeTaxAssist,
   taxClassifyResolveReviewItem,
+  taxClassifyRun,
   taxFilingPrepareHomeTax,
   taxSourcesConnect,
 } from '../packages/mcp-server/src/tools.js';
@@ -27,13 +28,16 @@ const connectResult = taxSourcesConnect(
   demo.consentRecords,
 );
 
-const initialReviewQueue = buildReviewQueue({
-  workspaceId: demo.workspaceId,
-  transactions: demo.transactions,
-  decisions: demo.decisions,
-});
+const classifyResult = taxClassifyRun(
+  {
+    workspaceId: demo.workspaceId,
+    rulesetVersion: 'demo-v1',
+  },
+  demo.transactions,
+);
 
-const initialReadiness = evaluateDraftReadiness(initialReviewQueue.items);
+const classifiedReviewItems: ReviewItem[] = classifyResult.data.reviewItems ?? [];
+const initialReadiness = evaluateDraftReadiness(classifiedReviewItems);
 const initialDraft = buildDraft({
   workspaceId: demo.workspaceId,
   filingYear: demo.filingYear,
@@ -51,17 +55,17 @@ const initialPrepareResult = taxFilingPrepareHomeTax(
     workspaceId: demo.workspaceId,
     draftId: initialDraft.draftId,
   },
-  initialReviewQueue.items,
+  classifiedReviewItems,
 );
 
 const resolutionResult = taxClassifyResolveReviewItem(
   {
-    reviewItemIds: initialReviewQueue.items.map((item) => item.reviewItemId),
+    reviewItemIds: classifiedReviewItems.map((item) => item.reviewItemId),
     selectedOption: 'accepted_in_demo',
     rationale: 'Demo resolution to advance workflow state',
     approverIdentity: 'demo_user',
   },
-  initialReviewQueue.items,
+  classifiedReviewItems,
 );
 
 const resolvedItems = resolutionResult.data.updatedItems;
@@ -104,10 +108,16 @@ console.log(
     {
       connectResult,
       explicitConsentCheck,
+      classifyResult: {
+        classifiedCount: classifyResult.data.classifiedCount,
+        lowConfidenceCount: classifyResult.data.lowConfidenceCount,
+        generatedReviewItemCount: classifyResult.data.generatedReviewItemCount,
+        summaryByCategory: classifyResult.data.summaryByCategory,
+        decisions: classifyResult.data.decisions,
+      },
       initialReviewQueue: {
-        totalItems: initialReviewQueue.items.length,
-        batches: initialReviewQueue.batches,
-        summary: summarizeReviewQueue(initialReviewQueue.items),
+        totalItems: classifiedReviewItems.length,
+        summary: summarizeReviewQueue(classifiedReviewItems),
       },
       initialDraft: {
         draftId: initialDraft.draftId,
