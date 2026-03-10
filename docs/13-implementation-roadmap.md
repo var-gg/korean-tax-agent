@@ -8,13 +8,17 @@
 
 ## Phase 1. Core package skeleton
 - canonical schema
+- workspace state model
 - normalization interfaces
 - review queue types
 - filing draft types
+- audit event model
 
 ## Phase 2. MCP server skeleton
 - tool registration
-- setup and import tools
+- setup and source-planning tools
+- consent/auth checkpoint semantics
+- import and collection tools
 - review and filing tools
 - audit metadata envelope
 

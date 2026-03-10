@@ -48,6 +48,9 @@ See:
 - `docs/02-user-journey.md`
 - `docs/05-architecture.md`
 - `docs/13-implementation-roadmap.md`
+- `docs/17-data-collection-strategy.md`
+- `docs/18-source-feasibility-matrix.md`
+- `docs/19-agentic-auth-and-consent-flow.md`
 
 ## Initial scope
 

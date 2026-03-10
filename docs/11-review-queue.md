@@ -9,6 +9,8 @@ The review queue is how the system minimizes user interruption without hiding im
 - mixed personal/business expenses
 - source conflicts or duplicates
 - unsupported tax treatments for automated handling
+- collection gaps that materially affect filing completeness
+- failed or partial source retrieval where a user decision is needed
 
 ## UX goal
 Ask fewer, sharper questions.

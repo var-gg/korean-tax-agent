@@ -77,6 +77,38 @@ Output:
 - capability matrix
 - consent/auth notes
 
+### source planning
+
+#### `tax.sources.plan_collection`
+Purpose:
+- recommend the next best source connections or collection actions for a workspace
+
+Input:
+- workspace id
+- filing year
+- current coverage summary
+- optional user profile hints
+
+Output:
+- recommended next sources
+- expected value by source
+- likely user checkpoints
+- fallback path suggestions
+
+#### `tax.sources.get_collection_status`
+Purpose:
+- summarize current collection coverage, gaps, blocked sources, and recommended next actions
+
+Input:
+- workspace id
+
+Output:
+- connected sources
+- pending checkpoints
+- coverage gaps
+- blocked attempts
+- next recommended action
+
 ### sources
 
 #### `tax.sources.connect`
