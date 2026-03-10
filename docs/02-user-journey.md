@@ -11,8 +11,9 @@
 - User completes required login/authentication.
 
 ## Phase 3. Data intake
-- Agent imports available transaction and document sources.
-- User may upload CSV, PDF, image, or spreadsheet files where APIs are unavailable.
+- Agent attempts the highest-value collection path first.
+- User intervenes mainly for login, download confirmation, or narrow follow-up facts.
+- Manual upload remains a fallback where direct collection or export-assisted collection is unavailable.
 - System normalizes all intake into a common ledger model.
 
 ## Phase 4. Classification and review queue generation

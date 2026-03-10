@@ -31,12 +31,34 @@ Responsibilities:
 - guide setup and filing workflow sequencing
 
 ## Data flow
-1. Source intake
-2. normalization
-3. classification
-4. review queue
-5. filing draft generation
-6. browser-assisted filing/export
+1. Source planning and source state
+2. consent and auth checkpoints
+3. source intake and sync attempts
+4. normalization
+5. coverage gap detection
+6. classification
+7. review queue
+8. filing draft generation
+9. browser-assisted filing/export
+
+## Persistent state backbone
+The architecture assumes an explicit workspace state model that preserves:
+- taxpayer profile state
+- source registry
+- consent records
+- auth checkpoints
+- sync attempts
+- imported artifacts
+- normalized ledger entities
+- coverage gaps
+- review items
+- draft versions
+- browser assist sessions
+- audit events
+
+See:
+- `docs/20-workspace-state-model.md`
+- `docs/21-first-agentic-scenario.md`
 
 ## Repository structure rationale
 - `docs/` stays public and repo-visible for trust and onboarding

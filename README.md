@@ -51,6 +51,8 @@ See:
 - `docs/17-data-collection-strategy.md`
 - `docs/18-source-feasibility-matrix.md`
 - `docs/19-agentic-auth-and-consent-flow.md`
+- `docs/20-workspace-state-model.md`
+- `docs/21-first-agentic-scenario.md`
 
 ## Initial scope
 
