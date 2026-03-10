@@ -9,6 +9,10 @@ import {
   taxFilingComputeDraft,
   taxFilingPrepareHomeTax,
   taxSourcesConnect,
+  taxSourcesGetCollectionStatus,
+  taxSourcesPlanCollection,
+  taxSourcesResumeSync,
+  taxSourcesSync,
 } from '../packages/mcp-server/src/tools.js';
 
 const demo = rawDemo as {
@@ -19,6 +23,11 @@ const demo = rawDemo as {
   decisions: ClassificationDecision[];
 };
 
+const planResult = taxSourcesPlanCollection({
+  workspaceId: demo.workspaceId,
+  filingYear: demo.filingYear,
+});
+
 const connectResult = taxSourcesConnect(
   {
     workspaceId: demo.workspaceId,
@@ -27,6 +36,31 @@ const connectResult = taxSourcesConnect(
   },
   demo.consentRecords,
 );
+
+const collectionStatusBeforeResume = taxSourcesGetCollectionStatus(
+  { workspaceId: demo.workspaceId },
+  [
+    {
+      sourceId: connectResult.data.sourceId,
+      workspaceId: demo.workspaceId,
+      sourceType: 'hometax',
+      state: connectResult.data.authRequired ? 'awaiting_auth' : 'ready',
+      lastBlockingReason: connectResult.data.authRequired ? 'missing_auth' : undefined,
+    },
+  ],
+  ['Potential supporting evidence still missing'],
+);
+
+const syncResult = taxSourcesSync({
+  sourceId: connectResult.data.sourceId,
+  syncMode: 'full',
+});
+
+const resumeResult = taxSourcesResumeSync({
+  sourceId: connectResult.data.sourceId,
+  checkpointId: syncResult.checkpointId,
+  resumeToken: syncResult.resumeToken,
+});
 
 const classifyResult = taxClassifyRun(
   {
@@ -61,14 +95,16 @@ const initialPrepareResult = taxFilingPrepareHomeTax(
 const resolutionResult = taxClassifyResolveReviewItem(
   {
     reviewItemIds: classifiedReviewItems.map((item) => item.reviewItemId),
-    selectedOption: 'accepted_in_demo',
-    rationale: 'Demo resolution to advance workflow state',
+    selectedOption: 'exclude_from_expense',
+    rationale: 'Demo override to show financial impact of review resolution',
     approverIdentity: 'demo_user',
   },
   classifiedReviewItems,
+  classifiedDecisions,
 );
 
 const resolvedItems = resolutionResult.data.updatedItems;
+const effectiveDecisions = [...classifiedDecisions, ...resolutionResult.data.generatedDecisions];
 const resolvedDraftResult = taxFilingComputeDraft(
   {
     workspaceId: demo.workspaceId,
@@ -76,7 +112,7 @@ const resolvedDraftResult = taxFilingComputeDraft(
     includeAssumptions: true,
   },
   demo.transactions,
-  classifiedDecisions,
+  effectiveDecisions,
   resolvedItems,
 );
 
@@ -104,7 +140,11 @@ const explicitConsentCheck = evaluateConsent(demo.consentRecords, {
 console.log(
   JSON.stringify(
     {
+      planResult,
       connectResult,
+      collectionStatusBeforeResume,
+      syncResult,
+      resumeResult,
       explicitConsentCheck,
       classifyResult: {
         classifiedCount: classifyResult.data.classifiedCount,
@@ -122,6 +162,7 @@ console.log(
       resolutionResult: {
         resolvedCount: resolutionResult.data.resolvedCount,
         generatedDecisionIds: resolutionResult.data.generatedDecisionIds,
+        generatedDecisions: resolutionResult.data.generatedDecisions,
         summary: summarizeReviewQueue(resolvedItems),
       },
       resolvedDraftResult,

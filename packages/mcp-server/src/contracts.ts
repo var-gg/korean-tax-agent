@@ -1,4 +1,4 @@
-import type { ClassificationDecision, ReviewItem } from '../../core/src/types.js';
+import type { BlockingReason, ClassificationDecision, ReviewItem, SourceState } from '../../core/src/types.js';
 
 export type MCPWarning = {
   code: string;
@@ -11,18 +11,35 @@ export type MCPAudit = {
   eventId: string;
 };
 
+export type MCPStatus =
+  | 'completed'
+  | 'in_progress'
+  | 'paused'
+  | 'awaiting_consent'
+  | 'awaiting_auth'
+  | 'awaiting_user_action'
+  | 'blocked'
+  | 'failed';
+
+export type MCPProgress = {
+  phase: string;
+  step: string;
+  percent: number;
+};
+
 export type MCPResponseEnvelope<TData = Record<string, unknown>> = {
   ok: boolean;
   data: TData;
   warnings?: MCPWarning[];
   requiresConsent?: boolean;
   requiresAuth?: boolean;
-  blockingReason?:
-    | 'missing_consent'
-    | 'missing_auth'
-    | 'unresolved_high_risk_review'
-    | 'draft_not_ready'
-    | 'unsupported_hometax_state';
+  status?: MCPStatus;
+  blockingReason?: BlockingReason;
+  checkpointId?: string;
+  pendingUserAction?: string;
+  resumeToken?: string;
+  fallbackOptions?: string[];
+  progress?: MCPProgress;
   nextRecommendedAction?: string;
   audit?: MCPAudit;
 };
@@ -53,6 +70,44 @@ export type InitConfigData = {
   workspacePath: string;
 };
 
+export type PlanCollectionInput = {
+  workspaceId: string;
+  filingYear: number;
+  currentCoverageSummary?: Record<string, unknown>;
+  userProfileHints?: Record<string, unknown>;
+};
+
+export type CollectionRecommendation = {
+  sourceType: string;
+  priority: 'high' | 'medium' | 'low';
+  rationale: string;
+  collectionMode: 'direct_connector' | 'browser_assist' | 'export_ingestion' | 'fact_capture';
+  likelyCheckpoints: string[];
+  fallbackOptions: string[];
+};
+
+export type PlanCollectionData = {
+  recommendedSources: CollectionRecommendation[];
+  expectedValueBySource: Record<string, string>;
+  likelyUserCheckpoints: string[];
+  fallbackPathSuggestions: string[];
+};
+
+export type GetCollectionStatusInput = {
+  workspaceId: string;
+};
+
+export type CollectionStatusData = {
+  connectedSources: Array<{
+    sourceId: string;
+    sourceType: string;
+    state: SourceState | string;
+  }>;
+  pendingCheckpoints: string[];
+  coverageGaps: string[];
+  blockedAttempts: string[];
+};
+
 export type ConnectSourceInput = {
   workspaceId: string;
   sourceType: string;
@@ -65,6 +120,8 @@ export type ConnectSourceData = {
   consentRequired: boolean;
   authRequired: boolean;
   nextStep?: string;
+  checkpointId?: string;
+  fallbackOptions?: string[];
 };
 
 export type SyncSourceInput = {
@@ -75,6 +132,24 @@ export type SyncSourceInput = {
 export type SyncSourceData = {
   importedArtifactCount: number;
   changedItemCount: number;
+  progressState?: MCPProgress;
+  checkpointId?: string;
+  fallbackOptions?: string[];
+};
+
+export type ResumeSyncInput = {
+  sourceId?: string;
+  syncSessionId?: string;
+  checkpointId?: string;
+  resumeToken?: string;
+};
+
+export type ResumeSyncData = {
+  resumed: boolean;
+  sourceId?: string;
+  syncSessionId: string;
+  importedArtifactCount: number;
+  nextCheckpointId?: string;
 };
 
 export type NormalizeLedgerInput = {
@@ -172,6 +247,14 @@ export interface KoreanTaxMCPContracts {
     input: InitConfigInput;
     output: MCPResponseEnvelope<InitConfigData>;
   };
+  'tax.sources.plan_collection': {
+    input: PlanCollectionInput;
+    output: MCPResponseEnvelope<PlanCollectionData>;
+  };
+  'tax.sources.get_collection_status': {
+    input: GetCollectionStatusInput;
+    output: MCPResponseEnvelope<CollectionStatusData>;
+  };
   'tax.sources.connect': {
     input: ConnectSourceInput;
     output: MCPResponseEnvelope<ConnectSourceData>;
@@ -179,6 +262,10 @@ export interface KoreanTaxMCPContracts {
   'tax.sources.sync': {
     input: SyncSourceInput;
     output: MCPResponseEnvelope<SyncSourceData>;
+  };
+  'tax.sources.resume_sync': {
+    input: ResumeSyncInput;
+    output: MCPResponseEnvelope<ResumeSyncData>;
   };
   'tax.ledger.normalize': {
     input: NormalizeLedgerInput;
