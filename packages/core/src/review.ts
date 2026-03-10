@@ -25,6 +25,21 @@ export type BuildReviewQueueResult = {
   batches: ReviewBatch[];
 };
 
+export type ResolveReviewItemsInput = {
+  items: ReviewItem[];
+  reviewItemIds: string[];
+  selectedOption: string;
+  rationale: string;
+  approverIdentity: string;
+  now?: string;
+};
+
+export type ResolveReviewItemsResult = {
+  updatedItems: ReviewItem[];
+  resolvedItems: ReviewItem[];
+  generatedDecisions: ClassificationDecision[];
+};
+
 const DEFAULT_POLICY: ReviewPolicy = {
   lowConfidenceThreshold: 0.75,
   highAmountThreshold: 1_000_000,
@@ -167,18 +182,66 @@ export function buildReviewQueue(input: BuildReviewQueueInput): BuildReviewQueue
   };
 }
 
+export function resolveReviewItems(input: ResolveReviewItemsInput): ResolveReviewItemsResult {
+  const now = input.now ?? new Date().toISOString();
+  const targetIds = new Set(input.reviewItemIds);
+  const resolvedItems: ReviewItem[] = [];
+  const generatedDecisions: ClassificationDecision[] = [];
+
+  const updatedItems = input.items.map((item) => {
+    if (!targetIds.has(item.reviewItemId)) {
+      return item;
+    }
+
+    const updatedItem: ReviewItem = {
+      ...item,
+      resolutionState: 'resolved',
+      resolvedAt: now,
+      resolvedBy: input.approverIdentity,
+      resolutionNote: `${input.selectedOption}: ${input.rationale}`,
+    };
+
+    resolvedItems.push(updatedItem);
+
+    for (const entityId of item.linkedEntityIds) {
+      generatedDecisions.push({
+        decisionId: `decision_override_${item.reviewItemId}`,
+        entityType: 'transaction',
+        entityId,
+        candidateCategory: item.reasonCode,
+        candidateTaxTreatment: input.selectedOption,
+        confidence: 1,
+        explanation: input.rationale,
+        decidedBy: 'user',
+        decisionMode: 'approved_override',
+        createdAt: now,
+      });
+    }
+
+    return updatedItem;
+  });
+
+  return {
+    updatedItems,
+    resolvedItems,
+    generatedDecisions,
+  };
+}
+
 export function summarizeReviewQueue(items: ReviewItem[]) {
   return items.reduce(
     (acc, item) => {
       acc.total += 1;
       acc.byReason[item.reasonCode] = (acc.byReason[item.reasonCode] ?? 0) + 1;
       acc.bySeverity[item.severity] = (acc.bySeverity[item.severity] ?? 0) + 1;
+      acc.byResolutionState[item.resolutionState] = (acc.byResolutionState[item.resolutionState] ?? 0) + 1;
       return acc;
     },
     {
       total: 0,
       byReason: {} as Record<string, number>,
       bySeverity: {} as Record<ReviewSeverity, number>,
+      byResolutionState: {} as Record<string, number>,
     },
   );
 }

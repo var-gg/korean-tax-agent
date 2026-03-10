@@ -5,6 +5,7 @@ import { buildDraft, evaluateDraftReadiness } from '../packages/core/src/draft.j
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction } from '../packages/core/src/types.js';
 import {
   taxBrowserStartHomeTaxAssist,
+  taxClassifyResolveReviewItem,
   taxFilingPrepareHomeTax,
   taxSourcesConnect,
 } from '../packages/mcp-server/src/tools.js';
@@ -26,15 +27,14 @@ const connectResult = taxSourcesConnect(
   demo.consentRecords,
 );
 
-const reviewQueue = buildReviewQueue({
+const initialReviewQueue = buildReviewQueue({
   workspaceId: demo.workspaceId,
   transactions: demo.transactions,
   decisions: demo.decisions,
 });
 
-const reviewSummary = summarizeReviewQueue(reviewQueue.items);
-const readiness = evaluateDraftReadiness(reviewQueue.items);
-const draft = buildDraft({
+const initialReadiness = evaluateDraftReadiness(initialReviewQueue.items);
+const initialDraft = buildDraft({
   workspaceId: demo.workspaceId,
   filingYear: demo.filingYear,
   draftVersion: 1,
@@ -43,20 +43,52 @@ const draft = buildDraft({
   deductionsSummary: { totalDeductions: 0 },
   withholdingSummary: { totalWithheld: 0 },
   assumptions: ['Demo-only computation'],
-  warnings: readiness.blockerReasons,
+  warnings: initialReadiness.blockerReasons,
 });
 
-const prepareResult = taxFilingPrepareHomeTax(
+const initialPrepareResult = taxFilingPrepareHomeTax(
   {
     workspaceId: demo.workspaceId,
-    draftId: draft.draftId,
+    draftId: initialDraft.draftId,
   },
-  reviewQueue.items,
+  initialReviewQueue.items,
+);
+
+const resolutionResult = taxClassifyResolveReviewItem(
+  {
+    reviewItemIds: initialReviewQueue.items.map((item) => item.reviewItemId),
+    selectedOption: 'accepted_in_demo',
+    rationale: 'Demo resolution to advance workflow state',
+    approverIdentity: 'demo_user',
+  },
+  initialReviewQueue.items,
+);
+
+const resolvedItems = resolutionResult.data.updatedItems;
+const resolvedReadiness = evaluateDraftReadiness(resolvedItems);
+const resolvedDraft = buildDraft({
+  workspaceId: demo.workspaceId,
+  filingYear: demo.filingYear,
+  draftVersion: 2,
+  incomeSummary: { totalIncome: 450000 },
+  expenseSummary: { totalExpense: 1920000 },
+  deductionsSummary: { totalDeductions: 0 },
+  withholdingSummary: { totalWithheld: 0 },
+  assumptions: ['Demo-only computation after review resolution'],
+  warnings: resolvedReadiness.blockerReasons,
+});
+
+const resolvedPrepareResult = taxFilingPrepareHomeTax(
+  {
+    workspaceId: demo.workspaceId,
+    draftId: resolvedDraft.draftId,
+  },
+  resolvedItems,
 );
 
 const assistResult = taxBrowserStartHomeTaxAssist({
   workspaceId: demo.workspaceId,
-  draftId: draft.draftId,
+  draftId: resolvedDraft.draftId,
   mode: 'guide_only',
 });
 
@@ -72,17 +104,28 @@ console.log(
     {
       connectResult,
       explicitConsentCheck,
-      reviewQueue: {
-        totalItems: reviewQueue.items.length,
-        batches: reviewQueue.batches,
-        summary: reviewSummary,
+      initialReviewQueue: {
+        totalItems: initialReviewQueue.items.length,
+        batches: initialReviewQueue.batches,
+        summary: summarizeReviewQueue(initialReviewQueue.items),
       },
-      draft: {
-        draftId: draft.draftId,
-        readiness,
-        warnings: draft.warnings,
+      initialDraft: {
+        draftId: initialDraft.draftId,
+        readiness: initialReadiness,
+        warnings: initialDraft.warnings,
       },
-      prepareResult,
+      initialPrepareResult,
+      resolutionResult: {
+        resolvedCount: resolutionResult.data.resolvedCount,
+        generatedDecisionIds: resolutionResult.data.generatedDecisionIds,
+        summary: summarizeReviewQueue(resolvedItems),
+      },
+      resolvedDraft: {
+        draftId: resolvedDraft.draftId,
+        readiness: resolvedReadiness,
+        warnings: resolvedDraft.warnings,
+      },
+      resolvedPrepareResult,
       assistResult,
     },
     null,

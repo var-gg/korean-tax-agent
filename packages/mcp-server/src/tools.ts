@@ -1,6 +1,6 @@
 import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent.js';
 import { buildDraft, evaluateDraftReadiness } from '../../core/src/draft.js';
-import { buildReviewQueue, summarizeReviewQueue } from '../../core/src/review.js';
+import { buildReviewQueue, resolveReviewItems, summarizeReviewQueue } from '../../core/src/review.js';
 import type { ConsentRecord, ReviewItem } from '../../core/src/types.js';
 import type {
   ComputeDraftInput,
@@ -99,24 +99,35 @@ export function taxClassifyRun(input: RunClassificationInput): MCPResponseEnvelo
 }
 
 export function taxClassifyListReviewItems(workspaceId: string, items: ReviewItem[]): MCPResponseEnvelope<{ items: ReviewItem[]; summary: ReturnType<typeof summarizeReviewQueue> }> {
+  const filteredItems = items.filter((item) => item.workspaceId === workspaceId);
   return {
     ok: true,
     data: {
-      items: items.filter((item) => item.workspaceId === workspaceId),
-      summary: summarizeReviewQueue(items.filter((item) => item.workspaceId === workspaceId)),
+      items: filteredItems,
+      summary: summarizeReviewQueue(filteredItems),
     },
   };
 }
 
-export function taxClassifyResolveReviewItem(input: ResolveReviewItemInput, items: ReviewItem[]): MCPResponseEnvelope<{ resolvedCount: number; affectedDraftIds?: string[] }> {
-  const targetIds = new Set(input.reviewItemIds);
-  const resolvedCount = items.filter((item) => targetIds.has(item.reviewItemId)).length;
+export function taxClassifyResolveReviewItem(
+  input: ResolveReviewItemInput,
+  items: ReviewItem[],
+): MCPResponseEnvelope<{ resolvedCount: number; affectedDraftIds?: string[]; updatedItems: ReviewItem[]; generatedDecisionIds: string[] }> {
+  const resolution = resolveReviewItems({
+    items,
+    reviewItemIds: input.reviewItemIds,
+    selectedOption: input.selectedOption,
+    rationale: input.rationale,
+    approverIdentity: input.approverIdentity,
+  });
 
   return {
     ok: true,
     data: {
-      resolvedCount,
+      resolvedCount: resolution.resolvedItems.length,
       affectedDraftIds: [],
+      updatedItems: resolution.updatedItems,
+      generatedDecisionIds: resolution.generatedDecisions.map((decision) => decision.decisionId),
     },
     audit: {
       eventType: 'review_resolved',
@@ -138,9 +149,10 @@ export function taxFilingComputeDraft(
   withholdingSummary: Record<string, unknown>;
 }> {
   const readiness = evaluateDraftReadiness(reviewItems);
+  const filingYear = input.workspaceId.match(/(20\d{2})/)?.[1];
   const draft = buildDraft({
     workspaceId: input.workspaceId,
-    filingYear: new Date().getFullYear(),
+    filingYear: filingYear ? Number(filingYear) : new Date().getFullYear(),
     draftVersion: input.draftMode === 'new_version' ? 2 : 1,
     assumptions: input.includeAssumptions ? ['Initial draft assumptions placeholder'] : [],
     warnings: readiness.blockerReasons,
