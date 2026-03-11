@@ -118,6 +118,7 @@ Read:
 Currently available:
 - `../README.ko.md` — Korean repository introduction
 - `00-overview.ko.md` — Korean companion for the product overview
+- `21-first-agentic-scenario.ko.md` — Korean companion for the first agentic scenario
 
 ## Reading philosophy
 If you only read one technical document, read `20-workspace-state-model.md`.
