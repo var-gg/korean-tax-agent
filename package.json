@@ -9,11 +9,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
     "demo": "tsx scripts/run-demo.ts",
     "smoke:workflow": "tsx scripts/smoke-workflow.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.18"
   }
 }
