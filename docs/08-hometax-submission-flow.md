@@ -1,5 +1,18 @@
 # HomeTax Submission Flow
 
+- Status: active
+- Canonical: English
+- Korean companion: ./08-hometax-submission-flow.ko.md
+- Parent: ./README.md
+- Related:
+  - ./19-agentic-auth-and-consent-flow.md
+  - ./20-workspace-state-model.md
+  - ./24-workflow-state-machine.md
+- Next recommended reading:
+  - ./09-mcp-tool-spec.md
+  - ./21-first-agentic-scenario.md
+
+
 ## Objective
 Support assisted HomeTax filing while preserving visible user control.
 

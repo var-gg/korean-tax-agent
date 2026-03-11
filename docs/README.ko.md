@@ -43,7 +43,8 @@
 ### 3) 아키텍처 / 상태 모델 / 계약
 - [05-architecture.md](./05-architecture.md) — 상위 아키텍처
 - [06-data-model.md](./06-data-model.md) — 데이터 모델
-- [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) — MCP tool spec
+- [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md) — MCP tool spec (한국어)
+- [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) — MCP tool spec 원문
 - [10-skill-design.md](./10-skill-design.md) — skill 설계
 - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md) — workspace 상태 모델 (한국어)
 - [20-workspace-state-model.md](./20-workspace-state-model.md) — workspace 상태 모델 원문
@@ -53,7 +54,8 @@
 - [24-workflow-state-machine.md](./24-workflow-state-machine.md) — workflow state machine 원문
 
 ### 4) 수집 / 홈택스 / 실행 흐름
-- [08-hometax-submission-flow.md](./08-hometax-submission-flow.md) — HomeTax 제출 보조 흐름
+- [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md) — HomeTax 제출 보조 흐름 (한국어)
+- [08-hometax-submission-flow.md](./08-hometax-submission-flow.md) — HomeTax 제출 보조 흐름 원문
 - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md) — 데이터 수집 전략 (한국어)
 - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md) — 소스별 실현 가능성 매트릭스 (한국어)
 - [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md) — 소스별 실현 가능성 매트릭스 원문
@@ -76,6 +78,8 @@
 ### 이미 존재
 - [../README.ko.md](../README.ko.md)
 - [00-overview.ko.md](./00-overview.ko.md)
+- [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md)
+- [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
 - [16-v1-prd.ko.md](./16-v1-prd.ko.md)
 - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
 - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
@@ -88,11 +92,11 @@
 - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
 
 ### 다음 한국어 보강 우선순위
-1. [08-hometax-submission-flow.md](./08-hometax-submission-flow.md)
-2. [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
-3. [05-architecture.md](./05-architecture.md)
-4. [06-data-model.md](./06-data-model.md)
-5. [01-product-principles.md](./01-product-principles.md)
+1. [05-architecture.md](./05-architecture.md)
+2. [06-data-model.md](./06-data-model.md)
+3. [01-product-principles.md](./01-product-principles.md)
+4. [02-user-journey.md](./02-user-journey.md)
+5. [07-consent-model.md](./07-consent-model.md)
 
 ## 문서 메타 규칙 (초안)
 앞으로 핵심 문서 상단에는 가능하면 아래 정보를 추가합니다.
