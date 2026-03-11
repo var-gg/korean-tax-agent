@@ -39,14 +39,16 @@ Read next:
 1. `05-architecture.md`
 2. `06-data-model.md`
 3. `20-workspace-state-model.md`
-4. `22-core-type-gap-analysis.md`
-5. `09-mcp-tool-spec.md`
-6. `10-skill-design.md`
+4. `24-workflow-state-machine.md`
+5. `22-core-type-gap-analysis.md`
+6. `09-mcp-tool-spec.md`
+7. `10-skill-design.md`
 
 These documents explain:
 - the major components
 - the canonical entities
 - the persistent state backbone
+- the workflow control vocabulary and transition model
 - the current doc-to-code gaps
 - the MCP surface
 - the agent skill layer
@@ -99,6 +101,7 @@ Read:
 - `09-mcp-tool-spec.md` — MCP workflow tool contract
 - `10-skill-design.md` — agent skill design expectations
 - `20-workspace-state-model.md` — persistent operational state model
+- `24-workflow-state-machine.md` — compact workflow control reference across collection, review, and assist
 - `22-core-type-gap-analysis.md` — current code-model gaps and implementation priorities
 
 ### Agentic collection and filing execution
