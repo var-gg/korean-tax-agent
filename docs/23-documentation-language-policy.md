@@ -101,8 +101,9 @@ These can be explained in Korean prose without renaming the core identifier ever
 For now:
 1. keep writing technical docs in English,
 2. add a short language note to the root README and docs index,
-3. selectively add Korean companion docs for public-facing entry points,
-4. avoid repo-wide bilingual duplication unless a doc is clearly high-value.
+3. maintain a Korean reading entry point in `docs/README.ko.md`,
+4. selectively add Korean companion docs for public-facing entry points and high-leverage workflow/domain docs,
+5. avoid repo-wide bilingual duplication unless a doc is clearly high-value.
 
 ## Initial Korean companion priorities
 Recommended first Korean companion docs:

@@ -1,6 +1,6 @@
 # Docs Index
 
-**Languages:** technical specs are canonical in English; Korean companion docs are added selectively.
+**Languages:** technical specs are canonical in English; Korean companion docs are added selectively. Korean reading entry: [README.ko.md](./README.ko.md).
 
 This directory contains the public product and engineering design documents for Korean Tax Agent.
 
@@ -121,11 +121,14 @@ Read:
 
 ## Korean companion docs
 Currently available:
+- `README.ko.md` — Korean docs index and reading path
 - `../README.ko.md` — Korean repository introduction
 - `00-overview.ko.md` — Korean companion for the product overview
 - `17-data-collection-strategy.ko.md` — Korean companion for the data collection strategy
 - `19-agentic-auth-and-consent-flow.ko.md` — Korean companion for the auth and consent flow
 - `21-first-agentic-scenario.ko.md` — Korean companion for the first agentic scenario
+- `25-korean-comprehensive-income-tax-data-research.ko.md` — Korean companion for filing-input research
+- `26-domain-model-gap-analysis.ko.md` — Korean companion for the domain gap analysis
 
 ## Reading philosophy
 If you only read one technical document, read `20-workspace-state-model.md`.

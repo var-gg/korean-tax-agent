@@ -1,5 +1,18 @@
 # Domain Model Gap Analysis for Real Filing Inputs
 
+- Status: active
+- Canonical: English
+- Korean companion: ./26-domain-model-gap-analysis.ko.md
+- Parent: ./README.md
+- Related:
+  - ./25-korean-comprehensive-income-tax-data-research.md
+  - ./22-core-type-gap-analysis.md
+  - ./24-workflow-state-machine.md
+- Next recommended reading:
+  - ./20-workspace-state-model.md
+  - ./09-mcp-tool-spec.md
+
+
 ## Objective
 Translate the domain research in `25-korean-comprehensive-income-tax-data-research.md` into concrete product and implementation gaps.
 

@@ -1,5 +1,19 @@
 # Korean Comprehensive Income Tax Data Research
 
+- Status: active
+- Canonical: English
+- Korean companion: ./25-korean-comprehensive-income-tax-data-research.ko.md
+- Parent: ./README.md
+- Related:
+  - ./17-data-collection-strategy.md
+  - ./19-agentic-auth-and-consent-flow.md
+  - ./21-first-agentic-scenario.md
+  - ./26-domain-model-gap-analysis.md
+- Next recommended reading:
+  - ./20-workspace-state-model.md
+  - ./22-core-type-gap-analysis.md
+
+
 ## Purpose
 Make the real filing domain less of a black box.
 
