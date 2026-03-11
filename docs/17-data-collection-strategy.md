@@ -189,11 +189,14 @@ V1 should present itself as:
 - browser-capable
 - consent-aware
 - resilient to partial collection success
+- able to distinguish supported paths from unsupported ones
+- able to report whether a case is estimate-ready, draft-ready, or submission-assist-ready
 
 V1 should not present itself as:
 - fully silent automation
 - universal live integration across all institutions
 - guaranteed API-based coverage of all filing sources
+- submission-ready merely because some sources were collected
 
 ## Recommended v1 source strategy
 

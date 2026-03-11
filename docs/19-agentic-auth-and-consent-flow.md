@@ -157,6 +157,11 @@ Preferred failure classes:
 - `export_required`
 - `insufficient_metadata`
 - `unsupported_source`
+- `unsupported_filing_path`
+- `missing_material_coverage`
+- `submission_not_ready`
+- `comparison_incomplete`
+- `official_data_refresh_required`
 
 These failure classes should map cleanly into workspace state via:
 - `blockingReason`
@@ -167,6 +172,13 @@ For each failure, the system should record:
 - what it tried
 - what failed
 - what user action or fallback is recommended
+
+## Readiness and stop-condition benchmark
+A strong run should let the user understand:
+- whether the case is only estimate-ready,
+- whether it is draft-ready,
+- whether it is truly submission-assist-ready,
+- or whether a support boundary / stop condition means the workflow should stop here for now.
 
 ## Experience benchmark
 A strong run should feel like the user is working with an operator who says:

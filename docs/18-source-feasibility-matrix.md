@@ -25,6 +25,10 @@ It should help product and engineering decide what belongs in v1, what needs liv
 - **later**: important, but should not shape early execution too heavily
 - **fallback-only**: support as a backup path, not a primary product identity
 
+Interpretation note:
+Feasibility labels describe collection realism, not full filing-path readiness by themselves.
+A source can be `v1-design` while a filing path still remains only estimate-ready or draft-ready until withholding, evidence, review, and comparison requirements are satisfied.
+
 ## 1. HomeTax portal
 Target data:
 - taxpayer-visible filing materials

@@ -4,6 +4,14 @@
 - define supported taxpayer profiles for v1 more precisely
 - define minimum filing success criteria
 - define explicit stop conditions before submission
+- define readiness downgrade rules after refresh or new evidence
+- define support-tier examples for Tier A / B / C paths
+
+## State and contracts
+- define filing-path detection contract
+- define readiness-level fields across workspace, draft, and assist session
+- define HomeTax comparison-state payloads
+- define official-data refresh / diff / recompute flow
 
 ## Connectors
 - evaluate HomeTax data import options

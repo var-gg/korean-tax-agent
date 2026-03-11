@@ -43,4 +43,6 @@ See also:
 - run classification
 - generate review queue
 - produce draft summary
-- assist with HomeTax preparation
+- distinguish estimate-ready vs draft-ready vs submission-assist-ready
+- stop honestly when support-boundary conditions are not met
+- assist with HomeTax preparation only for supported submission-assist-ready paths

@@ -9,6 +9,7 @@
   - [19-agentic-auth-and-consent-flow.md](./19-agentic-auth-and-consent-flow.md)
   - [20-workspace-state-model.md](./20-workspace-state-model.md)
   - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
 - Next recommended reading:
   - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
   - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
@@ -142,8 +143,13 @@ Preferred reason codes:
 - `export_required`
 - `insufficient_metadata`
 - `unsupported_source`
+- `unsupported_filing_path`
+- `missing_material_coverage`
 - `awaiting_review_decision`
 - `awaiting_final_approval`
+- `submission_not_ready`
+- `comparison_incomplete`
+- `official_data_refresh_required`
 
 Interpretation notes:
 - blocking reason is diagnostic
@@ -202,7 +208,16 @@ A typical happy-path flow should look like this:
 This flow is illustrative, not mandatory.
 The system must also support partial success and repeated loops.
 
-## 8. Partial-progress rules
+## 8. Readiness layer
+Broad workflow state is not enough by itself.
+The system should also track at least:
+- `estimate-ready`
+- `draft-ready`
+- `submission-assist-ready`
+
+Two workspaces may both be in `draft_ready_for_review`, while one is almost ready for HomeTax assistance and the other still has material coverage gaps or comparison blockers.
+
+## 9. Partial-progress rules
 The system must handle these cases cleanly:
 
 ### Case A. One source blocked, others continue
@@ -234,7 +249,7 @@ Implication:
 - preserve assist session state separately from collection state
 - resume from checkpoint and last known section when possible
 
-## 9. Collection and assist are related but distinct
+## 10. Collection and assist are related but distinct
 The product has two adjacent operational loops:
 
 ### Loop A. Collection loop
