@@ -8,6 +8,7 @@
   - [19-agentic-auth-and-consent-flow.md](./19-agentic-auth-and-consent-flow.md)
   - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
   - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
 - Next recommended reading:
   - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
   - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
@@ -48,6 +49,17 @@ Suggested status values:
 - `submission_in_progress`
 - `submitted`
 - `archived`
+
+Suggested readiness fields alongside broad status:
+- `estimateReadiness`
+- `draftReadiness`
+- `submissionReadiness`
+- `majorUnknowns[]`
+- `supportTier`
+
+Why both matter:
+- broad workflow status says where the workspace is in the process,
+- readiness fields say how truthful the system can be about estimate, draft, and submission support.
 
 ## Core state areas
 
@@ -237,6 +249,8 @@ Examples:
 - expense evidence missing for important deductions
 - withholding evidence absent
 - taxpayer fact missing for a tax treatment decision
+- filing-path determination still incomplete
+- HomeTax comparison state still missing for required sections
 
 Minimum fields:
 - `gapId`
@@ -286,12 +300,14 @@ Minimum fields:
 - `workspaceId`
 - `draftVersion`
 - `status`
+- `readinessLevel`
 - `incomeSummary`
 - `expenseSummary`
 - `deductionsSummary`
 - `withholdingSummary`
 - `assumptions[]`
 - `warnings[]`
+- `majorUnknowns[]`
 - `computedAt`
 - `computationTraceRef`
 
@@ -311,6 +327,8 @@ Minimum fields:
 - `authState`
 - `pendingUserAction`
 - `lastKnownSection`
+- `comparisonState`
+- `freshnessState`
 - `startedAt`
 - `updatedAt`
 - `endedAt`
@@ -329,6 +347,8 @@ Examples:
 - classification run
 - review resolved
 - draft computed
+- draft readiness downgraded after refresh
+- HomeTax comparison mismatch detected
 - final submission approved
 
 Minimum fields:

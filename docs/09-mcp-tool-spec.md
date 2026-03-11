@@ -8,6 +8,7 @@
   - [20-workspace-state-model.md](./20-workspace-state-model.md)
   - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
   - [08-hometax-submission-flow.md](./08-hometax-submission-flow.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
 - Next recommended reading:
   - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
   - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md)
@@ -94,9 +95,14 @@ Interpretation rules:
 - `export_required`
 - `insufficient_metadata`
 - `unsupported_source`
+- `unsupported_filing_path`
+- `missing_material_coverage`
 - `awaiting_review_decision`
 - `awaiting_final_approval`
 - `draft_not_ready`
+- `submission_not_ready`
+- `comparison_incomplete`
+- `official_data_refresh_required`
 - `unsupported_hometax_state`
 
 ## Progress and resume semantics
@@ -386,9 +392,11 @@ Input:
 
 Output:
 - draft id
+- readiness level (`estimate_ready`, `draft_ready`, `submission_assist_ready`)
 - income/expense/deduction/withholding summaries
 - warnings
 - unresolved blockers
+- material unknowns
 
 #### `tax.filing.get_summary`
 Purpose:
@@ -419,7 +427,9 @@ Output:
 - section mapping
 - required manual fields
 - blocked/unsupported fields
+- comparison readiness
 - browser assist readiness
+- refresh requirement / freshness note
 
 ### browser assist
 

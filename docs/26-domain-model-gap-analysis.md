@@ -8,6 +8,7 @@
   - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
   - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
   - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
 - Next recommended reading:
   - [20-workspace-state-model.md](./20-workspace-state-model.md)
   - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
@@ -240,17 +241,26 @@ Suggested states or fields:
 Priority:
 - **medium-high**
 
+## Product-boundary implication
+These domain gaps are not only implementation details.
+They directly determine whether a filing path belongs in Tier A, Tier B, or Tier C support,
+and whether the product can honestly claim estimate readiness, draft readiness, or submission-assist readiness.
+
+See also: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md).
+
 ## Contract-level implications
 The MCP contract surface will likely need additional or richer tools over time.
 Not all need implementation now, but the domain direction should be explicit.
 
 Likely future tool needs:
 - `tax.profile.capture_facts`
+- `tax.profile.detect_filing_path`
 - `tax.withholding.import_records`
 - `tax.withholding.list_records`
 - `tax.filing.list_blockers`
 - `tax.filing.get_field_mapping`
 - `tax.filing.compare_with_hometax`
+- `tax.filing.refresh_official_data`
 - `tax.deductions.capture_facts`
 
 ## Short-term implementation recommendation

@@ -8,6 +8,7 @@
   - [19-agentic-auth-and-consent-flow.md](./19-agentic-auth-and-consent-flow.md)
   - [20-workspace-state-model.md](./20-workspace-state-model.md)
   - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
 - Next recommended reading:
   - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
   - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
@@ -24,19 +25,35 @@ The browser-assist layer should help the user move faster, but should never make
 - pause/resume friendly
 - explicit final approval before submit
 
+## Entry conditions and support boundary
+HomeTax assist should only start for cases that are inside the currently supported V1 path boundary.
+If the filing path is unsupported, materially under-collected, or still blocked on high-severity review, the workflow should stop before browser assist begins.
+
+The system should distinguish at least:
+- `estimate_ready`
+- `draft_ready`
+- `submission_assist_ready`
+
+Only `submission_assist_ready` cases should proceed into active HomeTax assistance.
+See also: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md).
+
 ## Proposed end-to-end flow
 
 ### Phase 1. Readiness check
 1. User starts filing workflow.
-2. Agent confirms draft readiness.
+2. Agent confirms draft readiness level.
 3. Agent confirms unresolved review item status.
-4. System blocks progression if critical review items remain open.
+4. Agent confirms material source coverage and withholding coverage.
+5. System blocks progression if critical review items remain open.
+6. System blocks progression if the case is outside supported V1 paths or not yet submission-assist-ready.
 
 Expected outputs:
 - draft version
+- readiness level
 - warning summary
 - unresolved blocker summary
 - HomeTax-assist readiness flag
+- comparison readiness / freshness note
 
 ### Phase 2. Session start
 1. Browser assist opens HomeTax flow.
@@ -96,6 +113,7 @@ Important rule:
 1. System records whether submission succeeded, failed, or is uncertain.
 2. Agent summarizes the result and next steps.
 3. If the outcome is ambiguous, the system should prefer "unknown/pending verification" over false success.
+4. Completion should include post-submit evidence such as receipt capture, next-step confirmation, and any still-required follow-up actions.
 
 ## Pause/resume model
 The browser flow must support interruption at any of these checkpoints:
@@ -124,5 +142,17 @@ Suggested session fields:
 - required supporting material is missing
 - browser session closed unexpectedly
 
+## Stop conditions inside HomeTax assist
+The assist flow should pause or stop when:
+- the filing path is later found to be unsupported or downgraded,
+- material source coverage is still missing,
+- high-severity review remains unresolved,
+- required sections cannot be mapped,
+- visible HomeTax values materially mismatch the draft,
+- official data freshness is questionable and refresh/recompute is required,
+- required supporting material is unavailable,
+- or explicit user approval is missing.
+
 ## v1 policy
 Do not assume silent final submission. Keep final confirmation visible and user-controlled.
+Do not enter browser assist for cases that are only estimate-ready or draft-ready.
