@@ -331,11 +331,14 @@ The docs now describe richer MCP semantics than `packages/mcp-server/src/contrac
 
 ### Missing or under-modeled in contracts
 - `status`
+- `checkpointType`
 - broader `blockingReason` enum
+- `pendingUserAction`
 - `fallbackOptions`
 - `progress`
 - `checkpointId`
 - resume token / resumable session handle
+- source-level vs sync-level collection state fields
 - source-planning tools
 - collection-status tools
 - resume-sync tool contract
@@ -358,8 +361,10 @@ This means the docs and contracts are currently ahead of the code, which is acce
 
 ### Phase C. MCP contract alignment
 1. update response envelope
-2. add source-planning and resume-sync contracts
-3. add progress/blocking/fallback fields
+2. add `checkpointType`, `pendingUserAction`, and resumable response semantics
+3. add source-planning and resume-sync contracts
+4. add progress/blocking/fallback fields
+5. distinguish source-level state from sync-attempt state in collection responses
 
 ## Bottom line
 The current core model is a solid base for tax classification and draft generation.

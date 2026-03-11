@@ -30,7 +30,11 @@ Suggested response shape:
   "requiresConsent": false,
   "requiresAuth": false,
   "status": "completed",
+  "checkpointType": null,
+  "checkpointId": null,
   "blockingReason": null,
+  "pendingUserAction": null,
+  "resumeToken": null,
   "nextRecommendedAction": "tax.classify.run",
   "fallbackOptions": [],
   "progress": {
@@ -45,6 +49,13 @@ Suggested response shape:
 }
 ```
 
+Interpretation rules:
+- `status` describes tool/runtime progress state
+- `checkpointType` describes what kind of user checkpoint is active
+- `blockingReason` explains why progress stopped
+- `pendingUserAction` tells the agent what to ask the user to do next
+- `resumeToken` or a session id should be returned when the action is resumable
+
 ## Recommended status values
 - `completed`
 - `in_progress`
@@ -55,31 +66,45 @@ Suggested response shape:
 - `blocked`
 - `failed`
 
+## Standard checkpoint types
+- `source_consent`
+- `authentication`
+- `collection_blocker`
+- `review_judgment`
+- `final_submission`
+
 ## Recommended blocking reasons
 - `missing_consent`
 - `missing_auth`
-- `user_action_required`
 - `ui_changed`
 - `blocked_by_provider`
 - `export_required`
 - `insufficient_metadata`
-- `unresolved_high_risk_review`
+- `unsupported_source`
+- `awaiting_review_decision`
+- `awaiting_final_approval`
 - `draft_not_ready`
 - `unsupported_hometax_state`
-- `unsupported_source`
 
 ## Progress and resume semantics
 Long-running or checkpoint-driven tools should expose enough state for the agent to pause, narrate, and resume without guessing.
 
 Suggested fields:
 - `status`
+- `checkpointType`
+- `checkpointId`
+- `blockingReason`
+- `pendingUserAction`
+- `resumeToken` or resumable session id
 - `progress.phase`
 - `progress.step`
 - `progress.percent`
-- `checkpointId`
-- `pendingUserAction`
-- `resumeToken` or resumable session id
 - `fallbackOptions[]`
+
+Mapping rule:
+- if the tool is waiting on the user, it should prefer a resumable response over a generic error
+- `awaiting_consent`, `awaiting_auth`, and `awaiting_user_action` should usually come with `checkpointType`
+- `blocked` should explain whether the best next move is fallback, retry, or human review
 
 ## Proposed tool groups
 
@@ -418,10 +443,14 @@ For source-planning and source-sync tools, the response should help the agent ex
 Recommended fields in `data` for collection tools:
 - `sourceType`
 - `collectionMode` (`direct_connector`, `browser_assist`, `export_ingestion`, `fact_capture`)
+- `sourceState`
+- `syncAttemptState`
 - `coverageImpact`
 - `artifactsImported`
 - `coverageGaps`
+- `checkpointType`
 - `checkpointId`
+- `blockingReason`
 - `pendingUserAction`
 - `fallbackOptions[]`
 - `attemptSummary`
@@ -430,17 +459,26 @@ Recommended fields in `data` for collection tools:
 
 ### `requiresConsent`
 Set true when the requested action cannot proceed under currently recorded scope.
+When true, prefer:
+- `status = awaiting_consent`
+- `checkpointType = source_consent`
+- `blockingReason = missing_consent`
 
 ### `requiresAuth`
 Set true when the user must directly complete a login/authentication step.
+When true, prefer:
+- `status = awaiting_auth`
+- `checkpointType = authentication`
+- `blockingReason = missing_auth`
 
 ### `blockingReason`
-Recommended when `ok=false` or the workflow must stop:
-- `missing_consent`
-- `missing_auth`
-- `unresolved_high_risk_review`
-- `draft_not_ready`
-- `unsupported_hometax_state`
+Use when the workflow must stop or pause with explanation.
+Pair it with `checkpointType` and `pendingUserAction` when the action is resumable.
+
+### Review and submission gates
+When the workflow is waiting for judgment rather than login:
+- use `checkpointType = review_judgment` with `blockingReason = awaiting_review_decision`
+- use `checkpointType = final_submission` with `blockingReason = awaiting_final_approval`
 
 ## Recommended workflow sequence
 1. `tax.setup.inspect_environment`
