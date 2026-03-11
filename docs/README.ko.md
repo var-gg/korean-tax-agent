@@ -31,7 +31,8 @@
 - [01-product-principles.md](./01-product-principles.md) — 제품 원칙 (영문)
 - [02-user-journey.md](./02-user-journey.md) — 사용자 여정 (영문)
 - [03-scope-and-non-goals.md](./03-scope-and-non-goals.md) — 범위와 비목표 (영문)
-- [16-v1-prd.md](./16-v1-prd.md) — V1 PRD (영문, 한국어 보강 우선 후보)
+- [16-v1-prd.ko.md](./16-v1-prd.ko.md) — V1 PRD (한국어)
+- [16-v1-prd.md](./16-v1-prd.md) — V1 PRD 원문
 
 ### 2) 리스크 / 신뢰 / 리뷰
 - [04-risk-and-compliance.md](./04-risk-and-compliance.md) — 리스크와 컴플라이언스
@@ -44,14 +45,18 @@
 - [06-data-model.md](./06-data-model.md) — 데이터 모델
 - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) — MCP tool spec
 - [10-skill-design.md](./10-skill-design.md) — skill 설계
-- [20-workspace-state-model.md](./20-workspace-state-model.md) — workspace 상태 모델
-- [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md) — core type 갭 분석
-- [24-workflow-state-machine.md](./24-workflow-state-machine.md) — workflow state machine
+- [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md) — workspace 상태 모델 (한국어)
+- [20-workspace-state-model.md](./20-workspace-state-model.md) — workspace 상태 모델 원문
+- [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md) — core type 갭 분석 (한국어)
+- [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md) — core type 갭 분석 원문
+- [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md) — workflow state machine (한국어)
+- [24-workflow-state-machine.md](./24-workflow-state-machine.md) — workflow state machine 원문
 
 ### 4) 수집 / 홈택스 / 실행 흐름
 - [08-hometax-submission-flow.md](./08-hometax-submission-flow.md) — HomeTax 제출 보조 흐름
 - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md) — 데이터 수집 전략 (한국어)
-- [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md) — 소스별 실현 가능성 매트릭스
+- [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md) — 소스별 실현 가능성 매트릭스 (한국어)
+- [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md) — 소스별 실현 가능성 매트릭스 원문
 - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md) — 인증/동의 흐름 (한국어)
 - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md) — 첫 agentic 시나리오 (한국어)
 
@@ -71,18 +76,23 @@
 ### 이미 존재
 - [../README.ko.md](../README.ko.md)
 - [00-overview.ko.md](./00-overview.ko.md)
+- [16-v1-prd.ko.md](./16-v1-prd.ko.md)
 - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+- [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
 - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+- [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
 - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
+- [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
+- [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
 - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
 - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
 
 ### 다음 한국어 보강 우선순위
-1. [16-v1-prd.md](./16-v1-prd.md)
-2. [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md)
-3. [20-workspace-state-model.md](./20-workspace-state-model.md)
-4. [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
-5. [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+1. [08-hometax-submission-flow.md](./08-hometax-submission-flow.md)
+2. [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+3. [05-architecture.md](./05-architecture.md)
+4. [06-data-model.md](./06-data-model.md)
+5. [01-product-principles.md](./01-product-principles.md)
 
 ## 문서 메타 규칙 (초안)
 앞으로 핵심 문서 상단에는 가능하면 아래 정보를 추가합니다.

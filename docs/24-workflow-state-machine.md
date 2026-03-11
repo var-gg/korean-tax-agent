@@ -1,5 +1,19 @@
 # Workflow State Machine
 
+- Status: active
+- Canonical: English
+- Korean companion: ./24-workflow-state-machine.ko.md
+- Parent: ./README.md
+- Related:
+  - ./18-source-feasibility-matrix.md
+  - ./19-agentic-auth-and-consent-flow.md
+  - ./20-workspace-state-model.md
+  - ./21-first-agentic-scenario.md
+- Next recommended reading:
+  - ./22-core-type-gap-analysis.md
+  - ./09-mcp-tool-spec.md
+
+
 ## Purpose
 Provide a compact reference model for how the workflow moves through collection, checkpoints, review, draft generation, and HomeTax assistance.
 

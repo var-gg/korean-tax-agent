@@ -1,5 +1,18 @@
 # Core Type Gap Analysis
 
+- Status: active
+- Canonical: English
+- Korean companion: ./22-core-type-gap-analysis.ko.md
+- Parent: ./README.md
+- Related:
+  - ./20-workspace-state-model.md
+  - ./24-workflow-state-machine.md
+  - ./26-domain-model-gap-analysis.md
+- Next recommended reading:
+  - ./09-mcp-tool-spec.md
+  - ./25-korean-comprehensive-income-tax-data-research.md
+
+
 ## Objective
 Compare the current `packages/core/src/types.ts` model against the intended product and workflow state described in the docs.
 

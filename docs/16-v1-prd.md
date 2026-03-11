@@ -1,5 +1,18 @@
 # V1 PRD
 
+- Status: active
+- Canonical: English
+- Korean companion: ./16-v1-prd.ko.md
+- Parent: ./README.md
+- Related:
+  - ./00-overview.md
+  - ./21-first-agentic-scenario.md
+  - ./25-korean-comprehensive-income-tax-data-research.md
+- Next recommended reading:
+  - ./18-source-feasibility-matrix.md
+  - ./20-workspace-state-model.md
+
+
 ## 1. Product
 Korean Tax Agent is an open-source, agent-native workflow for Korean comprehensive income tax preparation.
 

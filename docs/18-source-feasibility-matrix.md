@@ -1,5 +1,18 @@
 # Source Feasibility Matrix
 
+- Status: active
+- Canonical: English
+- Korean companion: ./18-source-feasibility-matrix.ko.md
+- Parent: ./README.md
+- Related:
+  - ./17-data-collection-strategy.md
+  - ./19-agentic-auth-and-consent-flow.md
+  - ./21-first-agentic-scenario.md
+- Next recommended reading:
+  - ./20-workspace-state-model.md
+  - ./24-workflow-state-machine.md
+
+
 ## Purpose
 Document realistic collection paths for major source categories before implementation commits to specific connectors.
 
