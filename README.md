@@ -139,6 +139,10 @@ See also:
 ### Delivery
 - `docs/13-implementation-roadmap.md`
 - `docs/14-open-source-strategy.md`
+
+### Filing-input research
+- `docs/25-korean-comprehensive-income-tax-data-research.md`
+- `docs/26-domain-model-gap-analysis.md`
 - `docs/15-backlog.md`
 
 ## Initial scope

@@ -111,11 +111,13 @@ Read:
 - `19-agentic-auth-and-consent-flow.md` — user checkpoint interaction model
 - `21-first-agentic-scenario.md` — first narrow end-to-end scenario
 
-### Delivery and project management
+### Delivery, domain research, and project management
 - `13-implementation-roadmap.md` — phased implementation path
 - `14-open-source-strategy.md` — open-source packaging and trust posture
 - `15-backlog.md` — ongoing work list
 - `23-documentation-language-policy.md` — canonical English + selective Korean companion policy
+- `25-korean-comprehensive-income-tax-data-research.md` — first-pass domain map for real filing inputs
+- `26-domain-model-gap-analysis.md` — code/model gaps revealed by the filing-input research
 
 ## Korean companion docs
 Currently available:
