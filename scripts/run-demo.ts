@@ -99,7 +99,8 @@ const blockedSyncAttempt: SyncAttempt = {
   ...seededSyncAttempt,
   checkpointId: syncResult.checkpointId ?? seededSyncAttempt.checkpointId,
   state: 'blocked',
-  blockingReason: 'user_action_required',
+  checkpointType: 'collection_blocker',
+  blockingReason: 'export_required',
   fallbackOptions: syncResult.fallbackOptions,
   endedAt: new Date().toISOString(),
 };

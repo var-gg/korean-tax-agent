@@ -1,4 +1,11 @@
-import type { BlockingReason, ClassificationDecision, ReviewItem, SourceState } from '../../core/src/types.js';
+import type {
+  BlockingReason,
+  CheckpointType,
+  ClassificationDecision,
+  ReviewItem,
+  SourceState,
+  SyncAttemptState,
+} from '../../core/src/types.js';
 
 export type MCPWarning = {
   code: string;
@@ -34,6 +41,7 @@ export type MCPResponseEnvelope<TData = Record<string, unknown>> = {
   requiresConsent?: boolean;
   requiresAuth?: boolean;
   status?: MCPStatus;
+  checkpointType?: CheckpointType;
   blockingReason?: BlockingReason;
   checkpointId?: string;
   pendingUserAction?: string;
@@ -82,14 +90,14 @@ export type CollectionRecommendation = {
   priority: 'high' | 'medium' | 'low';
   rationale: string;
   collectionMode: 'direct_connector' | 'browser_assist' | 'export_ingestion' | 'fact_capture';
-  likelyCheckpoints: string[];
+  likelyCheckpoints: CheckpointType[];
   fallbackOptions: string[];
 };
 
 export type PlanCollectionData = {
   recommendedSources: CollectionRecommendation[];
   expectedValueBySource: Record<string, string>;
-  likelyUserCheckpoints: string[];
+  likelyUserCheckpoints: CheckpointType[];
   fallbackPathSuggestions: string[];
 };
 
@@ -103,7 +111,7 @@ export type CollectionStatusData = {
     sourceType: string;
     state: SourceState | string;
   }>;
-  pendingCheckpoints: string[];
+  pendingCheckpoints: CheckpointType[];
   coverageGaps: string[];
   blockedAttempts: string[];
 };
@@ -116,9 +124,10 @@ export type ConnectSourceInput = {
 
 export type ConnectSourceData = {
   sourceId: string;
-  connectionState: string;
+  sourceState: SourceState;
   consentRequired: boolean;
   authRequired: boolean;
+  checkpointType?: CheckpointType;
   nextStep?: string;
   checkpointId?: string;
   fallbackOptions?: string[];
@@ -130,9 +139,12 @@ export type SyncSourceInput = {
 };
 
 export type SyncSourceData = {
+  sourceState?: SourceState;
+  syncAttemptState?: SyncAttemptState;
   importedArtifactCount: number;
   changedItemCount: number;
   progressState?: MCPProgress;
+  checkpointType?: CheckpointType;
   checkpointId?: string;
   fallbackOptions?: string[];
 };
@@ -148,7 +160,9 @@ export type ResumeSyncData = {
   resumed: boolean;
   sourceId?: string;
   syncSessionId: string;
+  syncAttemptState?: SyncAttemptState;
   importedArtifactCount: number;
+  nextCheckpointType?: CheckpointType;
   nextCheckpointId?: string;
 };
 
@@ -234,7 +248,7 @@ export type StartHomeTaxAssistInput = {
 
 export type StartHomeTaxAssistData = {
   assistSessionId: string;
-  checkpoint: string;
+  checkpointType: CheckpointType;
   authRequired: boolean;
 };
 

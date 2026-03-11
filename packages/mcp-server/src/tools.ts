@@ -13,15 +13,19 @@ import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewIt
 import type {
   CollectionStatusData,
   ComputeDraftInput,
+  ConnectSourceData,
   ConnectSourceInput,
   GetCollectionStatusInput,
   MCPResponseEnvelope,
   PlanCollectionInput,
   PrepareHomeTaxInput,
   ResolveReviewItemInput,
+  ResumeSyncData,
   ResumeSyncInput,
   RunClassificationInput,
+  StartHomeTaxAssistData,
   StartHomeTaxAssistInput,
+  SyncSourceData,
   SyncSourceInput,
 } from './contracts.js';
 
@@ -99,8 +103,12 @@ export function taxSourcesGetCollectionStatus(
   }));
 
   const pendingCheckpoints = sources
-    .filter((source) => (source.state ?? source.connectionStatus) === 'awaiting_auth' || (source.state ?? source.connectionStatus) === 'awaiting_consent')
-    .map((source) => `${source.sourceType}:${source.state ?? source.connectionStatus}`);
+    .flatMap((source) => {
+      const state = source.state ?? source.connectionStatus;
+      if (state === 'awaiting_auth') return ['authentication' as const];
+      if (state === 'awaiting_consent') return ['source_consent' as const];
+      return [];
+    });
 
   const blockedAttempts = sources
     .filter((source) => (source.state ?? source.connectionStatus) === 'blocked')
@@ -122,15 +130,7 @@ export function taxSourcesGetCollectionStatus(
 export function taxSourcesConnect(
   input: ConnectSourceInput,
   consentRecords: ConsentRecord[],
-): MCPResponseEnvelope<{
-  sourceId: string;
-  connectionState: string;
-  consentRequired: boolean;
-  authRequired: boolean;
-  nextStep?: string;
-  checkpointId?: string;
-  fallbackOptions?: string[];
-}> {
+): MCPResponseEnvelope<ConnectSourceData> {
   const requirement: ConsentRequirement = {
     consentType: 'source_access',
     sourceType: input.sourceType,
@@ -144,14 +144,16 @@ export function taxSourcesConnect(
       status: 'awaiting_consent',
       data: {
         sourceId: `pending_${input.sourceType}`,
-        connectionState: 'awaiting_consent',
+        sourceState: 'awaiting_consent',
         consentRequired: true,
         authRequired: false,
+        checkpointType: 'source_consent',
         nextStep: buildConsentPrompt(requirement),
         checkpointId: `checkpoint_consent_${input.sourceType}_${input.workspaceId}`,
         fallbackOptions: ['Narrow the requested scope', 'Use manual upload/export ingestion instead'],
       },
       requiresConsent: true,
+      checkpointType: 'source_consent',
       blockingReason: 'missing_consent',
       checkpointId: `checkpoint_consent_${input.sourceType}_${input.workspaceId}`,
       pendingUserAction: buildConsentPrompt(requirement),
@@ -188,14 +190,16 @@ export function taxSourcesConnect(
     status: authRequired ? 'awaiting_auth' : 'completed',
     data: {
       sourceId: nextSource.sourceId,
-      connectionState: authRequired ? 'awaiting_auth' : 'connected',
+      sourceState: authRequired ? 'awaiting_auth' : 'ready',
       consentRequired: false,
       authRequired,
+      checkpointType: authRequired ? 'authentication' : undefined,
       nextStep: authRequired ? 'Proceed to authentication checkpoint' : 'Ready to sync',
       checkpointId: authRequired ? `checkpoint_auth_${input.sourceType}_${input.workspaceId}` : undefined,
       fallbackOptions: authRequired ? ['Import exported files instead', 'Collect local evidence first and return later'] : [],
     },
     requiresAuth: authRequired,
+    checkpointType: authRequired ? 'authentication' : undefined,
     checkpointId: authRequired ? `checkpoint_auth_${input.sourceType}_${input.workspaceId}` : undefined,
     pendingUserAction: authRequired ? 'Complete provider authentication to continue collection' : undefined,
     fallbackOptions: authRequired ? ['Import exported files instead', 'Collect local evidence first and return later'] : [],
@@ -212,13 +216,7 @@ export function taxSourcesConnect(
   };
 }
 
-export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
-  importedArtifactCount: number;
-  changedItemCount: number;
-  progressState?: { phase: string; step: string; percent: number };
-  checkpointId?: string;
-  fallbackOptions?: string[];
-}> {
+export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<SyncSourceData> {
   const authCheckpointId = `checkpoint_auth_${input.sourceId}`;
   const initialAttempt = {
     syncAttemptId: `sync_${input.sourceId}_${input.syncMode}`,
@@ -231,7 +229,7 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
   };
   const blockedAttempt = blockSyncAttempt({
     attempt: initialAttempt,
-    blockingReason: 'user_action_required',
+    blockingReason: 'export_required',
     checkpointId: authCheckpointId,
     fallbackOptions: ['Resume after login/export confirmation', 'Switch to export-ingestion flow'],
   });
@@ -251,6 +249,8 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
     ok: false,
     status: 'awaiting_user_action',
     data: {
+      sourceState: 'syncing',
+      syncAttemptState: 'blocked',
       importedArtifactCount: 0,
       changedItemCount: 0,
       progressState: {
@@ -261,6 +261,7 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
       checkpointId: blockedAttempt.checkpointId,
       fallbackOptions: blockedAttempt.fallbackOptions,
     },
+    checkpointType: 'collection_blocker',
     blockingReason: blockedAttempt.blockingReason,
     checkpointId: blockedAttempt.checkpointId,
     pendingUserAction: 'Complete the provider step required for sync and then resume.',
@@ -279,13 +280,7 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<{
   };
 }
 
-export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelope<{
-  resumed: boolean;
-  sourceId?: string;
-  syncSessionId: string;
-  importedArtifactCount: number;
-  nextCheckpointId?: string;
-}> {
+export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData> {
   const sourceId = input.sourceId;
   const workspaceId = extractWorkspaceIdFromSourceId(sourceId);
   const syncSessionId = input.syncSessionId ?? `sync_${sourceId ?? 'unknown'}`;
@@ -316,6 +311,7 @@ export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelop
       resumed: true,
       sourceId,
       syncSessionId: completedAttempt.syncAttemptId,
+      syncAttemptState: 'completed',
       importedArtifactCount: 3,
       nextCheckpointId: undefined,
     },
@@ -484,7 +480,8 @@ export function taxFilingComputeDraft(
       deductionsSummary: draft.deductionsSummary,
       withholdingSummary: draft.withholdingSummary,
     },
-    blockingReason: readiness.readyForSubmission ? undefined : 'unresolved_high_risk_review',
+    checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
+    blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',
     progress: {
       phase: 'drafting',
       step: 'compute_from_ledger',
@@ -524,7 +521,8 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
       blockedFields: readiness.blockerReasons,
       browserAssistReady: readiness.readyForSubmission,
     },
-    blockingReason: readiness.readyForSubmission ? undefined : 'unresolved_high_risk_review',
+    checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
+    blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',
     nextRecommendedAction: readiness.readyForSubmission ? 'tax.browser.start_hometax_assist' : 'tax.classify.list_review_items',
     audit: {
       eventType: audit.eventType,
@@ -533,11 +531,7 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
   };
 }
 
-export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<{
-  assistSessionId: string;
-  checkpoint: string;
-  authRequired: boolean;
-}> {
+export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {
   const audit = createAuditEvent({
     workspaceId: input.workspaceId,
     eventType: 'browser_assist_started',
@@ -551,10 +545,11 @@ export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MC
     status: 'awaiting_auth',
     data: {
       assistSessionId: `assist_${input.workspaceId}_${input.draftId}`,
-      checkpoint: 'auth_checkpoint',
+      checkpointType: 'authentication',
       authRequired: true,
     },
     requiresAuth: true,
+    checkpointType: 'authentication',
     checkpointId: `checkpoint_hometax_auth_${input.workspaceId}_${input.draftId}`,
     pendingUserAction: 'Complete HomeTax authentication and then resume browser assist.',
     nextRecommendedAction: 'tax.sources.resume_sync',

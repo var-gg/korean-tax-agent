@@ -82,18 +82,25 @@ export type DraftStatus =
   | 'submitted'
   | 'superseded';
 
+export type CheckpointType =
+  | 'source_consent'
+  | 'authentication'
+  | 'collection_blocker'
+  | 'review_judgment'
+  | 'final_submission';
+
 export type BlockingReason =
   | 'missing_consent'
   | 'missing_auth'
-  | 'user_action_required'
   | 'ui_changed'
   | 'blocked_by_provider'
   | 'export_required'
   | 'insufficient_metadata'
-  | 'unresolved_high_risk_review'
+  | 'unsupported_source'
+  | 'awaiting_review_decision'
+  | 'awaiting_final_approval'
   | 'draft_not_ready'
-  | 'unsupported_hometax_state'
-  | 'unsupported_source';
+  | 'unsupported_hometax_state';
 
 export type AuditEventType =
   | 'source_planned'
@@ -135,6 +142,7 @@ export interface TaxpayerProfile {
 export interface FilingWorkspace {
   workspaceId: string;
   taxpayerId: string;
+  taxpayerProfileRef?: string;
   filingYear: number;
   status: WorkspaceStatus;
   createdAt: ISODateTimeString;
@@ -143,6 +151,7 @@ export interface FilingWorkspace {
   unresolvedReviewCount: number;
   openCoverageGapCount?: number;
   lastBlockingReason?: BlockingReason;
+  lastCollectionStatus?: SyncAttemptState;
   notes?: string[];
 }
 
@@ -323,6 +332,7 @@ export interface AuthCheckpoint {
   sourceId: string;
   provider: string;
   authMethod?: string;
+  checkpointType?: CheckpointType;
   state: AuthCheckpointState;
   startedAt?: ISODateTimeString;
   completedAt?: ISODateTimeString;
@@ -338,8 +348,10 @@ export interface SyncAttempt {
   state: SyncAttemptState;
   startedAt: ISODateTimeString;
   endedAt?: ISODateTimeString;
+  checkpointType?: CheckpointType;
   checkpointId?: string;
   blockingReason?: BlockingReason;
+  pendingUserAction?: string;
   attemptSummary?: string;
   fallbackOptions?: string[];
 }
@@ -349,9 +361,9 @@ export interface BrowserAssistSession {
   workspaceId: string;
   draftId: string;
   provider?: string;
-  checkpoint: string;
+  checkpointType: CheckpointType;
   lastKnownSection?: string;
-  authState?: AuthCheckpointState | string;
+  authState?: AuthCheckpointState;
   pendingUserAction?: string;
   startedAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
