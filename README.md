@@ -2,37 +2,45 @@
 
 **Languages:** [English](README.md) | [한국어](README.ko.md)
 
-Open-source, agent-native workflow for Korean comprehensive income tax filing.
+Open-source, agent-native workflow for **Korean comprehensive income tax preparation**.
+
+This repository explores how an AI agent can guide a taxpayer through setup, consent, data collection, review, draft generation, and HomeTax-adjacent filing assistance — while keeping the human in control at critical checkpoints.
+
+## Why this exists
+
+Korean tax filing is not just a calculation problem.
+It is a workflow problem.
+
+Users often need to:
+- gather documents from multiple sources,
+- resolve missing or ambiguous evidence,
+- review risky classifications,
+- and manually move through government-facing steps that do not feel API-native.
+
+This project treats tax filing as an **agent-guided workflow** rather than a single form or calculator.
 
 ## Positioning
 
-This project is for **comprehensive income tax filers who can use AGENT AI tooling**.
+This project is for **Korean comprehensive income tax filers who are willing to use agentic AI tooling**.
 It is not limited to freelance developers.
 
-The goal is to:
-- minimize manual work,
-- keep human approval at critical steps,
-- let an agent guide setup, data collection, review, and filing preparation,
-- stop before or at the final submission gate unless the user explicitly approves.
+The product scope is intentionally focused:
+- **product scope:** Korean comprehensive income tax workflow
+- **interaction model:** consent-gated, review-driven, agent-assisted
+- **submission posture:** assisted and explicit, not silent automation
 
-This is a **Korea-specific product workflow**, not a claim to be a universal global tax engine.
-The product scope is intentionally focused on Korean comprehensive income tax preparation and HomeTax-adjacent assistance.
-
-At the same time, some internal workflow patterns may be reusable beyond this product, such as:
+This is a **Korea-specific product workflow**, not a universal global tax engine.
+Some internal patterns may later be reusable beyond this product, such as:
 - consent checkpoints,
 - review queues,
 - resumable sync flows,
 - workspace state models,
 - audit trails for agent actions.
 
-In short:
-- product scope = Korean comprehensive income tax workflow
-- reusable patterns = selective workflow primitives, not a promise of universal tax coverage
-
 ## Core idea
 
 A user should be able to:
-1. check out this repo,
+1. clone the repo,
 2. run a bootstrap/setup flow,
 3. connect filing-relevant data sources with explicit consent,
 4. let the agent collect and normalize tax data,
@@ -40,8 +48,11 @@ A user should be able to:
 6. generate a filing draft,
 7. optionally use browser assistance for HomeTax preparation and input.
 
-The intended feeling is not "please upload everything first."
-The intended feeling is "I log in or approve when asked, and the agent keeps the workflow moving."
+The intended feeling is not:
+> "Please upload everything first."
+
+The intended feeling is:
+> "I log in or approve when asked, and the agent keeps the workflow moving."
 
 ## Current status
 
@@ -49,25 +60,8 @@ This repository is currently in **docs-first scaffold** stage.
 
 That means:
 - the public architecture is being designed in the open,
-- the workflow contracts are being documented before heavy implementation,
+- workflow contracts are being documented before heavy implementation,
 - the product direction is already concrete enough to guide prototyping.
-
-## Documentation language
-
-Technical source-of-truth docs are currently written in **English**.
-This is intentional.
-
-Why:
-- the repo is meant to be open source,
-- the contributor surface is part of the broader MCP / agent tooling ecosystem,
-- technical specs need tight alignment with code, types, and protocol terms.
-
-Korean companion docs may be added selectively for public onboarding and Korea-specific tax-domain clarity.
-If an English spec and a translated doc diverge, the **English version is canonical**.
-
-See also:
-- `docs/23-documentation-language-policy.md`
-- `README.ko.md`
 
 ## Start here
 
@@ -96,6 +90,23 @@ Then use `docs/README.md` as the full document index.
 - Checkpoint-driven automation instead of hidden automation
 - Public architecture, private user data
 - Docs-first implementation
+
+## Documentation language
+
+Technical source-of-truth docs are currently written in **English**.
+This is intentional.
+
+Why:
+- the repo is meant to be open source,
+- the contributor surface is part of the broader MCP / agent tooling ecosystem,
+- technical specs need tight alignment with code, types, and protocol terms.
+
+Korean companion docs may be added selectively for public onboarding and Korea-specific tax-domain clarity.
+If an English spec and a translated doc diverge, the **English version is canonical**.
+
+See also:
+- `docs/23-documentation-language-policy.md`
+- `README.ko.md`
 
 ## Important docs
 
@@ -149,3 +160,8 @@ Then use `docs/README.md` as the full document index.
 
 Public product and engineering TODOs live in docs and GitHub Issues.
 Private operational notes and real taxpayer data should stay outside the public repo.
+
+## License
+
+A license has **not been selected yet**.
+Until one is added, default copyright restrictions apply.
