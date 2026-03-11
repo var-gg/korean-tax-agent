@@ -12,6 +12,11 @@
 ## 목적
 이 프로젝트가 가장 먼저 최적화해야 할 **첫 end-to-end 시나리오**를 설명합니다.
 
+이 시나리오는 의도된 V1 지원 경계 안에 있어야 합니다.
+모든 신고 경로를 다 지원할 수 있음을 증명하려는 문서는 아닙니다.
+참고:
+- [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
+
 이 문서는 가장 넓은 범위의 워크플로우를 설명하려는 것이 아닙니다.
 오히려, 제품이 정말로 **agentic**하게 느껴지는지를 검증할 수 있는 가장 좁고 현실적인 경로를 정의합니다.
 
@@ -36,6 +41,10 @@
 - 애매한 항목은 review queue로 표면화됨
 - 첫 draft summary가 생성됨
 - workflow가 `HomeTax-assist-ready` 상태 또는 명확한 blocked 상태와 다음 단계 안내에 도달함
+
+지원 경계 가정:
+- 이 첫 시나리오는 Tier A 또는 Tier A에 가까운 경로를 대표해야 함
+- bookkeeping-heavy하거나 명확히 범위 밖인 케이스를 대표 시나리오로 삼지 않음
 
 ## 서사 흐름
 
@@ -150,25 +159,28 @@
 - 새 draft 계산 가능
 
 ### Step 10. 에이전트가 첫 draft를 계산함
-시스템은 assumption, warning, unresolved blocker를 포함한 draft summary를 만듭니다.
+시스템은 assumption, warning, unresolved blocker, 그리고 명시적인 readiness level을 포함한 draft summary를 만듭니다.
 
 에이전트는 다음을 설명합니다.
 - 무엇을 수집했는지
 - 무엇이 아직 불확실한지
-- HomeTax assist로 넘어갈 준비가 되었는지
+- 결과가 `estimate-ready`, `draft-ready`, `submission-assist-ready` 중 어디인지
+- 실제로 HomeTax assist로 넘어갈 준비가 되었는지
 
 기대 효과:
 - draft version 생성
+- readiness level 기록
 - workspace가 `draft_ready_for_review`로 이동하거나, 명확한 이유와 함께 blocked 상태 유지
 
 ### Step 11. 에이전트가 HomeTax assist를 준비하거나 솔직하게 멈춤
-draft가 충분히 준비되었다면 HomeTax assist preparation 단계로 갈 수 있습니다.
+draft가 `submission-assist-ready`이고, 케이스가 여전히 지원 경계 안에 있다면 HomeTax assist preparation 단계로 갈 수 있습니다.
 그렇지 않다면, 시스템은 다음 행동을 명시한 채 솔직하게 멈춰야 합니다.
 
 첫 시나리오에서 허용 가능한 결과:
 - HomeTax assist 준비 완료
 - 마지막 source 또는 review decision 하나 때문에 blocked
 - 한계가 명확히 보이는 partial draft 생성
+- `draft-ready`까지만 가능하고 submission assist는 아직 시작할 수 없다는 점을 명시적으로 설명
 
 ## 이 시나리오의 성공 기준
 사용자가 다음처럼 느끼면 성공입니다.

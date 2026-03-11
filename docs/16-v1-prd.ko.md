@@ -7,6 +7,7 @@
   - [00-overview.ko.md](./00-overview.ko.md)
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
   - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
+  - [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
 - 다음 읽기:
   - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
   - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
@@ -69,6 +70,8 @@ V1은 사용자가 다음처럼 느끼게 해야 합니다.
 - filing draft generation
 - 가시적인 HomeTax browser assistance
 - 명시적 consent + audit trail 모델
+- supported / limited / out-of-scope filing path를 구분해서 설명하는 support-boundary communication
+- `estimate-ready`, `draft-ready`, `submission-assist-ready`를 구분하는 readiness reporting
 
 ## 7. V1 범위 밖
 - 사용자 checkpoint 없이 조용히 끝까지 가는 완전 자율 신고
@@ -77,6 +80,7 @@ V1은 사용자가 다음처럼 느끼게 해야 합니다.
 - 세무사 수준의 전문 자문 대체
 - 모든 edge case에서 법적 정확성 보장 약속
 - 멀티테넌트 SaaS 운영 플랫폼
+- unsupported path 또는 manual-heavy path를 안전한 submission-ready처럼 보이게 만드는 것
 
 ## 8. UX 원칙
 1. **Review compression**
@@ -96,7 +100,8 @@ V1 workflow는 타깃 사용자가 다음을 할 수 있으면 성공입니다.
 - 대표적인 문서/거래 import
 - draft summary 생성
 - 감당 가능한 review queue 해소
-- HomeTax-assist-ready 상태 도달
+- 현재 케이스가 `estimate-ready`, `draft-ready`, `submission-assist-ready` 중 어디인지 이해
+- supported-path 조건이 실제로 충족되었을 때만 HomeTax-assist-ready 상태 도달
 - 무슨 일이 일어났는지에 대한 신뢰를 잃지 않고 제출 준비 완료
 
 ## 10. 성공 지표
@@ -128,5 +133,7 @@ V1 workflow는 타깃 사용자가 다음을 할 수 있으면 성공입니다.
 - import -> normalize -> classify -> review -> draft 흐름이 일관됨
 - consent checkpoint가 명시적임
 - HomeTax assist checkpoint가 모델링됨
+- supported filing path와 stop condition이 명확히 문서화됨
+- 시스템이 `estimate-ready`, `draft-ready`, `submission-assist-ready`를 구분함
 - 사용자 신뢰를 위해 output auditability가 충분함
 - 초기 오픈소스 사용자가 아키텍처를 이해할 만큼 문서가 충분함

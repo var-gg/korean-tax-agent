@@ -210,11 +210,14 @@ V1은 스스로를 다음처럼 보여야 합니다.
 - browser-capable
 - consent-aware
 - partial collection success에도 resilient함
+- supported path와 unsupported path를 구분할 줄 아는 시스템
+- estimate-ready / draft-ready / submission-assist-ready를 구분해서 말하는 시스템
 
 V1은 다음처럼 보이면 안 됩니다.
 - fully silent automation
 - 모든 기관에 대한 universal live integration
 - 모든 filing source를 API 기반으로 보장하는 시스템
+- source를 조금 모았다는 이유만으로 submission-ready처럼 말하는 시스템
 
 ## 추천 v1 source 전략
 
