@@ -35,11 +35,11 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
     priority: 'high' | 'medium' | 'low';
     rationale: string;
     collectionMode: 'direct_connector' | 'browser_assist' | 'export_ingestion' | 'fact_capture';
-    likelyCheckpoints: string[];
+    likelyCheckpoints: Array<'source_consent' | 'authentication' | 'collection_blocker' | 'review_judgment' | 'final_submission'>;
     fallbackOptions: string[];
   }>;
   expectedValueBySource: Record<string, string>;
-  likelyUserCheckpoints: string[];
+  likelyUserCheckpoints: Array<'source_consent' | 'authentication' | 'collection_blocker' | 'review_judgment' | 'final_submission'>;
   fallbackPathSuggestions: string[];
 }> {
   const audit = createAuditEvent({
@@ -59,7 +59,7 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
           priority: 'high',
           rationale: 'Highest-value authoritative filing source and best first checkpoint.',
           collectionMode: 'browser_assist',
-          likelyCheckpoints: ['source_access_consent', 'login', 'possible_download_confirmation'],
+          likelyCheckpoints: ['source_consent', 'authentication', 'collection_blocker'],
           fallbackOptions: ['Import HomeTax-exported files manually', 'Proceed with local evidence and draft a partial workspace'],
         },
         {
@@ -67,7 +67,7 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
           priority: 'medium',
           rationale: 'Useful for receipts, statements, and evidence gaps after HomeTax collection.',
           collectionMode: 'export_ingestion',
-          likelyCheckpoints: ['folder_access_approval'],
+          likelyCheckpoints: ['source_consent'],
           fallbackOptions: ['Upload a targeted set of files', 'Answer focused evidence questions'],
         },
       ],
@@ -75,7 +75,7 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
         hometax: 'High authority for filing materials and cross-checks',
         local_documents: 'High practical value for supporting evidence and missing exports',
       },
-      likelyUserCheckpoints: ['consent', 'authentication', 'download confirmation'],
+      likelyUserCheckpoints: ['source_consent', 'authentication', 'collection_blocker'],
       fallbackPathSuggestions: ['Use exported statements when live collection is blocked', 'Continue with partial collection and targeted follow-up'],
     },
     progress: {
