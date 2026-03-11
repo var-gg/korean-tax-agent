@@ -11,7 +11,7 @@ import {
   derivePendingUserAction,
   transitionSourceState,
 } from '../../core/src/state.js';
-import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection } from '../../core/src/types.js';
+import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection, TaxpayerFact, WithholdingRecord } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
   ComputeDraftInput,
@@ -451,11 +451,32 @@ export function taxFilingComputeDraft(
   expenseSummary: Record<string, unknown>;
   deductionsSummary: Record<string, unknown>;
   withholdingSummary: Record<string, unknown>;
+  estimateConfidence?: 'low' | 'medium' | 'high';
+  blockerCodes?: string[];
+  taxpayerFacts?: TaxpayerFact[];
+  withholdingRecords?: WithholdingRecord[];
+  fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
 }> {
   const readiness = evaluateDraftReadiness(reviewItems);
   const filingYear = input.workspaceId.match(/(20\d{2})/)?.[1];
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
   const scopedDecisions = decisions.filter((decision) => scopedTransactions.some((tx) => tx.transactionId === decision.entityId));
+  const taxpayerFacts: TaxpayerFact[] = [
+    {
+      factId: `fact_${input.workspaceId}_filing_posture`,
+      workspaceId: input.workspaceId,
+      category: 'filing_path',
+      factKey: 'filing_posture',
+      value: scopedTransactions.some((tx) => tx.normalizedDirection === 'income') ? 'income_present' : 'unknown',
+      status: scopedTransactions.length > 0 ? 'inferred' : 'missing',
+      sourceOfTruth: scopedTransactions.length > 0 ? 'inferred' : 'user_asserted',
+      confidence: scopedTransactions.length > 0 ? 0.6 : 0,
+      evidenceRefs: scopedTransactions.flatMap((tx) => tx.evidenceRefs),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
+  const withholdingRecords: WithholdingRecord[] = [];
+
   const draft = computeDraftFromLedger({
     workspaceId: input.workspaceId,
     filingYear: filingYear ? Number(filingYear) : new Date().getFullYear(),
@@ -463,6 +484,7 @@ export function taxFilingComputeDraft(
     transactions: scopedTransactions,
     decisions: scopedDecisions,
     reviewItems,
+    withholdingRecords,
     assumptions: input.includeAssumptions ? ['Initial draft assumptions placeholder'] : [],
   });
   const audit = createAuditEvent({
@@ -484,6 +506,11 @@ export function taxFilingComputeDraft(
       expenseSummary: draft.expenseSummary,
       deductionsSummary: draft.deductionsSummary,
       withholdingSummary: draft.withholdingSummary,
+      estimateConfidence: draft.estimateConfidence,
+      blockerCodes: draft.blockerCodes,
+      taxpayerFacts,
+      withholdingRecords,
+      fieldValues: draft.fieldValues,
     },
     checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
     blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',
@@ -507,6 +534,7 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
   requiredManualFields: string[];
   blockedFields: string[];
   browserAssistReady: boolean;
+  fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
 }> {
   const readiness = evaluateDraftReadiness(reviewItems);
   const audit = createAuditEvent({
@@ -524,10 +552,32 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
       sectionMapping: {
         income: 'mapped_placeholder',
         expenses: 'mapped_placeholder',
+        withholding: 'mapped_placeholder',
       },
-      requiredManualFields: [],
+      requiredManualFields: ['withholding.total_withheld_tax'],
       blockedFields: readiness.blockerReasons,
       browserAssistReady: readiness.readyForSubmission,
+      fieldValues: [
+        {
+          filingFieldValueId: `field_${input.draftId}_income_total`,
+          draftId: input.draftId,
+          sectionKey: 'income',
+          fieldKey: 'total_income',
+          value: null,
+          sourceOfTruth: 'imported',
+          comparisonState: 'not_compared',
+        },
+        {
+          filingFieldValueId: `field_${input.draftId}_withholding_total`,
+          draftId: input.draftId,
+          sectionKey: 'withholding',
+          fieldKey: 'total_withheld_tax',
+          value: null,
+          sourceOfTruth: 'official',
+          requiresManualEntry: true,
+          comparisonState: 'manual_only',
+        },
+      ],
     },
     checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
     blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',

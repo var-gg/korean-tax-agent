@@ -126,6 +126,12 @@ export type AuthCheckpointState = 'pending' | 'in_progress' | 'completed' | 'exp
 export type SyncMode = 'incremental' | 'full';
 export type SyncAttemptState = 'queued' | 'running' | 'paused' | 'awaiting_user_action' | 'blocked' | 'completed' | 'failed';
 export type CoverageGapState = 'open' | 'deferred' | 'resolved' | 'accepted_with_risk';
+export type FilingSupportTier = 'freelancer_basic' | 'sole_proprietor_basic' | 'mixed_income_basic' | 'manual_only';
+export type FilingFactCategory = 'taxpayer_profile' | 'income_stream' | 'deduction_eligibility' | 'business_use' | 'filing_path';
+export type FilingFactStatus = 'missing' | 'provided' | 'inferred' | 'review_required';
+export type SourceOfTruthType = 'official' | 'imported' | 'inferred' | 'user_asserted';
+export type EstimateConfidenceBand = 'low' | 'medium' | 'high';
+export type FilingFieldComparisonState = 'not_compared' | 'matched' | 'mismatch' | 'manual_only';
 
 export interface TaxpayerProfile {
   taxpayerId: string;
@@ -243,6 +249,55 @@ export interface CoverageGap {
   state: CoverageGapState;
 }
 
+export interface TaxpayerFact {
+  factId: string;
+  workspaceId: string;
+  category: FilingFactCategory;
+  factKey: string;
+  value: string | number | boolean | string[] | Record<string, unknown>;
+  status: FilingFactStatus;
+  sourceOfTruth: SourceOfTruthType;
+  confidence?: number;
+  evidenceRefs?: string[];
+  note?: string;
+  updatedAt: ISODateTimeString;
+}
+
+export interface WithholdingRecord {
+  withholdingRecordId: string;
+  workspaceId: string;
+  filingYear: number;
+  incomeSourceRef?: string;
+  payerName?: string;
+  grossAmount?: number;
+  withheldTaxAmount: number;
+  localTaxAmount?: number;
+  currency: string;
+  sourceType?: SourceType | string;
+  sourceOfTruth: SourceOfTruthType;
+  extractionConfidence?: number;
+  reviewStatus?: ReviewStatus | string;
+  evidenceRefs: string[];
+  capturedAt: ISODateTimeString;
+}
+
+export interface FilingFieldValue {
+  filingFieldValueId: string;
+  draftId: string;
+  sectionKey: string;
+  fieldKey: string;
+  value: string | number | boolean | null | Record<string, unknown>;
+  sourceOfTruth: SourceOfTruthType;
+  confidence?: number;
+  isEstimated?: boolean;
+  requiresManualEntry?: boolean;
+  sourceRefs?: string[];
+  evidenceRefs?: string[];
+  comparisonState?: FilingFieldComparisonState;
+  portalObservedValue?: string | number | boolean | null;
+  mismatchSeverity?: ReviewSeverity;
+}
+
 export interface ClassificationDecision {
   decisionId: string;
   entityType: EntityType;
@@ -285,8 +340,12 @@ export interface FilingDraft {
   expenseSummary: Record<string, unknown>;
   deductionsSummary: Record<string, unknown>;
   withholdingSummary: Record<string, unknown>;
+  estimateConfidence?: EstimateConfidenceBand;
+  submissionReadiness?: 'not_ready' | 'review_required' | 'ready_for_hometax_assist';
+  blockerCodes?: string[];
   assumptions: string[];
   warnings: string[];
+  fieldValues?: FilingFieldValue[];
   computedAt: ISODateTimeString;
   computationTraceRef?: string;
 }

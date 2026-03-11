@@ -2,9 +2,12 @@ import type {
   BlockingReason,
   CheckpointType,
   ClassificationDecision,
+  FilingFieldValue,
   ReviewItem,
   SourceState,
   SyncAttemptState,
+  TaxpayerFact,
+  WithholdingRecord,
 } from '../../core/src/types.js';
 
 export type MCPWarning = {
@@ -228,6 +231,11 @@ export type ComputeDraftData = {
   expenseSummary: Record<string, unknown>;
   deductionsSummary: Record<string, unknown>;
   withholdingSummary: Record<string, unknown>;
+  estimateConfidence?: 'low' | 'medium' | 'high';
+  blockerCodes?: string[];
+  taxpayerFacts?: TaxpayerFact[];
+  withholdingRecords?: WithholdingRecord[];
+  fieldValues?: FilingFieldValue[];
 };
 
 export type PrepareHomeTaxInput = {
@@ -240,6 +248,7 @@ export type PrepareHomeTaxData = {
   requiredManualFields: string[];
   blockedFields: string[];
   browserAssistReady: boolean;
+  fieldValues?: FilingFieldValue[];
 };
 
 export type StartHomeTaxAssistInput = {

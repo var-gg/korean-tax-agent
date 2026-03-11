@@ -1,4 +1,4 @@
-import type { ClassificationDecision, FilingDraft, LedgerTransaction, ReviewItem, ReviewSeverity } from './types.js';
+import type { ClassificationDecision, FilingDraft, FilingFieldValue, LedgerTransaction, ReviewItem, ReviewSeverity, WithholdingRecord } from './types.js';
 
 export type DraftReadiness = {
   readyForReview: boolean;
@@ -27,6 +27,7 @@ export type ComputeDraftFromLedgerInput = {
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
   reviewItems: ReviewItem[];
+  withholdingRecords?: WithholdingRecord[];
   assumptions?: string[];
 };
 
@@ -145,6 +146,8 @@ export function aggregateDraftSummary(transactions: LedgerTransaction[], decisio
 export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): FilingDraft {
   const readiness = evaluateDraftReadiness(input.reviewItems);
   const aggregate = aggregateDraftSummary(input.transactions, input.decisions);
+  const totalWithheld = (input.withholdingRecords ?? []).reduce((sum, record) => sum + record.withheldTaxAmount, 0);
+  const totalLocalTax = (input.withholdingRecords ?? []).reduce((sum, record) => sum + (record.localTaxAmount ?? 0), 0);
 
   const warnings = [...readiness.blockerReasons];
   if (aggregate.lowConfidenceDecisionCount > 0) {
@@ -157,7 +160,7 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
     warnings.push(`excluded_expense_total:${aggregate.excludedExpenseTotal}`);
   }
 
-  return buildDraft({
+  const draft = buildDraft({
     workspaceId: input.workspaceId,
     filingYear: input.filingYear,
     draftVersion: input.draftVersion,
@@ -177,11 +180,64 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
       estimatedBusinessExpenseDeduction: aggregate.deductibleExpenseTotal,
     },
     withholdingSummary: {
-      totalWithheld: 0,
+      totalWithheld,
+      totalLocalTax,
+      recordCount: (input.withholdingRecords ?? []).length,
     },
     assumptions: input.assumptions ?? [],
     warnings: [...new Set(warnings)],
   });
+
+  const fieldValues: FilingFieldValue[] = [
+    {
+      filingFieldValueId: `field_${draft.draftId}_income_total`,
+      draftId: draft.draftId,
+      sectionKey: 'income',
+      fieldKey: 'total_income',
+      value: aggregate.totalIncome,
+      sourceOfTruth: 'imported',
+      confidence: aggregate.lowConfidenceDecisionCount > 0 ? 0.7 : 0.9,
+      isEstimated: false,
+      requiresManualEntry: false,
+      sourceRefs: input.transactions.map((tx) => tx.transactionId),
+      evidenceRefs: input.transactions.flatMap((tx) => tx.evidenceRefs),
+      comparisonState: 'not_compared',
+    },
+    {
+      filingFieldValueId: `field_${draft.draftId}_expense_deductible_total`,
+      draftId: draft.draftId,
+      sectionKey: 'expenses',
+      fieldKey: 'deductible_expense_total',
+      value: aggregate.deductibleExpenseTotal,
+      sourceOfTruth: 'imported',
+      confidence: aggregate.candidateExpenseTotal > 0 ? 0.65 : 0.85,
+      isEstimated: aggregate.candidateExpenseTotal > 0,
+      requiresManualEntry: false,
+      sourceRefs: input.transactions.map((tx) => tx.transactionId),
+      evidenceRefs: input.transactions.flatMap((tx) => tx.evidenceRefs),
+      comparisonState: 'not_compared',
+    },
+    {
+      filingFieldValueId: `field_${draft.draftId}_withholding_total`,
+      draftId: draft.draftId,
+      sectionKey: 'withholding',
+      fieldKey: 'total_withheld_tax',
+      value: totalWithheld,
+      sourceOfTruth: (input.withholdingRecords ?? []).length > 0 ? 'official' : 'inferred',
+      confidence: (input.withholdingRecords ?? []).length > 0 ? 0.9 : 0.3,
+      isEstimated: (input.withholdingRecords ?? []).length === 0,
+      requiresManualEntry: (input.withholdingRecords ?? []).length === 0,
+      sourceRefs: (input.withholdingRecords ?? []).map((record) => record.withholdingRecordId),
+      evidenceRefs: (input.withholdingRecords ?? []).flatMap((record) => record.evidenceRefs),
+      comparisonState: 'not_compared',
+    },
+  ];
+
+  draft.fieldValues = fieldValues;
+  draft.estimateConfidence = readiness.readyForSubmission && (input.withholdingRecords ?? []).length > 0 ? 'high' : aggregate.lowConfidenceDecisionCount > 0 ? 'low' : 'medium';
+  draft.submissionReadiness = readiness.readyForSubmission ? 'ready_for_hometax_assist' : 'review_required';
+  draft.blockerCodes = [...new Set(readiness.blockerReasons)];
+  return draft;
 }
 
 export function buildDraft(input: DraftComputationInput): FilingDraft {
