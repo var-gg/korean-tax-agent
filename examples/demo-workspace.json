@@ -1,9 +1,24 @@
 {
   "workspaceId": "demo_workspace_2025",
   "filingYear": 2025,
+  "workspace": {
+    "workspaceId": "demo_workspace_2025",
+    "taxpayerId": "taxpayer_demo",
+    "filingYear": 2025,
+    "status": "initialized",
+    "createdAt": "2026-03-10T08:00:00Z",
+    "updatedAt": "2026-03-10T08:00:00Z",
+    "unresolvedReviewCount": 0,
+    "openCoverageGapCount": 1,
+    "notes": [
+      "Demo workspace for agentic collection flow"
+    ]
+  },
   "consentRecords": [
     {
       "consentId": "consent_hometax_1",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_hometax_demo_workspace_2025",
       "consentType": "source_access",
       "scope": {
         "sourceType": "hometax",
@@ -15,11 +30,79 @@
       "grantedAt": "2026-03-10T08:00:00Z"
     }
   ],
+  "sources": [
+    {
+      "sourceId": "source_hometax_demo_workspace_2025",
+      "workspaceId": "demo_workspace_2025",
+      "sourceType": "hometax",
+      "sourceLabel": "HomeTax main source",
+      "collectionMode": "browser_assist",
+      "state": "awaiting_auth",
+      "scopeGranted": ["read_documents", "prepare_import"],
+      "lastBlockingReason": "missing_auth",
+      "connectionStatus": "awaiting_auth",
+      "createdAt": "2026-03-10T08:01:00Z",
+      "updatedAt": "2026-03-10T08:05:00Z"
+    },
+    {
+      "sourceId": "source_bank_csv_demo_workspace_2025",
+      "workspaceId": "demo_workspace_2025",
+      "sourceType": "bank_csv",
+      "sourceLabel": "Manual bank CSV import",
+      "collectionMode": "export_ingestion",
+      "state": "completed",
+      "scopeGranted": ["read_transactions"],
+      "lastSyncAt": "2026-03-10T08:10:00Z",
+      "lastSuccessfulSyncAt": "2026-03-10T08:10:00Z",
+      "connectionStatus": "completed",
+      "createdAt": "2026-03-10T08:02:00Z",
+      "updatedAt": "2026-03-10T08:10:00Z"
+    }
+  ],
+  "syncAttempts": [
+    {
+      "syncAttemptId": "sync_source_hometax_demo_workspace_2025_full_seed",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_hometax_demo_workspace_2025",
+      "mode": "full",
+      "state": "awaiting_user_action",
+      "startedAt": "2026-03-10T08:05:00Z",
+      "checkpointId": "checkpoint_auth_hometax_demo_workspace_2025",
+      "fallbackOptions": [
+        "Resume after login/export confirmation",
+        "Switch to export-ingestion flow"
+      ]
+    }
+  ],
+  "coverageGaps": [
+    {
+      "gapId": "gap_demo_workspace_2025_missing_supporting_evidence_seed",
+      "workspaceId": "demo_workspace_2025",
+      "gapType": "missing_supporting_evidence",
+      "severity": "medium",
+      "description": "Potential supporting evidence still missing",
+      "affectedArea": "expense_evidence",
+      "recommendedNextAction": "Import local receipts or statements after HomeTax collection",
+      "relatedSourceIds": ["source_hometax_demo_workspace_2025"],
+      "state": "open"
+    }
+  ],
+  "auditEvents": [
+    {
+      "eventId": "evt_source_connected_seed",
+      "workspaceId": "demo_workspace_2025",
+      "eventType": "source_connected",
+      "actorType": "agent",
+      "entityRefs": ["source_hometax_demo_workspace_2025"],
+      "summary": "Seeded demo source connection state.",
+      "createdAt": "2026-03-10T08:05:00Z"
+    }
+  ],
   "transactions": [
     {
       "transactionId": "tx_1",
       "workspaceId": "demo_workspace_2025",
-      "sourceId": "source_bank_csv",
+      "sourceId": "source_bank_csv_demo_workspace_2025",
       "artifactId": "artifact_csv_1",
       "occurredAt": "2025-05-03T10:00:00Z",
       "amount": 120000,
@@ -35,7 +118,7 @@
     {
       "transactionId": "tx_2",
       "workspaceId": "demo_workspace_2025",
-      "sourceId": "source_bank_csv",
+      "sourceId": "source_bank_csv_demo_workspace_2025",
       "artifactId": "artifact_csv_1",
       "occurredAt": "2025-07-18T10:00:00Z",
       "amount": 1800000,
@@ -51,7 +134,7 @@
     {
       "transactionId": "tx_3",
       "workspaceId": "demo_workspace_2025",
-      "sourceId": "source_bank_csv",
+      "sourceId": "source_bank_csv_demo_workspace_2025",
       "artifactId": "artifact_csv_1",
       "occurredAt": "2025-08-01T10:00:00Z",
       "amount": 450000,

@@ -4,15 +4,22 @@ import { evaluateConsent } from '../packages/core/src/consent.js';
 import {
   completeSyncAttempt,
   createAuditEvent,
-  createCoverageGap,
-  createSourceConnection,
   deriveWorkspaceStatus,
-  startSyncAttempt,
   summarizeCoverageGaps,
   transitionSourceState,
   updateWorkspaceProgress,
 } from '../packages/core/src/state.js';
-import type { ClassificationDecision, ConsentRecord, FilingWorkspace, LedgerTransaction, ReviewItem } from '../packages/core/src/types.js';
+import type {
+  AuditEvent,
+  ClassificationDecision,
+  ConsentRecord,
+  CoverageGap,
+  FilingWorkspace,
+  LedgerTransaction,
+  ReviewItem,
+  SourceConnection,
+  SyncAttempt,
+} from '../packages/core/src/types.js';
 import {
   taxBrowserStartHomeTaxAssist,
   taxClassifyResolveReviewItem,
@@ -29,7 +36,12 @@ import {
 const demo = rawDemo as {
   workspaceId: string;
   filingYear: number;
+  workspace: FilingWorkspace;
   consentRecords: ConsentRecord[];
+  sources: SourceConnection[];
+  syncAttempts: SyncAttempt[];
+  coverageGaps: CoverageGap[];
+  auditEvents: AuditEvent[];
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
 };
@@ -39,22 +51,19 @@ const planResult = taxSourcesPlanCollection({
   filingYear: demo.filingYear,
 });
 
-const initialWorkspace: FilingWorkspace = {
-  workspaceId: demo.workspaceId,
-  taxpayerId: 'taxpayer_demo',
-  filingYear: demo.filingYear,
-  status: 'initialized',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  unresolvedReviewCount: 0,
-};
-
-const plannedSource = createSourceConnection({
-  workspaceId: demo.workspaceId,
-  sourceType: 'hometax',
-  collectionMode: 'browser_assist',
-  requestedScope: ['read_documents', 'prepare_import'],
-});
+const initialWorkspace = demo.workspace;
+const seededHomeTaxSource = demo.sources.find((source) => source.sourceType === 'hometax');
+if (!seededHomeTaxSource) {
+  throw new Error('Demo fixture missing hometax source');
+}
+const seededSyncAttempt = demo.syncAttempts.find((attempt) => attempt.sourceId === seededHomeTaxSource.sourceId);
+if (!seededSyncAttempt) {
+  throw new Error('Demo fixture missing hometax sync attempt');
+}
+const evidenceGap = demo.coverageGaps[0];
+if (!evidenceGap) {
+  throw new Error('Demo fixture missing coverage gap');
+}
 
 const connectResult = taxSourcesConnect(
   {
@@ -67,7 +76,7 @@ const connectResult = taxSourcesConnect(
 
 const awaitingAuthSource = transitionSourceState(
   {
-    ...plannedSource,
+    ...seededHomeTaxSource,
     sourceId: connectResult.data.sourceId,
   },
   connectResult.data.authRequired ? 'awaiting_auth' : 'ready',
@@ -75,27 +84,10 @@ const awaitingAuthSource = transitionSourceState(
   connectResult.data.authRequired ? 'missing_auth' : undefined,
 );
 
-const syncAttempt = startSyncAttempt({
-  workspaceId: demo.workspaceId,
-  sourceId: connectResult.data.sourceId,
-  mode: 'full',
-  checkpointId: connectResult.checkpointId,
-});
-
-const evidenceGap = createCoverageGap({
-  workspaceId: demo.workspaceId,
-  gapType: 'missing_supporting_evidence',
-  severity: 'medium',
-  description: 'Potential supporting evidence still missing',
-  affectedArea: 'expense_evidence',
-  recommendedNextAction: 'Import local receipts or statements after HomeTax collection',
-  relatedSourceIds: [connectResult.data.sourceId],
-});
-
 const collectionStatusBeforeResume = taxSourcesGetCollectionStatus(
   { workspaceId: demo.workspaceId },
-  [awaitingAuthSource],
-  [evidenceGap.description],
+  demo.sources.map((source) => (source.sourceId === awaitingAuthSource.sourceId ? awaitingAuthSource : source)),
+  demo.coverageGaps.map((gap) => gap.description),
 );
 
 const syncResult = taxSourcesSync({
@@ -103,10 +95,11 @@ const syncResult = taxSourcesSync({
   syncMode: 'full',
 });
 
-const blockedSyncAttempt = {
-  ...syncAttempt,
-  state: 'blocked' as const,
-  blockingReason: 'user_action_required' as const,
+const blockedSyncAttempt: SyncAttempt = {
+  ...seededSyncAttempt,
+  checkpointId: syncResult.checkpointId ?? seededSyncAttempt.checkpointId,
+  state: 'blocked',
+  blockingReason: 'user_action_required',
   fallbackOptions: syncResult.fallbackOptions,
   endedAt: new Date().toISOString(),
 };
@@ -128,9 +121,9 @@ const completedSyncAttempt = completeSyncAttempt({
 const completedSource = transitionSourceState(awaitingAuthSource, 'completed');
 
 const workspaceAfterCollection = updateWorkspaceProgress(initialWorkspace, {
-  sources: [completedSource],
+  sources: demo.sources.map((source) => (source.sourceId === completedSource.sourceId ? completedSource : source)),
   syncAttempts: [completedSyncAttempt],
-  coverageGaps: [evidenceGap],
+  coverageGaps: demo.coverageGaps,
   unresolvedReviewCount: 0,
 });
 
@@ -203,9 +196,9 @@ const assistResult = taxBrowserStartHomeTaxAssist({
 });
 
 const workspaceAfterReview = updateWorkspaceProgress(workspaceAfterCollection, {
-  sources: [completedSource],
+  sources: demo.sources.map((source) => (source.sourceId === completedSource.sourceId ? completedSource : source)),
   syncAttempts: [completedSyncAttempt],
-  coverageGaps: [evidenceGap],
+  coverageGaps: demo.coverageGaps,
   unresolvedReviewCount: resolvedItems.filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed').length,
   readyForHomeTaxAssist: resolvedPrepareResult.data.browserAssistReady,
 });
@@ -228,19 +221,30 @@ const explicitConsentCheck = evaluateConsent(demo.consentRecords, {
 console.log(
   JSON.stringify(
     {
+      fixtureSummary: {
+        workspaceStatus: demo.workspace.status,
+        sourceCount: demo.sources.length,
+        syncAttemptCount: demo.syncAttempts.length,
+        coverageGapCount: demo.coverageGaps.length,
+        auditEventCount: demo.auditEvents.length,
+      },
       planResult,
-      stateHelpers: {
-        plannedSource,
+      fixtureState: {
+        initialWorkspace,
+        seededHomeTaxSource,
+        seededSyncAttempt,
+        seededCoverageGap: evidenceGap,
+        seededAuditEvents: demo.auditEvents,
+      },
+      derivedState: {
         awaitingAuthSource,
-        syncAttempt,
         blockedSyncAttempt,
         completedSyncAttempt,
-        evidenceGap,
-        coverageGapSummary: summarizeCoverageGaps([evidenceGap]),
+        coverageGapSummary: summarizeCoverageGaps(demo.coverageGaps),
         derivedWorkspaceStatusAfterCollection: deriveWorkspaceStatus({
-          sources: [completedSource],
+          sources: demo.sources.map((source) => (source.sourceId === completedSource.sourceId ? completedSource : source)),
           syncAttempts: [completedSyncAttempt],
-          coverageGaps: [evidenceGap],
+          coverageGaps: demo.coverageGaps,
         }),
         workspaceAfterCollection,
         workspaceAfterReview,
