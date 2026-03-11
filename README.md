@@ -163,5 +163,5 @@ Private operational notes and real taxpayer data should stay outside the public 
 
 ## License
 
-A license has **not been selected yet**.
-Until one is added, default copyright restrictions apply.
+This project is licensed under the **Apache License 2.0**.
+See [`LICENSE`](LICENSE).
