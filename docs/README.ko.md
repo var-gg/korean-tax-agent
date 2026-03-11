@@ -11,7 +11,7 @@
 ## 읽기 원칙
 - 영어 문서가 기준(spec)입니다.
 - 한국어 문서는 companion입니다.
-- 한국어 문서가 없는 경우, 이 인덱스에서 연결된 영문 문서를 읽으면 됩니다.
+- 한국어 문서가 있으면 한국어 문서를 우선 읽고, 없을 때만 영문 원문으로 이동합니다.
 - 문서 간 이동은 가능하면 **상대경로 링크** 기준으로 정리합니다.
 
 ## 한국어 추천 읽기 순서
@@ -32,7 +32,7 @@
 - [02-user-journey.md](./02-user-journey.md) — 사용자 여정 (영문)
 - [03-scope-and-non-goals.md](./03-scope-and-non-goals.md) — 범위와 비목표 (영문)
 - [16-v1-prd.ko.md](./16-v1-prd.ko.md) — V1 PRD (한국어)
-- [16-v1-prd.md](./16-v1-prd.md) — V1 PRD 원문
+- [16-v1-prd.md](./16-v1-prd.md) — V1 PRD (영문)
 
 ### 2) 리스크 / 신뢰 / 리뷰
 - [04-risk-and-compliance.md](./04-risk-and-compliance.md) — 리스크와 컴플라이언스
@@ -44,29 +44,29 @@
 - [05-architecture.md](./05-architecture.md) — 상위 아키텍처
 - [06-data-model.md](./06-data-model.md) — 데이터 모델
 - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md) — MCP tool spec (한국어)
-- [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) — MCP tool spec 원문
+- [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) — MCP tool spec (영문)
 - [10-skill-design.md](./10-skill-design.md) — skill 설계
 - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md) — workspace 상태 모델 (한국어)
-- [20-workspace-state-model.md](./20-workspace-state-model.md) — workspace 상태 모델 원문
+- [20-workspace-state-model.md](./20-workspace-state-model.md) — workspace 상태 모델 (영문)
 - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md) — core type 갭 분석 (한국어)
-- [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md) — core type 갭 분석 원문
+- [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md) — core type 갭 분석 (영문)
 - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md) — workflow state machine (한국어)
-- [24-workflow-state-machine.md](./24-workflow-state-machine.md) — workflow state machine 원문
+- [24-workflow-state-machine.md](./24-workflow-state-machine.md) — workflow state machine (영문)
 
 ### 4) 수집 / 홈택스 / 실행 흐름
 - [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md) — HomeTax 제출 보조 흐름 (한국어)
-- [08-hometax-submission-flow.md](./08-hometax-submission-flow.md) — HomeTax 제출 보조 흐름 원문
+- [08-hometax-submission-flow.md](./08-hometax-submission-flow.md) — HomeTax 제출 보조 흐름 (영문)
 - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md) — 데이터 수집 전략 (한국어)
 - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md) — 소스별 실현 가능성 매트릭스 (한국어)
-- [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md) — 소스별 실현 가능성 매트릭스 원문
+- [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md) — 소스별 실현 가능성 매트릭스 (영문)
 - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md) — 인증/동의 흐름 (한국어)
 - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md) — 첫 agentic 시나리오 (한국어)
 
 ### 5) 도메인 리서치 / 최근 추가 문서
 - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md) — 실제 종소세 입력 데이터 관점 정리 (한국어)
 - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md) — 코드/모델 갭 분석 (한국어)
-- [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md) — 원문
-- [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) — 원문
+- [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md) — 영문 원문
+- [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) — 영문 원문
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) — 구현 로드맵

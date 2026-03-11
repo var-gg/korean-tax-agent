@@ -8,8 +8,8 @@
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
   - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
 - 다음 읽기:
-  - [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md)
-  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
 
 ## 1. 제품
 Korean Tax Agent는 한국 종합소득세 신고 준비를 위한 오픈소스, agent-native workflow입니다.

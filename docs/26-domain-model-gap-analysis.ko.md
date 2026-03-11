@@ -5,11 +5,11 @@
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
-  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
-  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
+  - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
 - 다음 읽기:
-  - [20-workspace-state-model.md](./20-workspace-state-model.md)
-  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
 
 ## 목적
 `25-korean-comprehensive-income-tax-data-research.ko.md`에서 정리한 도메인 입력 요구사항을 기준으로,

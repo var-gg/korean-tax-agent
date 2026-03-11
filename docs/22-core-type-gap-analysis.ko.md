@@ -5,10 +5,10 @@
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
-  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
   - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
 - 다음 읽기:
-  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
   - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
 
 ## 목적

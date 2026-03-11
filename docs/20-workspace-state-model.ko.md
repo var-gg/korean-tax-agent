@@ -6,10 +6,10 @@
 - 관련 문서:
   - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
-  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
 - 다음 읽기:
-  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
-  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
+  - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
 
 ## 목적
 agentic, checkpoint-driven 세금 신고 workflow에 필요한 **최소 persistent state**를 정의합니다.

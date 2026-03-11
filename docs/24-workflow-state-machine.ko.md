@@ -10,7 +10,7 @@
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 - 다음 읽기:
   - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
-  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
 
 ## 목적
 collection, checkpoint, review, draft generation, HomeTax assistance 사이에서 workflow가 어떻게 이동하는지 압축된 참조 모델로 제공합니다.

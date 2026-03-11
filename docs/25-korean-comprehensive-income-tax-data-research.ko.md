@@ -9,8 +9,8 @@
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
   - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
 - 다음 읽기:
-  - [20-workspace-state-model.md](./20-workspace-state-model.md)
-  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
 
 ## 목적
 실제 종합소득세 신고 도메인을 블랙박스처럼 두지 않고,

@@ -8,8 +8,8 @@
   - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 - 다음 읽기:
-  - [20-workspace-state-model.md](./20-workspace-state-model.md)
-  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
 
 ## 목적
 구현이 특정 connector에 과하게 묶이기 전에,

@@ -8,7 +8,7 @@
   - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
   - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
 - 다음 읽기:
-  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 
 ## 목적
