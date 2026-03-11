@@ -1,5 +1,7 @@
 # Korean Tax Agent
 
+**언어:** [English](README.md) | [한국어](README.ko.md)
+
 한국의 **종합소득세 신고 준비**를 위한 오픈소스, 에이전트 네이티브 워크플로우입니다.
 
 > 참고:

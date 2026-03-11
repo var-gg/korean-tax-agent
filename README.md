@@ -1,5 +1,7 @@
 # Korean Tax Agent
 
+**Languages:** [English](README.md) | [한국어](README.ko.md)
+
 Open-source, agent-native workflow for Korean comprehensive income tax filing.
 
 ## Positioning

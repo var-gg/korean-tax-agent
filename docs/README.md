@@ -1,5 +1,7 @@
 # Docs Index
 
+**Languages:** technical specs are canonical in English; Korean companion docs are added selectively.
+
 This directory contains the public product and engineering design documents for Korean Tax Agent.
 
 ## Language note
@@ -111,6 +113,11 @@ Read:
 - `14-open-source-strategy.md` — open-source packaging and trust posture
 - `15-backlog.md` — ongoing work list
 - `23-documentation-language-policy.md` — canonical English + selective Korean companion policy
+
+## Korean companion docs
+Currently available:
+- `../README.ko.md` — Korean repository introduction
+- `00-overview.ko.md` — Korean companion for the product overview
 
 ## Reading philosophy
 If you only read one technical document, read `20-workspace-state-model.md`.
