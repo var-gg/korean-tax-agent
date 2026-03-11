@@ -119,6 +119,7 @@ Currently available:
 - `../README.ko.md` — Korean repository introduction
 - `00-overview.ko.md` — Korean companion for the product overview
 - `17-data-collection-strategy.ko.md` — Korean companion for the data collection strategy
+- `19-agentic-auth-and-consent-flow.ko.md` — Korean companion for the auth and consent flow
 - `21-first-agentic-scenario.ko.md` — Korean companion for the first agentic scenario
 
 ## Reading philosophy
