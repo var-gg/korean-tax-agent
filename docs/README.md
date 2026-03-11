@@ -2,6 +2,14 @@
 
 This directory contains the public product and engineering design documents for Korean Tax Agent.
 
+## Language note
+Technical source-of-truth docs are authored in **English**.
+Korean companion docs may be added selectively for public onboarding and tax-domain explanation.
+If there is ever a mismatch, the English document is the canonical version.
+
+See also:
+- `23-documentation-language-policy.md`
+
 The docs are meant to be readable in layers:
 - first understand the product,
 - then understand the agentic collection model,
@@ -101,6 +109,7 @@ Read:
 - `13-implementation-roadmap.md` — phased implementation path
 - `14-open-source-strategy.md` — open-source packaging and trust posture
 - `15-backlog.md` — ongoing work list
+- `23-documentation-language-policy.md` — canonical English + selective Korean companion policy
 
 ## Reading philosophy
 If you only read one technical document, read `20-workspace-state-model.md`.

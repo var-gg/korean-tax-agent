@@ -36,6 +36,22 @@ That means:
 - the workflow contracts are being documented before heavy implementation,
 - the product direction is already concrete enough to guide prototyping.
 
+## Documentation language
+
+Technical source-of-truth docs are currently written in **English**.
+This is intentional.
+
+Why:
+- the repo is meant to be open source,
+- the contributor surface is part of the broader MCP / agent tooling ecosystem,
+- technical specs need tight alignment with code, types, and protocol terms.
+
+Korean companion docs may be added selectively for public onboarding and Korea-specific tax-domain clarity.
+If an English spec and a translated doc diverge, the **English version is canonical**.
+
+See also:
+- `docs/23-documentation-language-policy.md`
+
 ## Start here
 
 If you are new to the repo, read these first:

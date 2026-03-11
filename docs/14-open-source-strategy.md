@@ -27,3 +27,21 @@ See also:
 
 ## Collaboration posture
 Use docs for durable product intent and GitHub Issues for granular task tracking.
+
+## Documentation language posture
+This project should keep **English as the canonical language for technical documentation** so that:
+- open-source contributors can onboard more easily,
+- MCP and agent-tooling terminology stays aligned with code,
+- protocol and state-model language remains stable as implementation evolves.
+
+At the same time, Korean companion docs are valuable for:
+- local onboarding,
+- explaining Korea-specific tax workflow context,
+- communicating the product to Korean users and collaborators.
+
+Recommended rule:
+- English = canonical technical spec
+- Korean = selective companion docs for high-value public entry points
+
+See also:
+- `docs/23-documentation-language-policy.md`
