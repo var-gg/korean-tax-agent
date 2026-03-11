@@ -150,13 +150,18 @@ When a collection path fails, the agent should not collapse into generic failure
 It should classify the failure and propose the best next move.
 
 Preferred failure classes:
-- missing_consent
-- missing_auth
-- ui_changed
-- blocked_by_provider
-- export_required
-- insufficient_metadata
-- unsupported_source
+- `missing_consent`
+- `missing_auth`
+- `ui_changed`
+- `blocked_by_provider`
+- `export_required`
+- `insufficient_metadata`
+- `unsupported_source`
+
+These failure classes should map cleanly into workspace state via:
+- `blockingReason`
+- `pendingUserAction`
+- `checkpointType` when the workflow is waiting on the user
 
 For each failure, the system should record:
 - what it tried

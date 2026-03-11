@@ -38,6 +38,7 @@ The agent:
 Expected effect:
 - workspace moves to `initialized` then `collecting_sources`
 - initial taxpayer facts are recorded
+- no source-specific checkpoint is active yet
 
 ### Step 2. Agent plans the first collection path
 The agent identifies the next best sources.
@@ -59,6 +60,7 @@ Example:
 Expected effect:
 - consent record written
 - source becomes ready for auth
+- active checkpoint becomes `source_consent`, then clears once approved
 
 ### Step 4. User completes authentication
 The system opens the HomeTax path.
@@ -69,6 +71,7 @@ It simply explains what the user needs to do and what will happen next.
 
 Expected effect:
 - auth checkpoint recorded
+- active checkpoint becomes `authentication`, then clears on completion
 - source moves to `ready` or sync starts immediately
 
 ### Step 5. Agent performs collection
@@ -84,6 +87,7 @@ Possible outcomes:
 Expected effect:
 - sync attempt records progress and outcome
 - artifacts are created
+- if interrupted, the sync attempt records `checkpointType`, `blockingReason`, and `pendingUserAction`
 - blocked paths become structured fallback suggestions rather than vague failure
 
 ### Step 6. Agent normalizes and assesses coverage

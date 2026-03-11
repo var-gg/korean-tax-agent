@@ -82,6 +82,11 @@ Suggested source states:
 - `completed`
 - `disabled`
 
+Interpretation note:
+- source state answers: what is the durable status of this source relationship?
+- sync attempt state answers: what is happening in the current or latest collection run?
+- do not overload source state to represent every short-lived runtime event.
+
 Why it matters:
 - the agent needs a durable picture of what sources exist, what was attempted, and what remains useful
 
@@ -142,8 +147,10 @@ Minimum fields:
 - `state`
 - `startedAt`
 - `endedAt`
+- `checkpointType`
 - `checkpointId`
 - `blockingReason`
+- `pendingUserAction`
 - `attemptSummary`
 - `fallbackOptions[]`
 
@@ -155,6 +162,13 @@ Suggested sync states:
 - `blocked`
 - `completed`
 - `failed`
+
+Suggested checkpoint types for active interruptions:
+- `source_consent`
+- `authentication`
+- `collection_blocker`
+- `review_judgment`
+- `final_submission`
 
 Why it matters:
 - this is the operational backbone for pause/resume behavior and honest recovery handling
@@ -280,7 +294,7 @@ Minimum fields:
 - `workspaceId`
 - `draftId`
 - `provider`
-- `checkpoint`
+- `checkpointType`
 - `authState`
 - `pendingUserAction`
 - `lastKnownSection`
