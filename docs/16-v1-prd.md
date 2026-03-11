@@ -1,14 +1,14 @@
 # V1 PRD
 
 ## 1. Product
-Korean Tax Agent is an open-source, agent-native workflow for Korean comprehensive income tax filing.
+Korean Tax Agent is an open-source, agent-native workflow for Korean comprehensive income tax preparation.
 
 V1 focuses on helping an AI-capable user:
 - collect relevant tax materials,
 - normalize and classify them,
 - review ambiguous items efficiently,
 - generate a filing-ready draft,
-- optionally complete HomeTax entry with visible browser assistance.
+- optionally complete HomeTax-adjacent entry work with visible browser assistance.
 
 ## 2. Target user
 Primary target user:

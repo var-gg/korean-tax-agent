@@ -2,7 +2,7 @@
 
 ## Product definition
 
-Korean Tax Agent is an open-source, agent-native workflow for people subject to Korean comprehensive income tax filing who can operate AGENT AI tooling.
+Korean Tax Agent is an open-source, agent-native workflow for people subject to Korean comprehensive income tax preparation who can operate AGENT AI tooling.
 
 The project combines:
 - setup guidance,
