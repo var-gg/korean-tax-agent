@@ -50,6 +50,8 @@ export type MCPResponseEnvelope<TData = Record<string, unknown>> = {
   progress?: MCPProgress;
   nextRecommendedAction?: string;
   audit?: MCPAudit;
+  errorCode?: string;
+  errorMessage?: string;
 };
 
 export type InspectEnvironmentInput = {
