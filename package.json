@@ -1,6 +1,6 @@
 {
   "name": "korean-tax-agent",
-  "private": true,
+  "private": false,
   "version": "0.1.0",
   "description": "Open-source, agent-native workflow for Korean comprehensive income tax filing.",
   "workspaces": [

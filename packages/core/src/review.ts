@@ -32,6 +32,7 @@ export type ResolveReviewItemsInput = {
   rationale: string;
   approverIdentity: string;
   now?: string;
+  existingDecisions?: ClassificationDecision[];
 };
 
 export type ResolveReviewItemsResult = {
@@ -90,6 +91,75 @@ function buildReviewItem(params: {
     resolvedBy: undefined,
     resolutionNote: `Generated at ${now}`,
   };
+}
+
+function mapResolutionToDecision(item: ReviewItem, selectedOption: string) {
+  switch (item.reasonCode) {
+    case 'missing_evidence':
+      if (selectedOption === 'exclude_from_expense') {
+        return {
+          candidateCategory: 'disallowed_expense',
+          candidateTaxTreatment: 'exclude_from_expense',
+        };
+      }
+      if (selectedOption === 'keep_with_note') {
+        return {
+          candidateCategory: 'document_pending_expense',
+          candidateTaxTreatment: 'business_expense_candidate',
+        };
+      }
+      return {
+        candidateCategory: 'document_pending_expense',
+        candidateTaxTreatment: 'business_expense_candidate',
+      };
+    case 'high_amount_outlier':
+      if (selectedOption === 'mark_mixed_use') {
+        return {
+          candidateCategory: 'mixed_use_expense',
+          candidateTaxTreatment: 'business_expense_candidate',
+        };
+      }
+      if (selectedOption === 'exclude_from_expense') {
+        return {
+          candidateCategory: 'disallowed_expense',
+          candidateTaxTreatment: 'exclude_from_expense',
+        };
+      }
+      return {
+        candidateCategory: 'confirmed_business_expense',
+        candidateTaxTreatment: 'business_expense',
+      };
+    case 'duplicate_conflict':
+      if (selectedOption === 'drop_duplicate_candidate') {
+        return {
+          candidateCategory: 'duplicate_removed',
+          candidateTaxTreatment: 'exclude_from_expense',
+        };
+      }
+      return {
+        candidateCategory: 'duplicate_reviewed',
+        candidateTaxTreatment: 'business_expense',
+      };
+    case 'low_confidence':
+      if (selectedOption === 'reclassify') {
+        return {
+          candidateCategory: 'reclassified_manual',
+          candidateTaxTreatment: 'manual_review_required',
+        };
+      }
+      if (selectedOption === 'mark_unknown') {
+        return {
+          candidateCategory: 'unknown',
+          candidateTaxTreatment: 'manual_review_required',
+        };
+      }
+      return null;
+    default:
+      return {
+        candidateCategory: item.reasonCode,
+        candidateTaxTreatment: selectedOption,
+      };
+  }
 }
 
 export function buildReviewQueue(input: BuildReviewQueueInput): BuildReviewQueueResult {
@@ -185,6 +255,7 @@ export function buildReviewQueue(input: BuildReviewQueueInput): BuildReviewQueue
 export function resolveReviewItems(input: ResolveReviewItemsInput): ResolveReviewItemsResult {
   const now = input.now ?? new Date().toISOString();
   const targetIds = new Set(input.reviewItemIds);
+  const existingDecisionMap = new Map((input.existingDecisions ?? []).map((decision) => [decision.entityId, decision]));
   const resolvedItems: ReviewItem[] = [];
   const generatedDecisions: ClassificationDecision[] = [];
 
@@ -204,16 +275,23 @@ export function resolveReviewItems(input: ResolveReviewItemsInput): ResolveRevie
     resolvedItems.push(updatedItem);
 
     for (const entityId of item.linkedEntityIds) {
+      const mapped = mapResolutionToDecision(item, input.selectedOption);
+      if (!mapped) {
+        continue;
+      }
+
+      const supersededDecision = existingDecisionMap.get(entityId);
       generatedDecisions.push({
         decisionId: `decision_override_${item.reviewItemId}`,
         entityType: 'transaction',
         entityId,
-        candidateCategory: item.reasonCode,
-        candidateTaxTreatment: input.selectedOption,
+        candidateCategory: mapped.candidateCategory,
+        candidateTaxTreatment: mapped.candidateTaxTreatment,
         confidence: 1,
-        explanation: input.rationale,
+        explanation: `${item.reasonCode}:${input.rationale}`,
         decidedBy: 'user',
         decisionMode: 'approved_override',
+        supersedesDecisionId: supersededDecision?.decisionId,
         createdAt: now,
       });
     }

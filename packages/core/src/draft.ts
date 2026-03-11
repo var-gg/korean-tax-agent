@@ -38,6 +38,7 @@ export type DraftAggregateSummary = {
   expenseByCategory: Record<string, number>;
   deductibleExpenseTotal: number;
   candidateExpenseTotal: number;
+  excludedExpenseTotal: number;
   lowConfidenceDecisionCount: number;
 };
 
@@ -61,13 +62,40 @@ export function evaluateDraftReadiness(reviewItems: ReviewItem[]): DraftReadines
   };
 }
 
+export function getEffectiveDecisions(decisions: ClassificationDecision[]): ClassificationDecision[] {
+  const supersededIds = new Set(decisions.flatMap((decision) => (decision.supersedesDecisionId ? [decision.supersedesDecisionId] : [])));
+  const effectiveMap = new Map<string, ClassificationDecision>();
+
+  for (const decision of decisions) {
+    if (supersededIds.has(decision.decisionId)) {
+      continue;
+    }
+
+    const current = effectiveMap.get(decision.entityId);
+    if (!current) {
+      effectiveMap.set(decision.entityId, decision);
+      continue;
+    }
+
+    const currentRank = current.decisionMode === 'approved_override' ? 2 : current.decisionMode === 'manual' ? 1 : 0;
+    const nextRank = decision.decisionMode === 'approved_override' ? 2 : decision.decisionMode === 'manual' ? 1 : 0;
+    if (nextRank > currentRank || decision.createdAt >= current.createdAt) {
+      effectiveMap.set(decision.entityId, decision);
+    }
+  }
+
+  return [...effectiveMap.values()];
+}
+
 export function aggregateDraftSummary(transactions: LedgerTransaction[], decisions: ClassificationDecision[]): DraftAggregateSummary {
-  const decisionMap = new Map(decisions.map((decision) => [decision.entityId, decision]));
+  const effectiveDecisions = getEffectiveDecisions(decisions);
+  const decisionMap = new Map(effectiveDecisions.map((decision) => [decision.entityId, decision]));
 
   let totalIncome = 0;
   let totalExpense = 0;
   let deductibleExpenseTotal = 0;
   let candidateExpenseTotal = 0;
+  let excludedExpenseTotal = 0;
   let lowConfidenceDecisionCount = 0;
   const incomeByCategory: Record<string, number> = {};
   const expenseByCategory: Record<string, number> = {};
@@ -95,6 +123,8 @@ export function aggregateDraftSummary(transactions: LedgerTransaction[], decisio
         deductibleExpenseTotal += transaction.amount;
       } else if (treatment.includes('candidate')) {
         candidateExpenseTotal += transaction.amount;
+      } else if (treatment === 'exclude_from_expense') {
+        excludedExpenseTotal += transaction.amount;
       }
     }
   }
@@ -107,6 +137,7 @@ export function aggregateDraftSummary(transactions: LedgerTransaction[], decisio
     expenseByCategory,
     deductibleExpenseTotal,
     candidateExpenseTotal,
+    excludedExpenseTotal,
     lowConfidenceDecisionCount,
   };
 }
@@ -122,6 +153,9 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
   if (aggregate.candidateExpenseTotal > 0) {
     warnings.push(`candidate_expense_total:${aggregate.candidateExpenseTotal}`);
   }
+  if (aggregate.excludedExpenseTotal > 0) {
+    warnings.push(`excluded_expense_total:${aggregate.excludedExpenseTotal}`);
+  }
 
   return buildDraft({
     workspaceId: input.workspaceId,
@@ -129,12 +163,14 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
     draftVersion: input.draftVersion,
     incomeSummary: {
       totalIncome: aggregate.totalIncome,
+      netIncome: aggregate.netIncome,
       incomeByCategory: aggregate.incomeByCategory,
     },
     expenseSummary: {
       totalExpense: aggregate.totalExpense,
       deductibleExpenseTotal: aggregate.deductibleExpenseTotal,
       candidateExpenseTotal: aggregate.candidateExpenseTotal,
+      excludedExpenseTotal: aggregate.excludedExpenseTotal,
       expenseByCategory: aggregate.expenseByCategory,
     },
     deductionsSummary: {
