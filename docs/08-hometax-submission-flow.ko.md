@@ -1,15 +1,15 @@
 # HomeTax 제출 보조 흐름
 
 - 상태: companion
-- 기준 원문: ./08-hometax-submission-flow.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [08-hometax-submission-flow.md](./08-hometax-submission-flow.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./19-agentic-auth-and-consent-flow.ko.md
-  - ./20-workspace-state-model.ko.md
-  - ./24-workflow-state-machine.ko.md
+  - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
 - 다음 읽기:
-  - ./09-mcp-tool-spec.md
-  - ./21-first-agentic-scenario.ko.md
+  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 
 ## 목적
 사용자에게 **보이는 통제권**을 유지하면서 HomeTax 제출 보조를 지원하는 것입니다.

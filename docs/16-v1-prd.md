@@ -2,15 +2,15 @@
 
 - Status: active
 - Canonical: English
-- Korean companion: ./16-v1-prd.ko.md
-- Parent: ./README.md
+- Korean companion: [16-v1-prd.ko.md](./16-v1-prd.ko.md)
+- Parent: [README.md](./README.md)
 - Related:
-  - ./00-overview.md
-  - ./21-first-agentic-scenario.md
-  - ./25-korean-comprehensive-income-tax-data-research.md
+  - [00-overview.md](./00-overview.md)
+  - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
+  - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
 - Next recommended reading:
-  - ./18-source-feasibility-matrix.md
-  - ./20-workspace-state-model.md
+  - [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md)
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
 
 
 ## 1. Product

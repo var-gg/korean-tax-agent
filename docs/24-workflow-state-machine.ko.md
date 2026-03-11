@@ -1,16 +1,16 @@
 # Workflow 상태 머신
 
 - 상태: companion
-- 기준 원문: ./24-workflow-state-machine.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./18-source-feasibility-matrix.ko.md
-  - ./19-agentic-auth-and-consent-flow.ko.md
-  - ./20-workspace-state-model.ko.md
-  - ./21-first-agentic-scenario.ko.md
+  - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
+  - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 - 다음 읽기:
-  - ./22-core-type-gap-analysis.ko.md
-  - ./09-mcp-tool-spec.md
+  - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
+  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
 
 ## 목적
 collection, checkpoint, review, draft generation, HomeTax assistance 사이에서 workflow가 어떻게 이동하는지 압축된 참조 모델로 제공합니다.

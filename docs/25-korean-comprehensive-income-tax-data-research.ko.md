@@ -1,16 +1,16 @@
 # 한국 종합소득세 입력 데이터 리서치
 
 - 상태: companion
-- 기준 원문: ./25-korean-comprehensive-income-tax-data-research.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./17-data-collection-strategy.ko.md
-  - ./19-agentic-auth-and-consent-flow.ko.md
-  - ./21-first-agentic-scenario.ko.md
-  - ./26-domain-model-gap-analysis.ko.md
+  - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+  - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+  - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
+  - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
 - 다음 읽기:
-  - ./20-workspace-state-model.md
-  - ./22-core-type-gap-analysis.md
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
 
 ## 목적
 실제 종합소득세 신고 도메인을 블랙박스처럼 두지 않고,

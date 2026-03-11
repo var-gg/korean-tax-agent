@@ -1,15 +1,15 @@
 # MCP Tool Spec
 
 - 상태: companion
-- 기준 원문: ./09-mcp-tool-spec.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./20-workspace-state-model.ko.md
-  - ./24-workflow-state-machine.ko.md
-  - ./08-hometax-submission-flow.ko.md
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
+  - [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md)
 - 다음 읽기:
-  - ./22-core-type-gap-analysis.ko.md
-  - ./26-domain-model-gap-analysis.ko.md
+  - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
+  - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
 
 ## 목적
 MCP surface는 agent가 쓰기 좋은 compact workflow API를 제공해야 합니다.

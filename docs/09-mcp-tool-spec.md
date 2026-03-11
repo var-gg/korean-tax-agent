@@ -2,15 +2,15 @@
 
 - Status: active
 - Canonical: English
-- Korean companion: ./09-mcp-tool-spec.ko.md
-- Parent: ./README.md
+- Korean companion: [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
+- Parent: [README.md](./README.md)
 - Related:
-  - ./20-workspace-state-model.md
-  - ./24-workflow-state-machine.md
-  - ./08-hometax-submission-flow.md
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [08-hometax-submission-flow.md](./08-hometax-submission-flow.md)
 - Next recommended reading:
-  - ./22-core-type-gap-analysis.md
-  - ./26-domain-model-gap-analysis.md
+  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
+  - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md)
 
 
 ## Purpose

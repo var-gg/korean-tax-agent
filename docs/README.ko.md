@@ -2,8 +2,8 @@
 
 - 상태: active
 - 기준 언어: English canonical + Korean companion
-- 영문 인덱스: ./README.md
-- 문서 정책: ./23-documentation-language-policy.md
+- 영문 인덱스: [README.md](./README.md)
+- 문서 정책: [23-documentation-language-policy.md](./23-documentation-language-policy.md)
 
 이 문서는 **한국어 기준으로 repo를 읽고 이해하기 위한 진입점**입니다.
 기술적 source of truth는 영어 문서이지만, 한국어 독자가 GitHub에서 길을 잃지 않도록 읽기 순서와 문서 계층을 정리합니다.

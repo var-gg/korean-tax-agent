@@ -1,15 +1,15 @@
 # V1 PRD
 
 - 상태: companion
-- 기준 원문: ./16-v1-prd.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [16-v1-prd.md](./16-v1-prd.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./00-overview.ko.md
-  - ./21-first-agentic-scenario.ko.md
-  - ./25-korean-comprehensive-income-tax-data-research.ko.md
+  - [00-overview.ko.md](./00-overview.ko.md)
+  - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
+  - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
 - 다음 읽기:
-  - ./18-source-feasibility-matrix.md
-  - ./20-workspace-state-model.md
+  - [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md)
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
 
 ## 1. 제품
 Korean Tax Agent는 한국 종합소득세 신고 준비를 위한 오픈소스, agent-native workflow입니다.

@@ -1,15 +1,15 @@
 # Core type 갭 분석
 
 - 상태: companion
-- 기준 원문: ./22-core-type-gap-analysis.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./20-workspace-state-model.ko.md
-  - ./24-workflow-state-machine.md
-  - ./26-domain-model-gap-analysis.ko.md
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
 - 다음 읽기:
-  - ./09-mcp-tool-spec.md
-  - ./25-korean-comprehensive-income-tax-data-research.ko.md
+  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
 
 ## 목적
 현재 `packages/core/src/types.ts` 모델을 문서에서 의도한 제품/워크플로우 상태와 비교합니다.

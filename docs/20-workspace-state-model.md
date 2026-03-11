@@ -2,15 +2,15 @@
 
 - Status: active
 - Canonical: English
-- Korean companion: ./20-workspace-state-model.ko.md
-- Parent: ./README.md
+- Korean companion: [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+- Parent: [README.md](./README.md)
 - Related:
-  - ./19-agentic-auth-and-consent-flow.md
-  - ./21-first-agentic-scenario.md
-  - ./24-workflow-state-machine.md
+  - [19-agentic-auth-and-consent-flow.md](./19-agentic-auth-and-consent-flow.md)
+  - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
+  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
 - Next recommended reading:
-  - ./22-core-type-gap-analysis.md
-  - ./09-mcp-tool-spec.md
+  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
+  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
 
 
 ## Objective

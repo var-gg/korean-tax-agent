@@ -2,15 +2,15 @@
 
 - Status: active
 - Canonical: English
-- Korean companion: ./22-core-type-gap-analysis.ko.md
-- Parent: ./README.md
+- Korean companion: [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
+- Parent: [README.md](./README.md)
 - Related:
-  - ./20-workspace-state-model.md
-  - ./24-workflow-state-machine.md
-  - ./26-domain-model-gap-analysis.md
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+  - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md)
 - Next recommended reading:
-  - ./09-mcp-tool-spec.md
-  - ./25-korean-comprehensive-income-tax-data-research.md
+  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+  - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
 
 
 ## Objective

@@ -1,15 +1,15 @@
 # 소스 실현 가능성 매트릭스
 
 - 상태: companion
-- 기준 원문: ./18-source-feasibility-matrix.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./17-data-collection-strategy.ko.md
-  - ./19-agentic-auth-and-consent-flow.ko.md
-  - ./21-first-agentic-scenario.ko.md
+  - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+  - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+  - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 - 다음 읽기:
-  - ./20-workspace-state-model.md
-  - ./24-workflow-state-machine.md
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
 
 ## 목적
 구현이 특정 connector에 과하게 묶이기 전에,

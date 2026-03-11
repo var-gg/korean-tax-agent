@@ -1,15 +1,15 @@
 # 실제 신고 입력 관점의 도메인 모델 갭 분석
 
 - 상태: companion
-- 기준 원문: ./26-domain-model-gap-analysis.md
-- 상위 문서: ./README.ko.md
+- 기준 원문: [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md)
+- 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
-  - ./25-korean-comprehensive-income-tax-data-research.ko.md
-  - ./22-core-type-gap-analysis.md
-  - ./24-workflow-state-machine.md
+  - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
+  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
+  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
 - 다음 읽기:
-  - ./20-workspace-state-model.md
-  - ./09-mcp-tool-spec.md
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
 
 ## 목적
 `25-korean-comprehensive-income-tax-data-research.ko.md`에서 정리한 도메인 입력 요구사항을 기준으로,
