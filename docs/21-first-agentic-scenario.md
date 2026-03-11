@@ -3,6 +3,10 @@
 ## Objective
 Describe the first end-to-end scenario the project should optimize for.
 
+This scenario should stay inside the intended V1 support boundary.
+It is not meant to prove that every filing path is supportable.
+See also: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md).
+
 This is not the broadest possible workflow.
 It is the narrowest realistic path that proves the product feels genuinely agentic:
 - the user talks to the agent,
@@ -24,6 +28,10 @@ Target outcome:
 - ambiguous items are surfaced through a review queue
 - a first draft summary is produced
 - the workflow reaches a HomeTax-assist-ready state or a clearly blocked state with explicit next steps
+
+Support-boundary assumption:
+- this first scenario should represent a Tier A or near-Tier-A path,
+- not a bookkeeping-heavy or otherwise clearly out-of-scope case.
 
 ## Narrative flow
 
@@ -140,25 +148,28 @@ Expected effect:
 - a new draft can be computed
 
 ### Step 10. Agent computes the first draft
-The system produces a draft summary with assumptions, warnings, and unresolved blockers.
+The system produces a draft summary with assumptions, warnings, unresolved blockers, and an explicit readiness level.
 
 The agent explains:
 - what was collected
 - what remains uncertain
-- whether the draft is ready for HomeTax assistance
+- whether the result is estimate-ready, draft-ready, or submission-assist-ready
+- whether the draft is actually ready for HomeTax assistance
 
 Expected effect:
 - draft version created
+- readiness level recorded
 - workspace moves to `draft_ready_for_review` or remains blocked with clear reasons
 
 ### Step 11. Agent prepares HomeTax assist or stops honestly
-If the draft is ready enough, the workflow can move to HomeTax assist preparation.
+If the draft is submission-assist-ready and the case is still inside the supported V1 path boundary, the workflow can move to HomeTax assist preparation.
 If not, the system should stop with explicit next actions.
 
 Acceptable outcomes for the first scenario:
 - ready for HomeTax assist
 - blocked on one last source or review decision
 - partial draft produced with visible limitations
+- downgraded to draft-ready only, with explicit explanation of why submission assist cannot yet start
 
 ## Success standard for this scenario
 The first scenario succeeds if the user feels:

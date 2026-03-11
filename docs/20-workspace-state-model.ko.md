@@ -7,6 +7,7 @@
   - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
   - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
+  - [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
 - 다음 읽기:
   - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
   - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
@@ -46,6 +47,17 @@ workspace는 한 납세자의 한 신고 연도 맥락을 의미합니다.
 - `submission_in_progress`
 - `submitted`
 - `archived`
+
+권장 readiness 필드:
+- `estimateReadiness`
+- `draftReadiness`
+- `submissionReadiness`
+- `majorUnknowns[]`
+- `supportTier`
+
+왜 둘 다 필요한가:
+- broad workflow status는 지금 프로세스 어디에 있는지를 보여주고
+- readiness 필드는 estimate / draft / submission 지원 수준을 얼마나 정직하게 말할 수 있는지 보여줍니다.
 
 ## 핵심 state 영역
 ### 1. Taxpayer profile state
@@ -179,6 +191,8 @@ workspace는 한 납세자의 한 신고 연도 맥락을 의미합니다.
 - 중요한 deduction에 필요한 증빙 부족
 - withholding evidence 부재
 - 세무 판단에 필요한 taxpayer fact 부족
+- filing-path determination 미완료
+- 필요한 section의 HomeTax comparison state 부재
 
 ### 9. Review queue state
 목적:

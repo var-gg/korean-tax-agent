@@ -7,6 +7,7 @@
   - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
   - [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
   - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
+  - [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
 - 다음 읽기:
   - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
   - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
@@ -181,14 +182,24 @@ HomeTax assist가 신뢰되려면 draft가 단순 summary를 넘어서,
 우선순위:
 - 중상
 
+## 제품 경계 관점의 의미
+이 도메인 갭은 단순 구현 세부사항이 아닙니다.
+이 갭이 남아 있으면 어떤 케이스를 Tier A / Tier B / Tier C로 볼지,
+그리고 estimate readiness / draft readiness / submission-assist readiness를 정직하게 주장할 수 있을지가 달라집니다.
+
+참고:
+- [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
+
 ## 계약(MCP) 레벨에서 이어질 수 있는 것
 향후 필요한 tool 예:
 - `tax.profile.capture_facts`
+- `tax.profile.detect_filing_path`
 - `tax.withholding.import_records`
 - `tax.withholding.list_records`
 - `tax.filing.list_blockers`
 - `tax.filing.get_field_mapping`
 - `tax.filing.compare_with_hometax`
+- `tax.filing.refresh_official_data`
 - `tax.deductions.capture_facts`
 
 ## 단기 추천 구현 순서

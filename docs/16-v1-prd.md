@@ -8,6 +8,7 @@
   - [00-overview.md](./00-overview.md)
   - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
   - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
 - Next recommended reading:
   - [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md)
   - [20-workspace-state-model.md](./20-workspace-state-model.md)
@@ -71,6 +72,8 @@ V1 should let the user say:
 - filing draft generation
 - visible HomeTax browser assistance
 - explicit consent and audit trail model
+- explicit support-boundary communication for supported vs limited vs out-of-scope filing paths
+- readiness reporting that distinguishes estimate-ready, draft-ready, and submission-assist-ready states
 
 ## 7. Out of scope for V1
 - silent end-to-end autonomous filing with no user checkpoints
@@ -79,6 +82,7 @@ V1 should let the user say:
 - replacing licensed professional tax advice
 - direct promises of legal/compliance correctness across all edge cases
 - multi-tenant SaaS operations platform
+- pretending unsupported or manual-heavy filing paths are safely submission-ready
 
 ## 8. UX principles
 1. **Review compression**
@@ -98,7 +102,8 @@ A V1 workflow is successful if a target user can:
 - import representative documents/transactions,
 - generate a draft summary,
 - resolve a manageable review queue,
-- reach a HomeTax-assist-ready state,
+- understand whether the case is estimate-ready, draft-ready, or submission-assist-ready,
+- reach a HomeTax-assist-ready state only when the supported-path conditions are actually met,
 - complete assisted submission preparation without losing confidence in what happened.
 
 ## 10. Success metrics
@@ -130,5 +135,7 @@ Do not call V1 complete until:
 - import -> normalize -> classify -> review -> draft flow is coherent,
 - consent checkpoints are explicit,
 - HomeTax-assist checkpoints are modeled,
+- supported filing paths and stop conditions are documented clearly,
+- the system distinguishes estimate-ready, draft-ready, and submission-assist-ready states,
 - system outputs are auditable enough for user trust,
 - documentation is sufficient for an early open-source adopter to understand the architecture.
