@@ -1,6 +1,7 @@
 import type {
   AuditEvent,
   BlockingReason,
+  CheckpointType,
   CoverageGap,
   CoverageGapState,
   FilingWorkspace,
@@ -32,7 +33,9 @@ export type StartSyncAttemptInput = {
 export type BlockSyncAttemptInput = {
   attempt: SyncAttempt;
   blockingReason: BlockingReason;
+  checkpointType?: CheckpointType;
   checkpointId?: string;
+  pendingUserAction?: string;
   fallbackOptions?: string[];
   now?: string;
 };
@@ -80,6 +83,57 @@ export function transitionSourceState(source: SourceConnection, nextState: Sourc
   };
 }
 
+export function deriveCheckpointTypeFromSourceState(sourceState?: SourceState | string): CheckpointType | undefined {
+  if (sourceState === 'awaiting_consent') return 'source_consent';
+  if (sourceState === 'awaiting_auth') return 'authentication';
+  if (sourceState === 'blocked' || sourceState === 'paused' || sourceState === 'syncing') return 'collection_blocker';
+  return undefined;
+}
+
+export function derivePendingUserAction(params: {
+  blockingReason?: BlockingReason;
+  checkpointType?: CheckpointType;
+  sourceType?: string;
+}): string | undefined {
+  const { blockingReason, checkpointType, sourceType } = params;
+  const providerLabel = sourceType ? `${sourceType} ` : '';
+
+  switch (blockingReason) {
+    case 'missing_consent':
+      return `Approve ${providerLabel}access for the requested scope.`;
+    case 'missing_auth':
+      return `Complete ${providerLabel}authentication to continue.`;
+    case 'export_required':
+      return 'Complete the provider export or confirmation step, then resume.';
+    case 'awaiting_review_decision':
+      return 'Resolve the outstanding review questions before continuing.';
+    case 'awaiting_final_approval':
+      return 'Review the final summary and explicitly approve submission.';
+    case 'ui_changed':
+      return 'Confirm the current provider screen or switch to a fallback path.';
+    case 'blocked_by_provider':
+      return 'Retry later or choose a fallback collection path.';
+    case 'insufficient_metadata':
+      return 'Provide the missing metadata or supporting evidence.';
+    case 'unsupported_source':
+      return 'Choose a supported import path or provide files manually.';
+    case 'draft_not_ready':
+      return 'Finish draft prerequisites before proceeding.';
+    case 'unsupported_hometax_state':
+      return 'Return to a supported HomeTax screen and resume.';
+    default:
+      break;
+  }
+
+  if (checkpointType === 'source_consent') return `Approve ${providerLabel}access for the requested scope.`;
+  if (checkpointType === 'authentication') return `Complete ${providerLabel}authentication to continue.`;
+  if (checkpointType === 'collection_blocker') return 'Complete the blocking provider step and then resume.';
+  if (checkpointType === 'review_judgment') return 'Resolve the outstanding review questions before continuing.';
+  if (checkpointType === 'final_submission') return 'Review the final summary and explicitly approve submission.';
+
+  return undefined;
+}
+
 export function startSyncAttempt(input: StartSyncAttemptInput): SyncAttempt {
   const now = input.now ?? new Date().toISOString();
   return {
@@ -95,11 +149,17 @@ export function startSyncAttempt(input: StartSyncAttemptInput): SyncAttempt {
 
 export function blockSyncAttempt(input: BlockSyncAttemptInput): SyncAttempt {
   const now = input.now ?? new Date().toISOString();
+  const checkpointType = input.checkpointType ?? deriveCheckpointTypeFromSourceState(input.attempt.state);
   return {
     ...input.attempt,
     state: 'blocked',
+    checkpointType,
     blockingReason: input.blockingReason,
     checkpointId: input.checkpointId ?? input.attempt.checkpointId,
+    pendingUserAction: input.pendingUserAction ?? input.attempt.pendingUserAction ?? derivePendingUserAction({
+      blockingReason: input.blockingReason,
+      checkpointType,
+    }),
     fallbackOptions: input.fallbackOptions ?? input.attempt.fallbackOptions,
     endedAt: now,
   };

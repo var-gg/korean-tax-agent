@@ -7,6 +7,8 @@ import {
   completeSyncAttempt,
   createAuditEvent,
   createSourceConnection,
+  deriveCheckpointTypeFromSourceState,
+  derivePendingUserAction,
   transitionSourceState,
 } from '../../core/src/state.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection } from '../../core/src/types.js';
@@ -104,10 +106,8 @@ export function taxSourcesGetCollectionStatus(
 
   const pendingCheckpoints = sources
     .flatMap((source) => {
-      const state = source.state ?? source.connectionStatus;
-      if (state === 'awaiting_auth') return ['authentication' as const];
-      if (state === 'awaiting_consent') return ['source_consent' as const];
-      return [];
+      const checkpointType = deriveCheckpointTypeFromSourceState(source.state ?? source.connectionStatus);
+      return checkpointType === 'source_consent' || checkpointType === 'authentication' ? [checkpointType] : [];
     });
 
   const blockedAttempts = sources
@@ -177,6 +177,7 @@ export function taxSourcesConnect(
 
   const authRequired = input.sourceType === 'hometax';
   const nextSource = transitionSourceState(baseSource, authRequired ? 'awaiting_auth' : 'ready');
+  const sourceCheckpointType = deriveCheckpointTypeFromSourceState(nextSource.state);
   const audit = createAuditEvent({
     workspaceId: input.workspaceId,
     eventType: 'source_connected',
@@ -193,15 +194,17 @@ export function taxSourcesConnect(
       sourceState: authRequired ? 'awaiting_auth' : 'ready',
       consentRequired: false,
       authRequired,
-      checkpointType: authRequired ? 'authentication' : undefined,
+      checkpointType: sourceCheckpointType,
       nextStep: authRequired ? 'Proceed to authentication checkpoint' : 'Ready to sync',
       checkpointId: authRequired ? `checkpoint_auth_${input.sourceType}_${input.workspaceId}` : undefined,
       fallbackOptions: authRequired ? ['Import exported files instead', 'Collect local evidence first and return later'] : [],
     },
     requiresAuth: authRequired,
-    checkpointType: authRequired ? 'authentication' : undefined,
+    checkpointType: sourceCheckpointType,
     checkpointId: authRequired ? `checkpoint_auth_${input.sourceType}_${input.workspaceId}` : undefined,
-    pendingUserAction: authRequired ? 'Complete provider authentication to continue collection' : undefined,
+    pendingUserAction: authRequired
+      ? derivePendingUserAction({ checkpointType: sourceCheckpointType, sourceType: input.sourceType })
+      : undefined,
     fallbackOptions: authRequired ? ['Import exported files instead', 'Collect local evidence first and return later'] : [],
     progress: {
       phase: 'source_connection',
@@ -230,7 +233,9 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<Sync
   const blockedAttempt = blockSyncAttempt({
     attempt: initialAttempt,
     blockingReason: 'export_required',
+    checkpointType: 'collection_blocker',
     checkpointId: authCheckpointId,
+    pendingUserAction: derivePendingUserAction({ blockingReason: 'export_required', checkpointType: 'collection_blocker' }),
     fallbackOptions: ['Resume after login/export confirmation', 'Switch to export-ingestion flow'],
   });
   const audit = createAuditEvent({
@@ -261,10 +266,10 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<Sync
       checkpointId: blockedAttempt.checkpointId,
       fallbackOptions: blockedAttempt.fallbackOptions,
     },
-    checkpointType: 'collection_blocker',
+    checkpointType: blockedAttempt.checkpointType,
     blockingReason: blockedAttempt.blockingReason,
     checkpointId: blockedAttempt.checkpointId,
-    pendingUserAction: 'Complete the provider step required for sync and then resume.',
+    pendingUserAction: blockedAttempt.pendingUserAction,
     resumeToken: `resume_${input.sourceId}_${input.syncMode}`,
     fallbackOptions: blockedAttempt.fallbackOptions,
     progress: {
@@ -482,6 +487,9 @@ export function taxFilingComputeDraft(
     },
     checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
     blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',
+    pendingUserAction: readiness.readyForSubmission
+      ? undefined
+      : derivePendingUserAction({ blockingReason: 'awaiting_review_decision', checkpointType: 'review_judgment' }),
     progress: {
       phase: 'drafting',
       step: 'compute_from_ledger',
@@ -523,6 +531,9 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
     },
     checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
     blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',
+    pendingUserAction: readiness.readyForSubmission
+      ? undefined
+      : derivePendingUserAction({ blockingReason: 'awaiting_review_decision', checkpointType: 'review_judgment' }),
     nextRecommendedAction: readiness.readyForSubmission ? 'tax.browser.start_hometax_assist' : 'tax.classify.list_review_items',
     audit: {
       eventType: audit.eventType,
@@ -551,7 +562,7 @@ export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MC
     requiresAuth: true,
     checkpointType: 'authentication',
     checkpointId: `checkpoint_hometax_auth_${input.workspaceId}_${input.draftId}`,
-    pendingUserAction: 'Complete HomeTax authentication and then resume browser assist.',
+    pendingUserAction: derivePendingUserAction({ checkpointType: 'authentication', sourceType: 'hometax' }),
     nextRecommendedAction: 'tax.sources.resume_sync',
     audit: {
       eventType: audit.eventType,
