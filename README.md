@@ -66,12 +66,12 @@ That means:
 ## Start here
 
 If you are new to the repo, read these first:
-1. `docs/00-overview.md`
-2. `docs/16-v1-prd.md`
-3. `docs/17-data-collection-strategy.md`
-4. `docs/21-first-agentic-scenario.md`
+1. [docs/00-overview.md](./docs/00-overview.md)
+2. [docs/16-v1-prd.md](./docs/16-v1-prd.md)
+3. [docs/17-data-collection-strategy.md](./docs/17-data-collection-strategy.md)
+4. [docs/21-first-agentic-scenario.md](./docs/21-first-agentic-scenario.md)
 
-Then use `docs/README.md` as the full document index.
+Then use [docs/README.md](./docs/README.md) as the full document index.
 
 ## What this repo contains
 
@@ -105,45 +105,45 @@ Korean companion docs may be added selectively for public onboarding and Korea-s
 If an English spec and a translated doc diverge, the **English version is canonical**.
 
 See also:
-- `docs/23-documentation-language-policy.md`
-- `README.ko.md`
+- [docs/23-documentation-language-policy.md](./docs/23-documentation-language-policy.md)
+- [README.ko.md](./README.ko.md)
 
 ## Important docs
 
 ### Product and scope
-- `docs/00-overview.md`
-- `docs/02-user-journey.md`
-- `docs/03-scope-and-non-goals.md`
-- `docs/16-v1-prd.md`
+- [docs/00-overview.md](./docs/00-overview.md)
+- [docs/02-user-journey.md](./docs/02-user-journey.md)
+- [docs/03-scope-and-non-goals.md](./docs/03-scope-and-non-goals.md)
+- [docs/16-v1-prd.md](./docs/16-v1-prd.md)
 
 ### Agentic collection and user checkpoints
-- `docs/17-data-collection-strategy.md`
-- `docs/18-source-feasibility-matrix.md`
-- `docs/19-agentic-auth-and-consent-flow.md`
-- `docs/08-hometax-submission-flow.md`
+- [docs/17-data-collection-strategy.md](./docs/17-data-collection-strategy.md)
+- [docs/18-source-feasibility-matrix.md](./docs/18-source-feasibility-matrix.md)
+- [docs/19-agentic-auth-and-consent-flow.md](./docs/19-agentic-auth-and-consent-flow.md)
+- [docs/08-hometax-submission-flow.md](./docs/08-hometax-submission-flow.md)
 
 ### Architecture and workflow contracts
-- `docs/05-architecture.md`
-- `docs/06-data-model.md`
-- `docs/20-workspace-state-model.md`
-- `docs/22-core-type-gap-analysis.md`
-- `docs/09-mcp-tool-spec.md`
-- `docs/10-skill-design.md`
+- [docs/05-architecture.md](./docs/05-architecture.md)
+- [docs/06-data-model.md](./docs/06-data-model.md)
+- [docs/20-workspace-state-model.md](./docs/20-workspace-state-model.md)
+- [docs/22-core-type-gap-analysis.md](./docs/22-core-type-gap-analysis.md)
+- [docs/09-mcp-tool-spec.md](./docs/09-mcp-tool-spec.md)
+- [docs/10-skill-design.md](./docs/10-skill-design.md)
 
 ### Risk and review
-- `docs/04-risk-and-compliance.md`
-- `docs/07-consent-model.md`
-- `docs/11-review-queue.md`
-- `docs/12-security-storage.md`
+- [docs/04-risk-and-compliance.md](./docs/04-risk-and-compliance.md)
+- [docs/07-consent-model.md](./docs/07-consent-model.md)
+- [docs/11-review-queue.md](./docs/11-review-queue.md)
+- [docs/12-security-storage.md](./docs/12-security-storage.md)
 
 ### Delivery
-- `docs/13-implementation-roadmap.md`
-- `docs/14-open-source-strategy.md`
+- [docs/13-implementation-roadmap.md](./docs/13-implementation-roadmap.md)
+- [docs/14-open-source-strategy.md](./docs/14-open-source-strategy.md)
 
 ### Filing-input research
-- `docs/25-korean-comprehensive-income-tax-data-research.md`
-- `docs/26-domain-model-gap-analysis.md`
-- `docs/15-backlog.md`
+- [docs/25-korean-comprehensive-income-tax-data-research.md](./docs/25-korean-comprehensive-income-tax-data-research.md)
+- [docs/26-domain-model-gap-analysis.md](./docs/26-domain-model-gap-analysis.md)
+- [docs/15-backlog.md](./docs/15-backlog.md)
 
 ## Initial scope
 

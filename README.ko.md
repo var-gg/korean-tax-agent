@@ -13,8 +13,8 @@
 > - 영문 문서와 차이가 있을 경우 영문 문서가 우선합니다.
 >
 > See also:
-> - `README.md`
-> - `docs/23-documentation-language-policy.md`
+> - [README.md](./README.md)
+> - [docs/23-documentation-language-policy.md](./docs/23-documentation-language-policy.md)
 
 ## 이 프로젝트는 무엇인가
 
@@ -65,13 +65,13 @@
 ## 먼저 읽으면 좋은 문서
 
 처음 보는 경우 아래 순서를 추천합니다.
-1. `README.md`
-2. `docs/00-overview.md`
-3. `docs/16-v1-prd.md`
-4. `docs/17-data-collection-strategy.md`
-5. `docs/21-first-agentic-scenario.md`
+1. [README.md](./README.md)
+2. [docs/00-overview.md](./docs/00-overview.md)
+3. [docs/16-v1-prd.md](./docs/16-v1-prd.md)
+4. [docs/17-data-collection-strategy.md](./docs/17-data-collection-strategy.md)
+5. [docs/21-first-agentic-scenario.md](./docs/21-first-agentic-scenario.md)
 
-전체 문서 인덱스는 `docs/README.md`를 보면 됩니다.
+전체 문서 인덱스는 [docs/README.md](./docs/README.md)를 보면 됩니다.
 
 ## 저장소 구성
 
