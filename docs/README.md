@@ -72,7 +72,8 @@ Read:
 1. [11-review-queue.md](./11-review-queue.md)
 2. [04-risk-and-compliance.md](./04-risk-and-compliance.md)
 3. [12-security-storage.md](./12-security-storage.md)
-4. [14-open-source-strategy.md](./14-open-source-strategy.md)
+4. [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
+5. [14-open-source-strategy.md](./14-open-source-strategy.md)
 
 ### If you want the implementation plan
 Read:
@@ -118,6 +119,7 @@ Read:
 - [23-documentation-language-policy.md](./23-documentation-language-policy.md) — canonical English + selective Korean companion policy
 - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md) — first-pass domain map for real filing inputs
 - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) — code/model gaps revealed by the filing-input research
+- [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) — explicit V1 support boundaries, readiness levels, and stop conditions
 
 ## Korean companion docs
 Currently available:
@@ -136,6 +138,7 @@ Currently available:
 - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md) — Korean companion for the workflow state machine
 - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md) — Korean companion for filing-input research
 - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md) — Korean companion for the domain gap analysis
+- [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md) — Korean companion for V1 support boundaries and stop conditions
 
 ## Reading philosophy
 If you only read one technical document, read [20-workspace-state-model.md](./20-workspace-state-model.md).

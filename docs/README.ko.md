@@ -23,6 +23,7 @@
 4. [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 5. [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
 6. [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
+7. [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
 
 ## 문서 계층
 
@@ -41,8 +42,10 @@
 - [12-security-storage.md](./12-security-storage.md) — 보안/저장
 
 ### 3) 아키텍처 / 상태 모델 / 계약
-- [05-architecture.md](./05-architecture.md) — 상위 아키텍처
-- [06-data-model.md](./06-data-model.md) — 데이터 모델
+- [05-architecture.ko.md](./05-architecture.ko.md) — 상위 아키텍처 (한국어)
+- [05-architecture.md](./05-architecture.md) — 상위 아키텍처 (영문)
+- [06-data-model.ko.md](./06-data-model.ko.md) — 데이터 모델 (한국어)
+- [06-data-model.md](./06-data-model.md) — 데이터 모델 (영문)
 - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md) — MCP tool spec (한국어)
 - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) — MCP tool spec (영문)
 - [10-skill-design.md](./10-skill-design.md) — skill 설계
@@ -65,8 +68,10 @@
 ### 5) 도메인 리서치 / 최근 추가 문서
 - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md) — 실제 종소세 입력 데이터 관점 정리 (한국어)
 - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md) — 코드/모델 갭 분석 (한국어)
+- [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md) — V1 지원 경로와 중단 조건 (한국어)
 - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md) — 영문 원문
 - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) — 영문 원문
+- [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) — 영문 원문
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) — 구현 로드맵
@@ -90,13 +95,14 @@
 - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
 - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
 - [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
+- [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
 
 ### 다음 한국어 보강 우선순위
-1. [05-architecture.md](./05-architecture.md)
-2. [06-data-model.md](./06-data-model.md)
-3. [01-product-principles.md](./01-product-principles.md)
-4. [02-user-journey.md](./02-user-journey.md)
-5. [07-consent-model.md](./07-consent-model.md)
+1. [01-product-principles.md](./01-product-principles.md)
+2. [02-user-journey.md](./02-user-journey.md)
+3. [07-consent-model.md](./07-consent-model.md)
+4. [04-risk-and-compliance.md](./04-risk-and-compliance.md)
+5. [11-review-queue.md](./11-review-queue.md)
 
 ## 문서 메타 규칙 (초안)
 앞으로 핵심 문서 상단에는 가능하면 아래 정보를 추가합니다.
