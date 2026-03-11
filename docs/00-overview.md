@@ -30,6 +30,19 @@ It is a combined system made of:
 - browser-assist flows,
 - templates and examples.
 
+The product itself is intentionally **Korea-specific**.
+It is centered on Korean comprehensive income tax workflow and HomeTax-adjacent assistance.
+
+However, some workflow building blocks are intentionally shaped so they can be reused elsewhere, including:
+- consent checkpoints,
+- review queues,
+- resumable sync flows,
+- workspace state models,
+- audit trails.
+
+That does **not** mean this project is trying to become a universal all-countries tax engine.
+The reusable layer is meant to stay narrow and workflow-oriented.
+
 ## Primary value
 
 - reduce repetitive tax prep work

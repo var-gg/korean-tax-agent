@@ -9,6 +9,7 @@ If there is ever a mismatch, the English document is the canonical version.
 
 See also:
 - `23-documentation-language-policy.md`
+- `../README.ko.md`
 
 The docs are meant to be readable in layers:
 - first understand the product,

@@ -13,6 +13,20 @@ The goal is to:
 - let an agent guide setup, data collection, review, and filing preparation,
 - stop before or at the final submission gate unless the user explicitly approves.
 
+This is a **Korea-specific product workflow**, not a claim to be a universal global tax engine.
+The product scope is intentionally focused on Korean comprehensive income tax preparation and HomeTax-adjacent assistance.
+
+At the same time, some internal workflow patterns may be reusable beyond this product, such as:
+- consent checkpoints,
+- review queues,
+- resumable sync flows,
+- workspace state models,
+- audit trails for agent actions.
+
+In short:
+- product scope = Korean comprehensive income tax workflow
+- reusable patterns = selective workflow primitives, not a promise of universal tax coverage
+
 ## Core idea
 
 A user should be able to:
@@ -51,6 +65,7 @@ If an English spec and a translated doc diverge, the **English version is canoni
 
 See also:
 - `docs/23-documentation-language-policy.md`
+- `README.ko.md`
 
 ## Start here
 
