@@ -1,5 +1,5 @@
 import { deriveReadinessSummary } from '../../core/src/readiness.js';
-import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
+import type { BlockingReason, ClassificationDecision, ConsentRecord, FilingWorkspace, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
@@ -61,6 +61,7 @@ export type SupportedRuntimeToolName =
 
 export type RuntimeStore = {
   consentRecords: ConsentRecord[];
+  workspaces: Map<string, FilingWorkspace>;
   sources: Map<string, SourceConnection>;
   syncAttempts: Map<string, SyncAttempt>;
   coverageGapsByWorkspace: Map<string, string[]>;
@@ -73,6 +74,7 @@ export type RuntimeStore = {
 
 export type CreateRuntimeOptions = {
   consentRecords?: ConsentRecord[];
+  workspaces?: FilingWorkspace[];
   sources?: SourceConnection[];
   syncAttempts?: SyncAttempt[];
   coverageGapsByWorkspace?: Record<string, string[]>;
@@ -84,6 +86,7 @@ export type CreateRuntimeOptions = {
 export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeStore {
   return {
     consentRecords: [...(options.consentRecords ?? [])],
+    workspaces: new Map((options.workspaces ?? []).map((workspace) => [workspace.workspaceId, workspace])),
     sources: new Map((options.sources ?? []).map((source) => [source.sourceId, source])),
     syncAttempts: new Map((options.syncAttempts ?? []).map((attempt) => [attempt.syncAttemptId, attempt])),
     coverageGapsByWorkspace: new Map(Object.entries(options.coverageGapsByWorkspace ?? {})),
@@ -177,6 +180,69 @@ export class InMemoryKoreanTaxMCPRuntime {
     return this.store.draftsByWorkspace.get(workspaceId);
   }
 
+  getWorkspace(workspaceId: string): FilingWorkspace | undefined {
+    return this.store.workspaces.get(workspaceId);
+  }
+
+  private ensureWorkspace(workspaceId: string): FilingWorkspace {
+    const existing = this.store.workspaces.get(workspaceId);
+    if (existing) return existing;
+
+    const fallbackYear = Number(workspaceId.match(/(20\d{2})/)?.[1] ?? new Date().getFullYear());
+    const created: FilingWorkspace = {
+      workspaceId,
+      taxpayerId: `taxpayer_${workspaceId}`,
+      filingYear: fallbackYear,
+      status: 'initialized',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      unresolvedReviewCount: 0,
+      openCoverageGapCount: (this.store.coverageGapsByWorkspace.get(workspaceId) ?? []).length,
+    };
+
+    this.store.workspaces.set(workspaceId, created);
+    return created;
+  }
+
+  private syncWorkspaceSnapshot(workspaceId: string, hints: { lastBlockingReason?: FilingWorkspace['lastBlockingReason']; lastCollectionStatus?: FilingWorkspace['lastCollectionStatus']; status?: FilingWorkspace['status'] } = {}): void {
+    const workspace = this.ensureWorkspace(workspaceId);
+    const draft = this.getDraft(workspaceId);
+    const unresolvedReviewCount = this.listReviewItems(workspaceId).filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed').length;
+    const openCoverageGapCount = (this.store.coverageGapsByWorkspace.get(workspaceId) ?? []).length;
+    const latestSyncAttempt = this.listSyncAttempts().filter((attempt) => attempt.workspaceId === workspaceId).sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0];
+
+    this.store.workspaces.set(workspaceId, {
+      ...workspace,
+      status: hints.status
+        ?? (draft?.submissionReadiness === 'submission_assist_ready'
+          ? 'ready_for_hometax_assist'
+          : draft?.draftReadiness === 'draft_ready'
+            ? 'draft_ready_for_review'
+            : unresolvedReviewCount > 0
+              ? 'review_pending'
+              : latestSyncAttempt
+                ? 'collecting_sources'
+                : workspace.status),
+      supportTier: draft?.supportTier ?? workspace.supportTier,
+      filingPathKind: draft?.filingPathKind ?? workspace.filingPathKind,
+      estimateReadiness: draft?.estimateReadiness ?? workspace.estimateReadiness,
+      draftReadiness: draft?.draftReadiness ?? workspace.draftReadiness,
+      submissionReadiness: draft?.submissionReadiness ?? workspace.submissionReadiness,
+      comparisonSummaryState: draft?.comparisonSummaryState ?? workspace.comparisonSummaryState,
+      freshnessState: draft?.freshnessState ?? workspace.freshnessState,
+      majorUnknowns: draft?.majorUnknowns ?? workspace.majorUnknowns,
+      currentDraftId: draft?.draftId ?? workspace.currentDraftId,
+      unresolvedReviewCount,
+      openCoverageGapCount,
+      lastBlockingReason: hints.lastBlockingReason
+        ?? prioritizeBlockingReason(draft?.blockerCodes)
+        ?? latestSyncAttempt?.blockingReason
+        ?? workspace.lastBlockingReason,
+      lastCollectionStatus: hints.lastCollectionStatus ?? latestSyncAttempt?.state ?? workspace.lastCollectionStatus,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   private getCollectionStatus(input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData> {
     return taxSourcesGetCollectionStatus(
       input,
@@ -202,6 +268,10 @@ export class InMemoryKoreanTaxMCPRuntime {
     };
 
     this.store.sources.set(nextSource.sourceId, nextSource);
+    this.syncWorkspaceSnapshot(input.workspaceId, {
+      lastBlockingReason: result.blockingReason,
+      status: 'collecting_sources',
+    });
     return result;
   }
 
@@ -237,6 +307,11 @@ export class InMemoryKoreanTaxMCPRuntime {
     };
 
     this.store.syncAttempts.set(syncAttempt.syncAttemptId, syncAttempt);
+    this.syncWorkspaceSnapshot(syncAttempt.workspaceId, {
+      lastBlockingReason: result.blockingReason,
+      lastCollectionStatus: syncAttempt.state,
+      status: result.ok ? 'collecting' : 'collecting_sources',
+    });
     return result;
   }
 
@@ -277,16 +352,23 @@ export class InMemoryKoreanTaxMCPRuntime {
       }
     }
 
+    this.syncWorkspaceSnapshot(completedAttempt.workspaceId, {
+      lastCollectionStatus: completedAttempt.state,
+      status: 'collecting',
+    });
+
     return result;
   }
 
   private detectFilingPath(input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData> {
-    return taxProfileDetectFilingPath(
+    const result = taxProfileDetectFilingPath(
       input,
       Array.from(this.store.transactions.values()),
       this.listReviewItems(input.workspaceId),
       [],
     );
+    this.syncWorkspaceSnapshot(input.workspaceId);
+    return result;
   }
 
   private runClassification(input: RunClassificationInput): MCPResponseEnvelope<RunClassificationData> {
@@ -297,6 +379,10 @@ export class InMemoryKoreanTaxMCPRuntime {
     for (const item of result.data.reviewItems ?? []) {
       this.store.reviewItems.set(item.reviewItemId, item);
     }
+    this.syncWorkspaceSnapshot(input.workspaceId, {
+      lastBlockingReason: result.blockingReason,
+      status: (result.data.reviewItems?.length ?? 0) > 0 ? 'review_pending' : 'normalizing',
+    });
     return result;
   }
 
@@ -316,6 +402,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const touchedWorkspaceIds = new Set((result.data.updatedItems ?? []).map((item) => item.workspaceId));
     for (const workspaceId of touchedWorkspaceIds) {
       this.applyComparisonReviewResolution(workspaceId, result.data.updatedItems ?? [], input.selectedOption);
+      this.syncWorkspaceSnapshot(workspaceId);
     }
 
     return result;
@@ -401,6 +488,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.listReviewItems(input.workspaceId),
     );
     this.store.draftsByWorkspace.set(input.workspaceId, result.data);
+    this.syncWorkspaceSnapshot(input.workspaceId);
     return result;
   }
 
@@ -430,6 +518,8 @@ export class InMemoryKoreanTaxMCPRuntime {
       }
     }
 
+    this.syncWorkspaceSnapshot(input.workspaceId);
+
     return {
       ...result,
       nextRecommendedAction: result.data.materialMismatches.length > 0 ? 'tax.classify.list_review_items' : result.nextRecommendedAction,
@@ -457,12 +547,13 @@ export class InMemoryKoreanTaxMCPRuntime {
       });
     }
 
+    this.syncWorkspaceSnapshot(input.workspaceId);
     return result;
   }
 
   private prepareHomeTax(input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData> {
     const draft = this.getDraft(input.workspaceId);
-    return taxFilingPrepareHomeTax(
+    const result = taxFilingPrepareHomeTax(
       input,
       this.listReviewItems(input.workspaceId),
       draft?.fieldValues ?? [],
@@ -471,13 +562,50 @@ export class InMemoryKoreanTaxMCPRuntime {
         filingPathKind: draft?.filingPathKind ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown'),
       },
     );
+    this.syncWorkspaceSnapshot(input.workspaceId, {
+      lastBlockingReason: result.blockingReason,
+      status: result.ok ? 'ready_for_hometax_assist' : 'draft_ready_for_review',
+    });
+    return result;
   }
 
   private startHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {
     const result = taxBrowserStartHomeTaxAssist(input);
     this.store.assistSessionsByWorkspace.set(input.workspaceId, result.data);
+    this.syncWorkspaceSnapshot(input.workspaceId, {
+      lastBlockingReason: result.blockingReason,
+      status: 'submission_in_progress',
+    });
     return result;
   }
+}
+
+function prioritizeBlockingReason(blockerCodes?: string[]): FilingWorkspace['lastBlockingReason'] | undefined {
+  if (!blockerCodes?.length) return undefined;
+  const priority: BlockingReason[] = [
+    'awaiting_review_decision',
+    'comparison_incomplete',
+    'official_data_refresh_required',
+    'missing_material_coverage',
+    'unsupported_filing_path',
+    'submission_not_ready',
+    'draft_not_ready',
+    'awaiting_final_approval',
+    'missing_auth',
+    'missing_consent',
+    'export_required',
+    'blocked_by_provider',
+    'ui_changed',
+    'insufficient_metadata',
+    'unsupported_source',
+    'unsupported_hometax_state',
+  ];
+
+  for (const code of priority) {
+    if (blockerCodes.includes(code)) return code;
+  }
+
+  return undefined;
 }
 
 function buildComparisonReviewItems(

@@ -5,6 +5,7 @@ import type { ClassificationDecision, ConsentRecord, FilingFieldValue, LedgerTra
 
 const demo = rawDemo as {
   workspaceId: string;
+  workspace: import('../packages/core/src/types.js').FilingWorkspace;
   consentRecords: ConsentRecord[];
   sources: SourceConnection[];
   syncAttempts: SyncAttempt[];
@@ -17,6 +18,7 @@ describe('in-memory runtime filing flow', () => {
   it('persists classification, review resolution, drafting, and hometax assist state', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime({
       consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
       sources: demo.sources,
       syncAttempts: demo.syncAttempts,
       coverageGapsByWorkspace: {
@@ -50,6 +52,9 @@ describe('in-memory runtime filing flow', () => {
     expect(initialDraft.status).toBe('completed');
     expect(initialDraft.readiness?.blockerCodes).toContain('awaiting_review_decision');
     expect(runtime.getDraft(demo.workspaceId)?.draftId).toBe(initialDraft.data.draftId);
+    expect(runtime.getWorkspace(demo.workspaceId)?.currentDraftId).toBe(initialDraft.data.draftId);
+    expect(runtime.getWorkspace(demo.workspaceId)?.unresolvedReviewCount).toBeGreaterThan(0);
+    expect(runtime.getWorkspace(demo.workspaceId)?.lastBlockingReason).toBe('awaiting_review_decision');
 
     const resolveResult = runtime.invoke('tax.classify.resolve_review_item', {
       reviewItemIds: listedReviewItems.data.items.map((item) => item.reviewItemId),
@@ -60,6 +65,7 @@ describe('in-memory runtime filing flow', () => {
 
     expect(resolveResult.status).toBe('completed');
     expect(runtime.listReviewItems(demo.workspaceId).every((item) => item.resolutionState === 'resolved')).toBe(true);
+    expect(runtime.getWorkspace(demo.workspaceId)?.unresolvedReviewCount).toBe(0);
 
     const resolvedDraft = runtime.invoke('tax.filing.compute_draft', {
       workspaceId: demo.workspaceId,
@@ -108,11 +114,14 @@ describe('in-memory runtime filing flow', () => {
     expect(prepareResult.blockingReason).toBeUndefined();
     expect(prepareResult.data.browserAssistReady).toBe(true);
     expect(prepareResult.readiness?.submissionReadiness).toBe('submission_assist_ready');
+    expect(runtime.getWorkspace(demo.workspaceId)?.submissionReadiness).toBe('submission_assist_ready');
+    expect(runtime.getWorkspace(demo.workspaceId)?.status).toBe('ready_for_hometax_assist');
   });
 
   it('creates review items when hometax comparison finds material mismatches', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime({
       consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
       sources: demo.sources,
       syncAttempts: demo.syncAttempts,
       coverageGapsByWorkspace: {
@@ -152,6 +161,7 @@ describe('in-memory runtime filing flow', () => {
   it('applies resolved hometax mismatch reviews back to the draft', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime({
       consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
       sources: demo.sources,
       syncAttempts: demo.syncAttempts,
       coverageGapsByWorkspace: {
