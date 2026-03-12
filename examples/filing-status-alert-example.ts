@@ -38,7 +38,7 @@ const decision = decideFilingAlert(beforeSnapshot, afterSnapshot);
 console.log('\n--- Before snapshot ---\n');
 console.log(beforeSnapshot.operatorUpdate);
 console.log('\n--- Alert decision ---\n');
-console.log(decision.reason);
+console.log(`reason=${decision.reason} severity=${decision.severity}`);
 console.log('\n--- Message to send ---\n');
 console.log(decision.message ?? 'NO_MESSAGE');
 

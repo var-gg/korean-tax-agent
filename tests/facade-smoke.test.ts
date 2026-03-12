@@ -123,6 +123,7 @@ describe('mcp facade', () => {
     );
     const alertDecision = decideFilingAlert(undefined, currentAlertSnapshot);
     expect(alertDecision.shouldNotify).toBe(true);
+    expect(alertDecision.severity).toBe('high');
     expect(alertDecision.message).toContain('COLLECTION BLOCKED');
 
     const transitionedAlertDecision = decideFilingAlert(currentAlertSnapshot, {
@@ -134,6 +135,7 @@ describe('mcp facade', () => {
     });
     expect(transitionedAlertDecision.shouldNotify).toBe(true);
     expect(transitionedAlertDecision.reason).toBe('status_changed');
+    expect(transitionedAlertDecision.severity).toBe('info');
     expect(transitionedAlertDecision.message).toContain('READY FOR HOMETAX ASSIST');
 
     const refreshResult = facade.invokeTool({

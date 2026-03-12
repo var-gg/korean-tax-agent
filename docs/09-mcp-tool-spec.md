@@ -474,6 +474,7 @@ Alerting pattern:
 - keep the previous filing-summary snapshot (`status`, `blockers`, `nextRecommendedAction`, `operatorUpdate`)
 - recompute a new snapshot after workflow progress
 - notify only when status, blockers, or next action changed
+- classify alert severity for operator routing (`high`, `medium`, `info`, `none`)
 - for demos/tests, it is acceptable to simulate a transitioned snapshot directly from the previous snapshot
 - sample usage: `examples/filing-status-alert-example.ts`
 

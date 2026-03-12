@@ -7,6 +7,8 @@ export type FilingAlertSnapshot = Pick<
   workspaceId: string;
 };
 
+export type FilingAlertSeverity = 'high' | 'medium' | 'info' | 'none';
+
 export type FilingAlertDecision = {
   shouldNotify: boolean;
   reason:
@@ -15,6 +17,7 @@ export type FilingAlertDecision = {
     | 'blocker_changed'
     | 'next_action_changed'
     | 'no_change';
+  severity: FilingAlertSeverity;
   message?: string;
 };
 
@@ -36,6 +39,7 @@ export function decideFilingAlert(
     return {
       shouldNotify: true,
       reason: 'initial_state',
+      severity: classifyFilingAlertSeverity(current),
       message: current.operatorUpdate,
     };
   }
@@ -44,6 +48,7 @@ export function decideFilingAlert(
     return {
       shouldNotify: true,
       reason: 'status_changed',
+      severity: classifyFilingAlertSeverity(current),
       message: current.operatorUpdate,
     };
   }
@@ -52,6 +57,7 @@ export function decideFilingAlert(
     return {
       shouldNotify: true,
       reason: 'blocker_changed',
+      severity: classifyFilingAlertSeverity(current),
       message: current.operatorUpdate,
     };
   }
@@ -60,6 +66,7 @@ export function decideFilingAlert(
     return {
       shouldNotify: true,
       reason: 'next_action_changed',
+      severity: classifyFilingAlertSeverity(current),
       message: current.operatorUpdate,
     };
   }
@@ -67,7 +74,40 @@ export function decideFilingAlert(
   return {
     shouldNotify: false,
     reason: 'no_change',
+    severity: 'none',
   };
+}
+
+export function classifyFilingAlertSeverity(snapshot: FilingAlertSnapshot): FilingAlertSeverity {
+  if (
+    snapshot.status === 'blocked'
+    || snapshot.blockers.includes('missing_auth')
+    || snapshot.blockers.includes('missing_consent')
+    || snapshot.blockers.includes('export_required')
+    || snapshot.operatorUpdate.includes('COLLECTION BLOCKED')
+  ) {
+    return 'high';
+  }
+
+  if (
+    snapshot.status === 'review_pending'
+    || snapshot.blockers.includes('awaiting_review_decision')
+    || snapshot.blockers.includes('comparison_incomplete')
+    || snapshot.blockers.includes('official_data_refresh_required')
+  ) {
+    return 'medium';
+  }
+
+  if (
+    snapshot.status === 'ready_for_hometax_assist'
+    || snapshot.status === 'submission_in_progress'
+    || snapshot.operatorUpdate.includes('READY FOR HOMETAX ASSIST')
+    || snapshot.operatorUpdate.includes('SUBMISSION IN PROGRESS')
+  ) {
+    return 'info';
+  }
+
+  return 'medium';
 }
 
 function joinTokens(values: string[]): string {
