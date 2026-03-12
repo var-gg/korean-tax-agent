@@ -470,6 +470,12 @@ Example integration:
 - facade helpers: `invokeAndFormatFilingSummaryForDiscord(...)` and `invokeAndFormatFilingSummary(..., 'generic')`
 - sample usage: `examples/filing-summary-reply-example.ts`
 
+Alerting pattern:
+- keep the previous filing-summary snapshot (`status`, `blockers`, `nextRecommendedAction`, `operatorUpdate`)
+- recompute a new snapshot after workflow progress
+- notify only when status, blockers, or next action changed
+- sample usage: `examples/filing-status-alert-example.ts`
+
 #### `tax.filing.compare_with_hometax`
 Purpose:
 - compare current filing draft values against visible/imported HomeTax-observed values

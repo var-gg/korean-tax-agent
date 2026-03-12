@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { KoreanTaxMCPFacade, SUPPORTED_RUNTIME_TOOLS } from '../packages/mcp-server/src/facade.js';
 import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
+import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
@@ -116,6 +117,13 @@ describe('mcp facade', () => {
     );
     expect(integratedGenericReply.message).toContain(standardSummaryResult.data.headline);
     expect(integratedGenericReply.message).toContain('Submission readiness');
+
+    const alertDecision = decideFilingAlert(
+      undefined,
+      toFilingAlertSnapshot(standardSummaryResult.data as Parameters<typeof toFilingAlertSnapshot>[0]),
+    );
+    expect(alertDecision.shouldNotify).toBe(true);
+    expect(alertDecision.message).toContain('COLLECTION BLOCKED');
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',
