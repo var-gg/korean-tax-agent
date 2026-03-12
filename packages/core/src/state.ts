@@ -4,6 +4,7 @@ import type {
   CheckpointType,
   CoverageGap,
   CoverageGapState,
+  CoverageGapType,
   FilingWorkspace,
   SourceConnection,
   SourceState,
@@ -48,7 +49,7 @@ export type CompleteSyncAttemptInput = {
 
 export type CreateCoverageGapInput = {
   workspaceId: string;
-  gapType: string;
+  gapType: CoverageGapType;
   severity: CoverageGap['severity'];
   description: string;
   affectedArea: string;
@@ -117,8 +118,18 @@ export function derivePendingUserAction(params: {
       return 'Provide the missing metadata or supporting evidence.';
     case 'unsupported_source':
       return 'Choose a supported import path or provide files manually.';
+    case 'unsupported_filing_path':
+      return 'This case is not on a supported filing path yet; switch to a manual-heavy path or narrow the scope.';
+    case 'missing_material_coverage':
+      return 'Collect the missing source records or evidence before continuing.';
     case 'draft_not_ready':
       return 'Finish draft prerequisites before proceeding.';
+    case 'submission_not_ready':
+      return 'Resolve submission blockers before starting HomeTax assistance.';
+    case 'comparison_incomplete':
+      return 'Complete the required HomeTax comparison steps before continuing.';
+    case 'official_data_refresh_required':
+      return 'Refresh official data and recompute the draft before continuing.';
     case 'unsupported_hometax_state':
       return 'Return to a supported HomeTax screen and resume.';
     default:
@@ -202,7 +213,7 @@ export function summarizeCoverageGaps(gaps: CoverageGap[]) {
       total: 0,
       byState: {} as Record<CoverageGapState, number>,
       bySeverity: {} as Record<CoverageGap['severity'], number>,
-      byType: {} as Record<string, number>,
+      byType: {} as Record<CoverageGap['gapType'], number>,
     },
   );
 }

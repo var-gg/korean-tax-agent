@@ -1,4 +1,5 @@
 import type { ClassificationDecision, FilingDraft, FilingFieldValue, LedgerTransaction, ReviewItem, ReviewSeverity, WithholdingRecord } from './types.js';
+import { deriveReadinessSummary } from './readiness.js';
 
 export type DraftReadiness = {
   readyForReview: boolean;
@@ -235,8 +236,24 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
 
   draft.fieldValues = fieldValues;
   draft.estimateConfidence = readiness.readyForSubmission && (input.withholdingRecords ?? []).length > 0 ? 'high' : aggregate.lowConfidenceDecisionCount > 0 ? 'low' : 'medium';
-  draft.submissionReadiness = readiness.readyForSubmission ? 'ready_for_hometax_assist' : 'review_required';
-  draft.blockerCodes = [...new Set(readiness.blockerReasons)];
+
+  const readinessSummary = deriveReadinessSummary({
+    supportTier: 'undetermined',
+    filingPathKind: 'unknown',
+    reviewItems: input.reviewItems,
+    draft: {
+      draftId: draft.draftId,
+      fieldValues,
+    },
+  });
+
+  draft.estimateReadiness = readinessSummary.estimateReadiness;
+  draft.draftReadiness = readinessSummary.draftReadiness;
+  draft.submissionReadiness = readinessSummary.submissionReadiness;
+  draft.comparisonSummaryState = readinessSummary.comparisonSummaryState;
+  draft.freshnessState = readinessSummary.freshnessState;
+  draft.majorUnknowns = readinessSummary.majorUnknowns;
+  draft.blockerCodes = readinessSummary.blockerCodes;
   return draft;
 }
 
