@@ -21,63 +21,67 @@ const demo = rawDemo as {
   decisions: ClassificationDecision[];
 };
 
-const tempDir = await mkdtemp(join(tmpdir(), 'filing-alert-store-'));
-const storePath = join(tempDir, 'alert-store.json');
+void main();
 
-try {
-  const facade = new KoreanTaxMCPFacade({
-    consentRecords: demo.consentRecords,
-    workspaces: [demo.workspace],
-    sources: demo.sources,
-    syncAttempts: demo.syncAttempts,
-    coverageGapsByWorkspace: {
-      [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
-    },
-    transactions: demo.transactions,
-    decisions: demo.decisions,
-  });
+async function main(): Promise<void> {
+  const tempDir = await mkdtemp(join(tmpdir(), 'filing-alert-store-'));
+  const storePath = join(tempDir, 'alert-store.json');
 
-  const before = facade.invokeTool({
-    name: 'tax.filing.get_summary',
-    input: { workspaceId: demo.workspaceId, detailLevel: 'short' },
-  });
-  const beforeSnapshot = toFilingAlertSnapshot((before as typeof before & { data: any }).data);
-  const afterSnapshot = simulateReadyForAssistTransition(beforeSnapshot);
+  try {
+    const facade = new KoreanTaxMCPFacade({
+      consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
+      sources: demo.sources,
+      syncAttempts: demo.syncAttempts,
+      coverageGapsByWorkspace: {
+        [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
+      },
+      transactions: demo.transactions,
+      decisions: demo.decisions,
+    });
 
-  const decision = decideFilingAlert(beforeSnapshot, afterSnapshot);
-  const routing = routeFilingAlert(decision);
-  const dispatchPlan = buildFilingAlertDispatchPlan(routing, decision, {
-    immediateTarget: 'discord:#tax-operator-immediate',
-    watchTarget: 'discord:#tax-operator-watch',
-    updatesTarget: 'discord:#tax-operator-updates',
-  });
+    const before = facade.invokeTool({
+      name: 'tax.filing.get_summary',
+      input: { workspaceId: demo.workspaceId, detailLevel: 'short' },
+    });
+    const beforeSnapshot = toFilingAlertSnapshot((before as typeof before & { data: any }).data);
+    const afterSnapshot = simulateReadyForAssistTransition(beforeSnapshot);
 
-  const store = new FileBackedFilingAlertStore(storePath);
-  const firstCheck = shouldSendFilingAlert(
-    demo.workspaceId,
-    dispatchPlan,
-    await store.getLastRecord(demo.workspaceId),
-    0,
-  );
-  const firstSaved = await store.applySendDecision(demo.workspaceId, dispatchPlan, firstCheck, 0);
+    const decision = decideFilingAlert(beforeSnapshot, afterSnapshot);
+    const routing = routeFilingAlert(decision);
+    const dispatchPlan = buildFilingAlertDispatchPlan(routing, decision, {
+      immediateTarget: 'discord:#tax-operator-immediate',
+      watchTarget: 'discord:#tax-operator-watch',
+      updatesTarget: 'discord:#tax-operator-updates',
+    });
 
-  const reloadedStore = new FileBackedFilingAlertStore(storePath);
-  const secondCheck = shouldSendFilingAlert(
-    demo.workspaceId,
-    dispatchPlan,
-    await reloadedStore.getLastRecord(demo.workspaceId),
-    1,
-  );
-  const fileContents = await readFile(storePath, 'utf8');
+    const store = new FileBackedFilingAlertStore(storePath);
+    const firstCheck = shouldSendFilingAlert(
+      demo.workspaceId,
+      dispatchPlan,
+      await store.getLastRecord(demo.workspaceId),
+      0,
+    );
+    const firstSaved = await store.applySendDecision(demo.workspaceId, dispatchPlan, firstCheck, 0);
 
-  console.log('\n--- First saved record ---\n');
-  console.log(firstSaved);
-  console.log('\n--- Second check after reload ---\n');
-  console.log(secondCheck);
-  console.log('\n--- File contents ---\n');
-  console.log(fileContents);
-} finally {
-  await rm(tempDir, { recursive: true, force: true });
+    const reloadedStore = new FileBackedFilingAlertStore(storePath);
+    const secondCheck = shouldSendFilingAlert(
+      demo.workspaceId,
+      dispatchPlan,
+      await reloadedStore.getLastRecord(demo.workspaceId),
+      1,
+    );
+    const fileContents = await readFile(storePath, 'utf8');
+
+    console.log('\n--- First saved record ---\n');
+    console.log(firstSaved);
+    console.log('\n--- Second check after reload ---\n');
+    console.log(secondCheck);
+    console.log('\n--- File contents ---\n');
+    console.log(fileContents);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): FilingAlertSnapshot {
