@@ -10,6 +10,7 @@ import { InMemoryFilingAlertStore } from '../packages/mcp-server/src/alert-store
 import { FileBackedFilingAlertStore } from '../packages/mcp-server/src/alert-file-store.js';
 import { buildFilingAlertDigests } from '../packages/mcp-server/src/alert-digest.js';
 import { planFilingAlertDelivery } from '../packages/mcp-server/src/alert-delivery-policy.js';
+import { buildFilingAlertSenderBatch, discordFilingAlertChannel } from '../packages/mcp-server/src/alert-sender-adapter.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
@@ -219,6 +220,15 @@ describe('mcp facade', () => {
     ]);
     expect(deliveryPolicy.immediateSends).toHaveLength(1);
     expect(deliveryPolicy.digests).toHaveLength(2);
+
+    const senderBatch = buildFilingAlertSenderBatch({
+      immediateSends: deliveryPolicy.immediateSends,
+      digests: deliveryPolicy.digests,
+      channel: discordFilingAlertChannel(),
+    });
+    expect(senderBatch.immediatePayloads).toHaveLength(1);
+    expect(senderBatch.digestPayloads).toHaveLength(2);
+    expect(senderBatch.immediatePayloads[0]?.channel).toBe('discord');
 
     const firstSendDecision = shouldSendFilingAlert(demo.workspaceId, updatesDispatchPlan, undefined, 0);
     expect(firstSendDecision.shouldSend).toBe(true);
