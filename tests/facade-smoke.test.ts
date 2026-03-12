@@ -118,12 +118,23 @@ describe('mcp facade', () => {
     expect(integratedGenericReply.message).toContain(standardSummaryResult.data.headline);
     expect(integratedGenericReply.message).toContain('Submission readiness');
 
-    const alertDecision = decideFilingAlert(
-      undefined,
-      toFilingAlertSnapshot(standardSummaryResult.data as Parameters<typeof toFilingAlertSnapshot>[0]),
+    const currentAlertSnapshot = toFilingAlertSnapshot(
+      standardSummaryResult.data as Parameters<typeof toFilingAlertSnapshot>[0],
     );
+    const alertDecision = decideFilingAlert(undefined, currentAlertSnapshot);
     expect(alertDecision.shouldNotify).toBe(true);
     expect(alertDecision.message).toContain('COLLECTION BLOCKED');
+
+    const transitionedAlertDecision = decideFilingAlert(currentAlertSnapshot, {
+      ...currentAlertSnapshot,
+      status: 'ready_for_hometax_assist',
+      blockers: [],
+      nextRecommendedAction: 'tax.filing.prepare_hometax',
+      operatorUpdate: '✅ READY FOR HOMETAX ASSIST\nNEXT: prepare the draft for HomeTax handoff',
+    });
+    expect(transitionedAlertDecision.shouldNotify).toBe(true);
+    expect(transitionedAlertDecision.reason).toBe('status_changed');
+    expect(transitionedAlertDecision.message).toContain('READY FOR HOMETAX ASSIST');
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',

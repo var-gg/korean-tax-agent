@@ -1,6 +1,6 @@
 import rawDemo from './demo-workspace.json';
 import { KoreanTaxMCPFacade } from '../packages/mcp-server/src/facade.js';
-import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
+import { decideFilingAlert, toFilingAlertSnapshot, type FilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
@@ -32,29 +32,28 @@ const before = facade.invokeTool({
 });
 const beforeSnapshot = toFilingAlertSnapshot((before as typeof before & { data: any }).data);
 
-facade.runtime.store.workspaces.set(demo.workspaceId, {
-  ...demo.workspace,
-  workspaceId: demo.workspaceId,
-  status: 'ready_for_hometax_assist',
-  submissionReadiness: 'submission_assist_ready',
-  comparisonSummaryState: 'matched_enough',
-  freshnessState: 'current_enough',
-  unresolvedReviewCount: 0,
-  lastCollectionStatus: 'completed',
-  lastBlockingReason: undefined,
-  currentDraftId: 'draft_ready_001',
-  updatedAt: new Date().toISOString(),
-});
-
-const after = facade.invokeTool({
-  name: 'tax.filing.get_summary',
-  input: { workspaceId: demo.workspaceId, detailLevel: 'short' },
-});
-const afterSnapshot = toFilingAlertSnapshot((after as typeof after & { data: any }).data);
-
+const afterSnapshot = simulateReadyForAssistTransition(beforeSnapshot);
 const decision = decideFilingAlert(beforeSnapshot, afterSnapshot);
 
+console.log('\n--- Before snapshot ---\n');
+console.log(beforeSnapshot.operatorUpdate);
 console.log('\n--- Alert decision ---\n');
 console.log(decision.reason);
 console.log('\n--- Message to send ---\n');
 console.log(decision.message ?? 'NO_MESSAGE');
+
+function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): FilingAlertSnapshot {
+  return {
+    ...previous,
+    status: 'ready_for_hometax_assist',
+    blockers: [],
+    nextRecommendedAction: 'tax.filing.prepare_hometax',
+    operatorUpdate: [
+      '✅ READY FOR HOMETAX ASSIST',
+      'STATUS: The filing draft is ready for HomeTax preparation.',
+      'READINESS: submission=submission assist ready | comparison=matched enough | freshness=current enough',
+      'QUEUE: reviews=0 | warnings=0 | draft=draft_ready_001',
+      'NEXT: prepare the draft for HomeTax handoff',
+    ].join('\n'),
+  };
+}
