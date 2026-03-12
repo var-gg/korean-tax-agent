@@ -30,6 +30,7 @@ describe('mcp facade', () => {
 
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.connect');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.workspace.get_status');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.get_summary');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compute_draft');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compare_with_hometax');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.refresh_official_data');
@@ -61,6 +62,16 @@ describe('mcp facade', () => {
     expect(workspaceStatusResult.ok).toBe(true);
     expect(workspaceStatusResult.data.workspace.workspaceId).toBe(demo.workspaceId);
     expect(typeof workspaceStatusResult.data.workspace.status).toBe('string');
+
+    const filingSummaryResult = facade.invokeTool({
+      name: 'tax.filing.get_summary',
+      input: { workspaceId: demo.workspaceId, detailLevel: 'short' },
+    });
+
+    expect(filingSummaryResult.ok).toBe(true);
+    expect(typeof filingSummaryResult.data.headline).toBe('string');
+    expect(typeof filingSummaryResult.data.summaryText).toBe('string');
+    expect(Array.isArray(filingSummaryResult.data.keyPoints)).toBe(true);
 
     const compareInvalid = facade.invokeTool({
       name: 'tax.filing.compare_with_hometax',

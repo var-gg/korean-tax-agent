@@ -3,6 +3,8 @@ import type { BlockingReason, ClassificationDecision, ConsentRecord, FilingWorks
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
+  GetFilingSummaryData,
+  GetFilingSummaryInput,
   GetWorkspaceStatusData,
   GetWorkspaceStatusInput,
   CompareWithHomeTaxInput,
@@ -49,6 +51,7 @@ import {
 export type SupportedRuntimeToolName =
   | 'tax.sources.get_collection_status'
   | 'tax.workspace.get_status'
+  | 'tax.filing.get_summary'
   | 'tax.sources.connect'
   | 'tax.sources.sync'
   | 'tax.sources.resume_sync'
@@ -110,6 +113,7 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   invoke(name: 'tax.sources.get_collection_status', input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData>;
   invoke(name: 'tax.workspace.get_status', input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData>;
+  invoke(name: 'tax.filing.get_summary', input: GetFilingSummaryInput): MCPResponseEnvelope<GetFilingSummaryData>;
   invoke(name: 'tax.sources.connect', input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData>;
   invoke(name: 'tax.sources.sync', input: SyncSourceInput): MCPResponseEnvelope<SyncSourceData>;
   invoke(name: 'tax.sources.resume_sync', input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData>;
@@ -131,6 +135,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         return this.getCollectionStatus(input as GetCollectionStatusInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.workspace.get_status':
         return this.getWorkspaceStatus(input as GetWorkspaceStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.filing.get_summary':
+        return this.getFilingSummary(input as GetFilingSummaryInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.sources.connect':
         return this.connectSource(input as ConnectSourceInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.sources.sync':
@@ -306,6 +312,67 @@ export class InMemoryKoreanTaxMCPRuntime {
         blockerCodes: workspace.lastBlockingReason ? [workspace.lastBlockingReason] : [],
       },
       nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
+    };
+  }
+
+  private getFilingSummary(input: GetFilingSummaryInput): MCPResponseEnvelope<GetFilingSummaryData> {
+    this.syncWorkspaceSnapshot(input.workspaceId);
+    const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
+    const draft = this.getDraft(input.workspaceId);
+    const nextAction = deriveWorkspaceNextRecommendedAction(workspace);
+    const blockers = [
+      workspace.lastBlockingReason,
+      ...(draft?.blockerCodes ?? []).filter((code) => code !== workspace.lastBlockingReason),
+    ].filter((code): code is string => Boolean(code));
+
+    const keyPoints = [
+      `workspace_status=${workspace.status}`,
+      workspace.currentDraftId ? `current_draft=${workspace.currentDraftId}` : 'current_draft=none',
+      `unresolved_reviews=${workspace.unresolvedReviewCount}`,
+      `submission_readiness=${workspace.submissionReadiness ?? 'not_ready'}`,
+      `comparison=${workspace.comparisonSummaryState ?? 'not_started'}`,
+      `freshness=${workspace.freshnessState ?? 'stale_unknown'}`,
+    ];
+
+    const headline = buildFilingSummaryHeadline(workspace);
+    const summaryText = buildFilingSummaryText({
+      workspace,
+      draft,
+      blockers,
+      nextAction,
+      detailLevel: input.detailLevel ?? 'standard',
+    });
+
+    return {
+      ok: true,
+      status: 'completed',
+      data: {
+        workspaceId: input.workspaceId,
+        draftId: input.draftId ?? draft?.draftId,
+        headline,
+        summaryText,
+        status: workspace.status,
+        keyPoints,
+        blockers,
+        nextRecommendedAction: nextAction,
+        metrics: {
+          unresolvedReviewCount: workspace.unresolvedReviewCount,
+          warningCount: draft?.warnings.length ?? 0,
+          fieldValueCount: draft?.fieldValues?.length ?? 0,
+        },
+      },
+      readiness: {
+        supportTier: workspace.supportTier ?? 'undetermined',
+        filingPathKind: workspace.filingPathKind ?? 'unknown',
+        estimateReadiness: workspace.estimateReadiness ?? 'not_ready',
+        draftReadiness: workspace.draftReadiness ?? 'not_ready',
+        submissionReadiness: workspace.submissionReadiness ?? 'not_ready',
+        comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
+        freshnessState: workspace.freshnessState ?? 'stale_unknown',
+        majorUnknowns: workspace.majorUnknowns ?? [],
+        blockerCodes: blockers.filter((code): code is BlockingReason => isBlockingReason(code)),
+      },
+      nextRecommendedAction: nextAction,
     };
   }
 
@@ -636,6 +703,70 @@ export class InMemoryKoreanTaxMCPRuntime {
     });
     return result;
   }
+}
+
+function buildFilingSummaryHeadline(workspace: FilingWorkspace): string {
+  if (workspace.submissionReadiness === 'submission_assist_ready') {
+    return 'HomeTax preparation can proceed.';
+  }
+  if (workspace.unresolvedReviewCount > 0) {
+    return 'Review decisions are still blocking filing progress.';
+  }
+  if (workspace.lastBlockingReason === 'comparison_incomplete') {
+    return 'HomeTax comparison is still incomplete.';
+  }
+  if (workspace.lastCollectionStatus === 'awaiting_user_action' || workspace.lastCollectionStatus === 'blocked') {
+    return 'Collection is waiting for user action.';
+  }
+  return 'Filing workspace status is available.';
+}
+
+function buildFilingSummaryText(params: {
+  workspace: FilingWorkspace;
+  draft?: ComputeDraftData;
+  blockers: string[];
+  nextAction?: string;
+  detailLevel: 'short' | 'standard';
+}): string {
+  const parts = [
+    `status=${params.workspace.status}`,
+    `reviews=${params.workspace.unresolvedReviewCount}`,
+    `submission=${params.workspace.submissionReadiness ?? 'not_ready'}`,
+  ];
+
+  if (params.blockers.length > 0) {
+    parts.push(`blockers=${params.blockers.join(',')}`);
+  }
+  if (params.nextAction) {
+    parts.push(`next=${params.nextAction}`);
+  }
+  if (params.detailLevel === 'standard' && params.draft) {
+    parts.push(`warnings=${params.draft.warnings.length}`);
+    parts.push(`fields=${params.draft.fieldValues?.length ?? 0}`);
+  }
+
+  return parts.join(' | ');
+}
+
+function isBlockingReason(value: string): value is BlockingReason {
+  return [
+    'missing_consent',
+    'missing_auth',
+    'ui_changed',
+    'blocked_by_provider',
+    'export_required',
+    'insufficient_metadata',
+    'unsupported_source',
+    'unsupported_filing_path',
+    'missing_material_coverage',
+    'awaiting_review_decision',
+    'awaiting_final_approval',
+    'draft_not_ready',
+    'submission_not_ready',
+    'comparison_incomplete',
+    'official_data_refresh_required',
+    'unsupported_hometax_state',
+  ].includes(value);
 }
 
 function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {

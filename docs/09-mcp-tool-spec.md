@@ -436,6 +436,26 @@ Possible outputs:
 Notes:
 - exporting to an external destination may require distinct consent depending on target
 
+#### `tax.filing.get_summary`
+Purpose:
+- retrieve a human-readable filing summary for narration, chat responses, or quick operator review
+
+Input:
+- workspace id
+- optional draft id
+- optional detail level (`short`, `standard`)
+
+Output:
+- headline
+- short summary text
+- key points
+- blockers
+- next recommended action
+- lightweight draft metrics
+
+Notes:
+- this is the preferred narrative read model when an agent needs to explain status in plain language
+
 #### `tax.filing.compare_with_hometax`
 Purpose:
 - compare current filing draft values against visible/imported HomeTax-observed values

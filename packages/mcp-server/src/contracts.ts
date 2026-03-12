@@ -132,6 +132,12 @@ export type GetWorkspaceStatusInput = {
   workspaceId: string;
 };
 
+export type GetFilingSummaryInput = {
+  workspaceId: string;
+  draftId?: string;
+  detailLevel?: 'short' | 'standard';
+};
+
 export type CollectionStatusData = {
   connectedSources: Array<{
     sourceId: string;
@@ -388,6 +394,22 @@ export type GetWorkspaceStatusData = {
   nextRecommendedAction?: string;
 };
 
+export type GetFilingSummaryData = {
+  workspaceId: string;
+  draftId?: string;
+  headline: string;
+  summaryText: string;
+  status: string;
+  keyPoints: string[];
+  blockers: string[];
+  nextRecommendedAction?: string;
+  metrics: {
+    unresolvedReviewCount: number;
+    warningCount: number;
+    fieldValueCount: number;
+  };
+};
+
 export interface KoreanTaxMCPContracts {
   'tax.setup.inspect_environment': {
     input: InspectEnvironmentInput;
@@ -408,6 +430,10 @@ export interface KoreanTaxMCPContracts {
   'tax.workspace.get_status': {
     input: GetWorkspaceStatusInput;
     output: MCPResponseEnvelope<GetWorkspaceStatusData>;
+  };
+  'tax.filing.get_summary': {
+    input: GetFilingSummaryInput;
+    output: MCPResponseEnvelope<GetFilingSummaryData>;
   };
   'tax.sources.connect': {
     input: ConnectSourceInput;
