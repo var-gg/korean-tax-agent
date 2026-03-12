@@ -1,4 +1,5 @@
 import rawDemo from './demo-workspace.json';
+import { shouldSendFilingAlert, type FilingAlertDeliveryRecord } from '../packages/mcp-server/src/alert-dedupe.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
 import { KoreanTaxMCPFacade } from '../packages/mcp-server/src/facade.js';
@@ -43,9 +44,20 @@ const dispatchPlan = buildFilingAlertDispatchPlan(routing, decision, {
   updatesTarget: 'discord:#tax-operator-updates',
 });
 
-console.log('\n--- Dispatch plan ---\n');
-console.log(dispatchPlan);
-console.log('\n(See examples/filing-alert-dedupe-example.ts for cooldown / duplicate suppression.)');
+const firstTry = shouldSendFilingAlert(demo.workspaceId, dispatchPlan, undefined, 0);
+const previousRecord: FilingAlertDeliveryRecord = {
+  workspaceId: demo.workspaceId,
+  fingerprint: firstTry.fingerprint,
+  sentAtMs: 5 * 60 * 1000,
+  severity: dispatchPlan.severity,
+  route: dispatchPlan.route,
+};
+const secondTry = shouldSendFilingAlert(demo.workspaceId, dispatchPlan, previousRecord, 10 * 60 * 1000);
+
+console.log('\n--- First try ---\n');
+console.log(firstTry);
+console.log('\n--- Second try ---\n');
+console.log(secondTry);
 
 function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): FilingAlertSnapshot {
   return {

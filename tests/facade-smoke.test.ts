@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { KoreanTaxMCPFacade, SUPPORTED_RUNTIME_TOOLS } from '../packages/mcp-server/src/facade.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
+import { shouldSendFilingAlert } from '../packages/mcp-server/src/alert-dedupe.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
@@ -157,6 +158,25 @@ describe('mcp facade', () => {
     });
     expect(updatesDispatchPlan.target).toBe('discord:#tax-operator-updates');
     expect(updatesDispatchPlan.shouldSend).toBe(true);
+
+    const firstSendDecision = shouldSendFilingAlert(demo.workspaceId, updatesDispatchPlan, undefined, 0);
+    expect(firstSendDecision.shouldSend).toBe(true);
+    expect(firstSendDecision.reason).toBe('send');
+
+    const duplicateSuppressed = shouldSendFilingAlert(
+      demo.workspaceId,
+      updatesDispatchPlan,
+      {
+        workspaceId: demo.workspaceId,
+        fingerprint: firstSendDecision.fingerprint,
+        sentAtMs: 30 * 60 * 1000,
+        severity: updatesDispatchPlan.severity,
+        route: updatesDispatchPlan.route,
+      },
+      31 * 60 * 1000,
+    );
+    expect(duplicateSuppressed.shouldSend).toBe(false);
+    expect(duplicateSuppressed.reason).toBe('suppressed_duplicate');
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',
