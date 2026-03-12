@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { InMemoryKoreanTaxMCPRuntime } from '../packages/mcp-server/src/runtime.js';
-import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
+import type { ClassificationDecision, ConsentRecord, FilingFieldValue, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
   workspaceId: string;
@@ -108,5 +108,44 @@ describe('in-memory runtime filing flow', () => {
     expect(prepareResult.blockingReason).toBeUndefined();
     expect(prepareResult.data.browserAssistReady).toBe(true);
     expect(prepareResult.readiness?.submissionReadiness).toBe('submission_assist_ready');
+  });
+
+  it('creates review items when hometax comparison finds material mismatches', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime({
+      consentRecords: demo.consentRecords,
+      sources: demo.sources,
+      syncAttempts: demo.syncAttempts,
+      coverageGapsByWorkspace: {
+        [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
+      },
+      transactions: demo.transactions,
+      decisions: demo.decisions,
+    });
+
+    const resolvedDraft = runtime.invoke('tax.filing.compute_draft', {
+      workspaceId: demo.workspaceId,
+      draftMode: 'new_version',
+      includeAssumptions: true,
+    });
+
+    const draft = runtime.getDraft(demo.workspaceId);
+    const fieldValues = (draft?.fieldValues ?? []) as FilingFieldValue[];
+    expect(fieldValues.length).toBeGreaterThan(0);
+
+    fieldValues[0] = {
+      ...fieldValues[0],
+      portalObservedValue: typeof fieldValues[0].value === 'number' ? Number(fieldValues[0].value) + 200000 : 'DIFFERENT_PORTAL_VALUE',
+    };
+
+    const compareResult = runtime.invoke('tax.filing.compare_with_hometax', {
+      workspaceId: demo.workspaceId,
+      draftId: resolvedDraft.data.draftId,
+      comparisonMode: 'visible_portal',
+      sectionKeys: [fieldValues[0].sectionKey],
+    });
+
+    expect(compareResult.data.materialMismatches.length).toBeGreaterThan(0);
+    expect(compareResult.nextRecommendedAction).toBe('tax.classify.list_review_items');
+    expect(runtime.listReviewItems(demo.workspaceId).some((item) => item.reasonCode === 'hometax_material_mismatch')).toBe(true);
   });
 });

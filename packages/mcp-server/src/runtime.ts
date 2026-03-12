@@ -345,7 +345,16 @@ export class InMemoryKoreanTaxMCPRuntime {
       });
     }
 
-    return result;
+    for (const item of buildComparisonReviewItems(input.workspaceId, input.draftId, result.data.materialMismatches)) {
+      if (!this.store.reviewItems.has(item.reviewItemId)) {
+        this.store.reviewItems.set(item.reviewItemId, item);
+      }
+    }
+
+    return {
+      ...result,
+      nextRecommendedAction: result.data.materialMismatches.length > 0 ? 'tax.classify.list_review_items' : result.nextRecommendedAction,
+    };
   }
 
   private refreshOfficialData(input: RefreshOfficialDataInput): MCPResponseEnvelope<RefreshOfficialDataData> {
@@ -390,6 +399,31 @@ export class InMemoryKoreanTaxMCPRuntime {
     this.store.assistSessionsByWorkspace.set(input.workspaceId, result.data);
     return result;
   }
+}
+
+function buildComparisonReviewItems(
+  workspaceId: string,
+  draftId: string,
+  mismatches: CompareWithHomeTaxData['materialMismatches'],
+): ReviewItem[] {
+  return mismatches.map((mismatch) => ({
+    reviewItemId: `review_${draftId}_${mismatch.sectionKey}_${mismatch.fieldKey}_comparison_mismatch`,
+    workspaceId,
+    reasonCode: 'hometax_material_mismatch',
+    severity: mismatch.severity === 'critical' ? 'critical' : mismatch.severity === 'high' ? 'high' : 'medium',
+    question: `홈택스 값과 초안 값이 다릅니다: ${mismatch.sectionKey}.${mismatch.fieldKey}`,
+    candidateOptions: ['accept_portal_value', 'keep_draft_value', 'mark_manual_followup'],
+    suggestedOption: 'mark_manual_followup',
+    linkedEntityIds: [draftId, `${mismatch.sectionKey}:${mismatch.fieldKey}`],
+    impactEstimate: {
+      draftValue: mismatch.draftValue,
+      portalObservedValue: mismatch.portalObservedValue,
+      sectionKey: mismatch.sectionKey,
+      fieldKey: mismatch.fieldKey,
+    },
+    resolutionState: 'open',
+    resolutionNote: 'Generated from HomeTax comparison mismatch.',
+  }));
 }
 
 function extractWorkspaceIdFromSourceId(sourceId?: string): string {
