@@ -107,6 +107,16 @@ describe('mcp facade', () => {
     });
     expect(integratedDiscordReply.message).toContain('COLLECTION BLOCKED');
 
+    const integratedGenericReply = facade.invokeAndFormatFilingSummary(
+      {
+        workspaceId: demo.workspaceId,
+        detailLevel: 'standard',
+      },
+      'generic',
+    );
+    expect(integratedGenericReply.message).toContain(standardSummaryResult.data.headline);
+    expect(integratedGenericReply.message).toContain('Submission readiness');
+
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',
       input: { workspaceId: demo.workspaceId },

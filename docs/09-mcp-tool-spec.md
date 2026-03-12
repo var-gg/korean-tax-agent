@@ -467,6 +467,8 @@ Example integration:
 - invoke `tax.filing.get_summary`
 - on Discord/operator surfaces, send `operatorUpdate`
 - on generic chat surfaces, use `headline + summaryText`
+- facade helpers: `invokeAndFormatFilingSummaryForDiscord(...)` and `invokeAndFormatFilingSummary(..., 'generic')`
+- sample usage: `examples/filing-summary-reply-example.ts`
 
 #### `tax.filing.compare_with_hometax`
 Purpose:
