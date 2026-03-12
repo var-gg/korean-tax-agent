@@ -1,4 +1,5 @@
 import type { ClassificationDecision, FilingDraft, FilingFieldValue, LedgerTransaction, ReviewItem, ReviewSeverity, WithholdingRecord } from './types.js';
+import { detectFilingPath } from './path.js';
 import { deriveReadinessSummary } from './readiness.js';
 
 export type DraftReadiness = {
@@ -237,9 +238,15 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
   draft.fieldValues = fieldValues;
   draft.estimateConfidence = readiness.readyForSubmission && (input.withholdingRecords ?? []).length > 0 ? 'high' : aggregate.lowConfidenceDecisionCount > 0 ? 'low' : 'medium';
 
+  const filingPathDetection = detectFilingPath({
+    transactions: input.transactions,
+    withholdingRecords: input.withholdingRecords,
+    reviewItems: input.reviewItems,
+  });
+
   const readinessSummary = deriveReadinessSummary({
-    supportTier: 'undetermined',
-    filingPathKind: 'unknown',
+    supportTier: filingPathDetection.supportTier,
+    filingPathKind: filingPathDetection.filingPathKind,
     reviewItems: input.reviewItems,
     draft: {
       draftId: draft.draftId,
@@ -250,9 +257,10 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
   draft.estimateReadiness = readinessSummary.estimateReadiness;
   draft.draftReadiness = readinessSummary.draftReadiness;
   draft.submissionReadiness = readinessSummary.submissionReadiness;
+  draft.supportTierAtComputation = filingPathDetection.supportTier;
   draft.comparisonSummaryState = readinessSummary.comparisonSummaryState;
   draft.freshnessState = readinessSummary.freshnessState;
-  draft.majorUnknowns = readinessSummary.majorUnknowns;
+  draft.majorUnknowns = [...new Set([...filingPathDetection.missingFacts, ...readinessSummary.majorUnknowns])];
   draft.blockerCodes = readinessSummary.blockerCodes;
   return draft;
 }
