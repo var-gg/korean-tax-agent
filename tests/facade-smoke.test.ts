@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { KoreanTaxMCPFacade, SUPPORTED_RUNTIME_TOOLS } from '../packages/mcp-server/src/facade.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
+import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
@@ -126,7 +127,15 @@ describe('mcp facade', () => {
     expect(alertDecision.shouldNotify).toBe(true);
     expect(alertDecision.severity).toBe('high');
     expect(alertDecision.message).toContain('COLLECTION BLOCKED');
-    expect(routeFilingAlert(alertDecision).route).toBe('operator-immediate');
+    const immediateRouting = routeFilingAlert(alertDecision);
+    expect(immediateRouting.route).toBe('operator-immediate');
+    expect(
+      buildFilingAlertDispatchPlan(immediateRouting, alertDecision, {
+        immediateTarget: 'discord:#tax-operator-immediate',
+        watchTarget: 'discord:#tax-operator-watch',
+        updatesTarget: 'discord:#tax-operator-updates',
+      }).target,
+    ).toBe('discord:#tax-operator-immediate');
 
     const transitionedAlertDecision = decideFilingAlert(currentAlertSnapshot, {
       ...currentAlertSnapshot,
@@ -139,7 +148,15 @@ describe('mcp facade', () => {
     expect(transitionedAlertDecision.reason).toBe('status_changed');
     expect(transitionedAlertDecision.severity).toBe('info');
     expect(transitionedAlertDecision.message).toContain('READY FOR HOMETAX ASSIST');
-    expect(routeFilingAlert(transitionedAlertDecision).route).toBe('operator-updates');
+    const updatesRouting = routeFilingAlert(transitionedAlertDecision);
+    expect(updatesRouting.route).toBe('operator-updates');
+    const updatesDispatchPlan = buildFilingAlertDispatchPlan(updatesRouting, transitionedAlertDecision, {
+      immediateTarget: 'discord:#tax-operator-immediate',
+      watchTarget: 'discord:#tax-operator-watch',
+      updatesTarget: 'discord:#tax-operator-updates',
+    });
+    expect(updatesDispatchPlan.target).toBe('discord:#tax-operator-updates');
+    expect(updatesDispatchPlan.shouldSend).toBe(true);
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',

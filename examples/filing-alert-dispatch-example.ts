@@ -1,6 +1,7 @@
 import rawDemo from './demo-workspace.json';
-import { KoreanTaxMCPFacade } from '../packages/mcp-server/src/facade.js';
+import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
+import { KoreanTaxMCPFacade } from '../packages/mcp-server/src/facade.js';
 import { decideFilingAlert, toFilingAlertSnapshot, type FilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
@@ -32,20 +33,18 @@ const before = facade.invokeTool({
   input: { workspaceId: demo.workspaceId, detailLevel: 'short' },
 });
 const beforeSnapshot = toFilingAlertSnapshot((before as typeof before & { data: any }).data);
-
 const afterSnapshot = simulateReadyForAssistTransition(beforeSnapshot);
+
 const decision = decideFilingAlert(beforeSnapshot, afterSnapshot);
 const routing = routeFilingAlert(decision);
+const dispatchPlan = buildFilingAlertDispatchPlan(routing, decision, {
+  immediateTarget: 'discord:#tax-operator-immediate',
+  watchTarget: 'discord:#tax-operator-watch',
+  updatesTarget: 'discord:#tax-operator-updates',
+});
 
-console.log('\n--- Before snapshot ---\n');
-console.log(beforeSnapshot.operatorUpdate);
-console.log('\n--- Alert decision ---\n');
-console.log(`reason=${decision.reason} severity=${decision.severity}`);
-console.log('\n--- Routing ---\n');
-console.log(`route=${routing.route} shouldSend=${routing.shouldSend}`);
-console.log('\n--- Message to send ---\n');
-console.log(decision.message ?? 'NO_MESSAGE');
-console.log('\n(See examples/filing-alert-dispatch-example.ts for target mapping.)');
+console.log('\n--- Dispatch plan ---\n');
+console.log(dispatchPlan);
 
 function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): FilingAlertSnapshot {
   return {

@@ -476,8 +476,9 @@ Alerting pattern:
 - notify only when status, blockers, or next action changed
 - classify alert severity for operator routing (`high`, `medium`, `info`, `none`)
 - map severity into abstract routes such as `operator-immediate`, `operator-watch`, `operator-updates`, or `drop`
+- convert routes into provider-specific targets with a dispatch-plan adapter
 - for demos/tests, it is acceptable to simulate a transitioned snapshot directly from the previous snapshot
-- sample usage: `examples/filing-status-alert-example.ts`
+- sample usage: `examples/filing-status-alert-example.ts`, `examples/filing-alert-dispatch-example.ts`
 
 #### `tax.filing.compare_with_hometax`
 Purpose:
