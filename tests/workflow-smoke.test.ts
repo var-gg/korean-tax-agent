@@ -91,9 +91,9 @@ describe('workflow smoke', () => {
       reviewItems,
     );
 
-    expect(initialDraftResult.status).toBe('blocked');
-    expect(initialDraftResult.checkpointType).toBe('review_judgment');
-    expect(initialDraftResult.blockingReason).toBe('awaiting_review_decision');
+    expect(initialDraftResult.status).toBe('completed');
+    expect(initialDraftResult.readiness?.blockerCodes).toContain('awaiting_review_decision');
+    expect(initialDraftResult.readiness?.draftReadiness).toBe('draft_ready');
 
     const resolutionResult = taxClassifyResolveReviewItem(
       {
@@ -121,6 +121,7 @@ describe('workflow smoke', () => {
     );
 
     expect(resolvedDraftResult.status).toBe('completed');
+    expect(resolvedDraftResult.readiness?.draftReadiness).toBe('draft_ready');
 
     const prepareResult = taxFilingPrepareHomeTax(
       {
@@ -130,17 +131,9 @@ describe('workflow smoke', () => {
       resolvedItems,
     );
 
-    expect(prepareResult.status).toBe('completed');
-    expect(prepareResult.data.browserAssistReady).toBe(true);
-
-    const assistResult = taxBrowserStartHomeTaxAssist({
-      workspaceId: demo.workspaceId,
-      draftId: resolvedDraftResult.data.draftId,
-      mode: 'guide_only',
-    });
-
-    expect(assistResult.status).toBe('awaiting_auth');
-    expect(assistResult.checkpointType).toBe('authentication');
-    expect(assistResult.data.checkpointType).toBe('authentication');
+    expect(prepareResult.status).toBe('blocked');
+    expect(prepareResult.blockingReason).toBe('comparison_incomplete');
+    expect(prepareResult.data.browserAssistReady).toBe(false);
+    expect(prepareResult.readiness?.submissionReadiness).toBe('draft_ready');
   });
 });

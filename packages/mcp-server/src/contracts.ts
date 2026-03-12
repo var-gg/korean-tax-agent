@@ -2,7 +2,12 @@ import type {
   BlockingReason,
   CheckpointType,
   ClassificationDecision,
+  DataFreshnessState,
+  FilingComparisonSummaryState,
   FilingFieldValue,
+  FilingPathKind,
+  FilingSupportTier,
+  ReadinessLevel,
   ReviewItem,
   SourceState,
   SyncAttemptState,
@@ -37,9 +42,22 @@ export type MCPProgress = {
   percent: number;
 };
 
+export type MCPReadiness = {
+  supportTier: FilingSupportTier;
+  filingPathKind: FilingPathKind;
+  estimateReadiness: ReadinessLevel;
+  draftReadiness: ReadinessLevel;
+  submissionReadiness: ReadinessLevel;
+  comparisonSummaryState: FilingComparisonSummaryState;
+  freshnessState: DataFreshnessState;
+  majorUnknowns: string[];
+  blockerCodes: BlockingReason[];
+};
+
 export type MCPResponseEnvelope<TData = Record<string, unknown>> = {
   ok: boolean;
   data: TData;
+  readiness?: MCPReadiness;
   warnings?: MCPWarning[];
   requiresConsent?: boolean;
   requiresAuth?: boolean;

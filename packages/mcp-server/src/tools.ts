@@ -1,5 +1,7 @@
 import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent.js';
-import { computeDraftFromLedger, evaluateDraftReadiness } from '../../core/src/draft.js';
+import { computeDraftFromLedger } from '../../core/src/draft.js';
+import { detectFilingPath } from '../../core/src/path.js';
+import { deriveReadinessSummary } from '../../core/src/readiness.js';
 import { classifyTransactions } from '../../core/src/classify.js';
 import { buildReviewQueue, resolveReviewItems, summarizeReviewQueue } from '../../core/src/review.js';
 import {
@@ -457,7 +459,6 @@ export function taxFilingComputeDraft(
   withholdingRecords?: WithholdingRecord[];
   fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
 }> {
-  const readiness = evaluateDraftReadiness(reviewItems);
   const filingYear = input.workspaceId.match(/(20\d{2})/)?.[1];
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
   const scopedDecisions = decisions.filter((decision) => scopedTransactions.some((tx) => tx.transactionId === decision.entityId));
@@ -487,6 +488,21 @@ export function taxFilingComputeDraft(
     withholdingRecords,
     assumptions: input.includeAssumptions ? ['Initial draft assumptions placeholder'] : [],
   });
+  const filingPathDetection = detectFilingPath({
+    taxpayerFacts,
+    transactions: scopedTransactions,
+    withholdingRecords,
+    reviewItems,
+  });
+  const readinessSummary = deriveReadinessSummary({
+    supportTier: filingPathDetection.supportTier,
+    filingPathKind: filingPathDetection.filingPathKind,
+    reviewItems,
+    draft: {
+      draftId: draft.draftId,
+      fieldValues: draft.fieldValues,
+    },
+  });
   const audit = createAuditEvent({
     workspaceId: input.workspaceId,
     eventType: 'draft_computed',
@@ -495,12 +511,14 @@ export function taxFilingComputeDraft(
     summary: `Computed draft ${draft.draftId}.`,
   });
 
+  const computeBlockingReason = deriveComputeDraftBlockingReason(readinessSummary);
+
   return {
-    ok: true,
-    status: readiness.readyForSubmission ? 'completed' : 'blocked',
+    ok: computeBlockingReason === undefined,
+    status: computeBlockingReason === undefined ? 'completed' : 'blocked',
     data: {
       draftId: draft.draftId,
-      unresolvedBlockerCount: readiness.blockerReasons.length,
+      unresolvedBlockerCount: readinessSummary.blockerCodes.length,
       warnings: draft.warnings,
       incomeSummary: draft.incomeSummary,
       expenseSummary: draft.expenseSummary,
@@ -512,11 +530,12 @@ export function taxFilingComputeDraft(
       withholdingRecords,
       fieldValues: draft.fieldValues,
     },
-    checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
-    blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',
-    pendingUserAction: readiness.readyForSubmission
-      ? undefined
-      : derivePendingUserAction({ blockingReason: 'awaiting_review_decision', checkpointType: 'review_judgment' }),
+    readiness: readinessSummary,
+    checkpointType: computeBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
+    blockingReason: computeBlockingReason,
+    pendingUserAction: computeBlockingReason
+      ? derivePendingUserAction({ blockingReason: computeBlockingReason, checkpointType: computeBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined })
+      : undefined,
     progress: {
       phase: 'drafting',
       step: 'compute_from_ledger',
@@ -536,7 +555,38 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
   browserAssistReady: boolean;
   fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
 }> {
-  const readiness = evaluateDraftReadiness(reviewItems);
+  const fieldValues = [
+    {
+      filingFieldValueId: `field_${input.draftId}_income_total`,
+      draftId: input.draftId,
+      sectionKey: 'income',
+      fieldKey: 'total_income',
+      value: null,
+      sourceOfTruth: 'imported' as const,
+      comparisonState: 'not_compared' as const,
+      freshnessState: 'current_enough' as const,
+    },
+    {
+      filingFieldValueId: `field_${input.draftId}_withholding_total`,
+      draftId: input.draftId,
+      sectionKey: 'withholding',
+      fieldKey: 'total_withheld_tax',
+      value: null,
+      sourceOfTruth: 'official' as const,
+      requiresManualEntry: true,
+      comparisonState: 'manual_only' as const,
+      freshnessState: 'refresh_recommended' as const,
+    },
+  ];
+  const readinessSummary = deriveReadinessSummary({
+    supportTier: 'undetermined',
+    filingPathKind: 'unknown',
+    reviewItems,
+    draft: {
+      draftId: input.draftId,
+      fieldValues,
+    },
+  });
   const audit = createAuditEvent({
     workspaceId: input.workspaceId,
     eventType: 'draft_computed',
@@ -545,9 +595,11 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
     summary: `Prepared HomeTax mapping state for draft ${input.draftId}.`,
   });
 
+  const prepareBlockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
+
   return {
-    ok: readiness.readyForSubmission,
-    status: readiness.readyForSubmission ? 'completed' : 'blocked',
+    ok: prepareBlockingReason === undefined,
+    status: prepareBlockingReason === undefined ? 'completed' : 'blocked',
     data: {
       sectionMapping: {
         income: 'mapped_placeholder',
@@ -555,36 +607,17 @@ export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems:
         withholding: 'mapped_placeholder',
       },
       requiredManualFields: ['withholding.total_withheld_tax'],
-      blockedFields: readiness.blockerReasons,
-      browserAssistReady: readiness.readyForSubmission,
-      fieldValues: [
-        {
-          filingFieldValueId: `field_${input.draftId}_income_total`,
-          draftId: input.draftId,
-          sectionKey: 'income',
-          fieldKey: 'total_income',
-          value: null,
-          sourceOfTruth: 'imported',
-          comparisonState: 'not_compared',
-        },
-        {
-          filingFieldValueId: `field_${input.draftId}_withholding_total`,
-          draftId: input.draftId,
-          sectionKey: 'withholding',
-          fieldKey: 'total_withheld_tax',
-          value: null,
-          sourceOfTruth: 'official',
-          requiresManualEntry: true,
-          comparisonState: 'manual_only',
-        },
-      ],
+      blockedFields: readinessSummary.blockerCodes,
+      browserAssistReady: prepareBlockingReason === undefined,
+      fieldValues,
     },
-    checkpointType: readiness.readyForSubmission ? undefined : 'review_judgment',
-    blockingReason: readiness.readyForSubmission ? undefined : 'awaiting_review_decision',
-    pendingUserAction: readiness.readyForSubmission
-      ? undefined
-      : derivePendingUserAction({ blockingReason: 'awaiting_review_decision', checkpointType: 'review_judgment' }),
-    nextRecommendedAction: readiness.readyForSubmission ? 'tax.browser.start_hometax_assist' : 'tax.classify.list_review_items',
+    readiness: readinessSummary,
+    checkpointType: prepareBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
+    blockingReason: prepareBlockingReason,
+    pendingUserAction: prepareBlockingReason
+      ? derivePendingUserAction({ blockingReason: prepareBlockingReason, checkpointType: prepareBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined })
+      : undefined,
+    nextRecommendedAction: prepareBlockingReason === undefined ? 'tax.browser.start_hometax_assist' : 'tax.classify.list_review_items',
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_prepare_hometax',
@@ -627,6 +660,25 @@ export function demoBuildReviewQueue() {
     transactions: [],
     decisions: [],
   });
+}
+
+function deriveComputeDraftBlockingReason(readiness: { blockerCodes: string[]; draftReadiness: string }): import('../../core/src/types.js').BlockingReason | undefined {
+  if (readiness.draftReadiness === 'draft_ready') return undefined;
+  if (readiness.blockerCodes.includes('awaiting_review_decision')) return 'awaiting_review_decision';
+  if (readiness.blockerCodes.includes('missing_material_coverage')) return 'missing_material_coverage';
+  if (readiness.blockerCodes.includes('unsupported_filing_path')) return 'unsupported_filing_path';
+  return 'draft_not_ready';
+}
+
+function derivePrepareHomeTaxBlockingReason(readiness: { blockerCodes: string[]; submissionReadiness: string }): import('../../core/src/types.js').BlockingReason | undefined {
+  if (readiness.submissionReadiness === 'submission_assist_ready') return undefined;
+  if (readiness.blockerCodes.includes('awaiting_review_decision')) return 'awaiting_review_decision';
+  if (readiness.blockerCodes.includes('comparison_incomplete')) return 'comparison_incomplete';
+  if (readiness.blockerCodes.includes('official_data_refresh_required')) return 'official_data_refresh_required';
+  if (readiness.blockerCodes.includes('missing_material_coverage')) return 'missing_material_coverage';
+  if (readiness.blockerCodes.includes('unsupported_filing_path')) return 'unsupported_filing_path';
+  if (readiness.blockerCodes.includes('submission_not_ready')) return 'submission_not_ready';
+  return 'submission_not_ready';
 }
 
 function extractWorkspaceIdFromSourceId(sourceId?: string): string {

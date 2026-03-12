@@ -47,8 +47,8 @@ describe('in-memory runtime filing flow', () => {
       includeAssumptions: true,
     });
 
-    expect(initialDraft.status).toBe('blocked');
-    expect(initialDraft.checkpointType).toBe('review_judgment');
+    expect(initialDraft.status).toBe('completed');
+    expect(initialDraft.readiness?.blockerCodes).toContain('awaiting_review_decision');
     expect(runtime.getDraft(demo.workspaceId)?.draftId).toBe(initialDraft.data.draftId);
 
     const resolveResult = runtime.invoke('tax.classify.resolve_review_item', {
@@ -68,22 +68,16 @@ describe('in-memory runtime filing flow', () => {
     });
 
     expect(resolvedDraft.status).toBe('completed');
+    expect(resolvedDraft.readiness?.draftReadiness).toBe('draft_ready');
 
     const prepareResult = runtime.invoke('tax.filing.prepare_hometax', {
       workspaceId: demo.workspaceId,
       draftId: resolvedDraft.data.draftId,
     });
 
-    expect(prepareResult.status).toBe('completed');
-    expect(prepareResult.data.browserAssistReady).toBe(true);
-
-    const assistResult = runtime.invoke('tax.browser.start_hometax_assist', {
-      workspaceId: demo.workspaceId,
-      draftId: resolvedDraft.data.draftId,
-      mode: 'guide_only',
-    });
-
-    expect(assistResult.status).toBe('awaiting_auth');
-    expect(assistResult.data.authRequired).toBe(true);
+    expect(prepareResult.status).toBe('blocked');
+    expect(prepareResult.blockingReason).toBe('comparison_incomplete');
+    expect(prepareResult.data.browserAssistReady).toBe(false);
+    expect(prepareResult.readiness?.submissionReadiness).toBe('draft_ready');
   });
 });
