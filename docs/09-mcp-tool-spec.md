@@ -448,10 +448,14 @@ Input:
 Output:
 - headline
 - short summary text
+- compact operator update text
 - key points
 - blockers
 - next recommended action
 - lightweight draft metrics
+
+Formatting note:
+- `operatorUpdate` should be compact and channel-friendly for operator surfaces like Discord
 
 Notes:
 - this is the preferred narrative read model when an agent needs to explain status in plain language

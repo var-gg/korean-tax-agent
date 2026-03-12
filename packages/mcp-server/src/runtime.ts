@@ -334,13 +334,22 @@ export class InMemoryKoreanTaxMCPRuntime {
       `freshness=${workspace.freshnessState ?? 'stale_unknown'}`,
     ];
 
+    const detailLevel = input.detailLevel ?? 'standard';
     const headline = buildFilingSummaryHeadline(workspace);
     const summaryText = buildFilingSummaryText({
       workspace,
       draft,
       blockers,
       nextAction,
-      detailLevel: input.detailLevel ?? 'standard',
+      detailLevel,
+    });
+    const operatorUpdate = buildOperatorUpdate({
+      workspace,
+      draft,
+      blockers,
+      nextAction,
+      detailLevel,
+      headline,
     });
 
     return {
@@ -351,6 +360,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         draftId: input.draftId ?? draft?.draftId,
         headline,
         summaryText,
+        operatorUpdate,
         status: workspace.status,
         keyPoints,
         blockers,
@@ -749,6 +759,35 @@ function describeRecommendedAction(action: string): string {
     default:
       return action;
   }
+}
+
+function buildOperatorUpdate(params: {
+  workspace: FilingWorkspace;
+  draft?: ComputeDraftData;
+  blockers: string[];
+  nextAction?: string;
+  detailLevel: 'short' | 'standard';
+  headline: string;
+}): string {
+  const lines = [
+    `STATUS: ${params.headline}`,
+    `READINESS: submission=${humanizeToken(params.workspace.submissionReadiness ?? 'not_ready')} | comparison=${humanizeToken(params.workspace.comparisonSummaryState ?? 'not_started')} | freshness=${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}`,
+    `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | warnings=${params.draft?.warnings.length ?? 0} | draft=${params.workspace.currentDraftId ?? 'none'}`,
+  ];
+
+  if (params.blockers.length > 0) {
+    lines.push(`BLOCKER: ${describeBlockingReason(params.blockers[0])}`);
+  }
+
+  if (params.nextAction) {
+    lines.push(`NEXT: ${describeRecommendedAction(params.nextAction)}`);
+  }
+
+  if (params.detailLevel === 'standard' && (params.draft?.fieldValues?.length ?? 0) > 0) {
+    lines.push(`DRAFT: fields=${params.draft?.fieldValues?.length ?? 0}`);
+  }
+
+  return lines.join('\n');
 }
 
 function buildFilingSummaryHeadline(workspace: FilingWorkspace): string {

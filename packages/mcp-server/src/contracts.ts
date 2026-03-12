@@ -399,6 +399,7 @@ export type GetFilingSummaryData = {
   draftId?: string;
   headline: string;
   summaryText: string;
+  operatorUpdate: string;
   status: string;
   keyPoints: string[];
   blockers: string[];
