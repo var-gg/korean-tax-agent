@@ -705,20 +705,69 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 }
 
+function humanizeToken(value: string): string {
+  return value.replace(/_/g, ' ');
+}
+
+function describeBlockingReason(reason: string): string {
+  switch (reason) {
+    case 'awaiting_review_decision':
+      return 'review decisions are still pending';
+    case 'comparison_incomplete':
+      return 'HomeTax comparison has not been completed yet';
+    case 'official_data_refresh_required':
+      return 'official data refresh is still required';
+    case 'missing_material_coverage':
+      return 'material coverage is still missing';
+    case 'unsupported_filing_path':
+      return 'the filing path is outside the supported prototype scope';
+    case 'missing_auth':
+      return 'user authentication is still required';
+    case 'missing_consent':
+      return 'required consent is still missing';
+    case 'export_required':
+      return 'an export or manual artifact handoff is still required';
+    default:
+      return humanizeToken(reason);
+  }
+}
+
+function describeRecommendedAction(action: string): string {
+  switch (action) {
+    case 'tax.classify.list_review_items':
+      return 'open the review queue and resolve pending items';
+    case 'tax.filing.compute_draft':
+      return 'compute or refresh the filing draft';
+    case 'tax.filing.refresh_official_data':
+      return 'refresh official data before continuing';
+    case 'tax.filing.compare_with_hometax':
+      return 'run the HomeTax comparison step';
+    case 'tax.filing.prepare_hometax':
+      return 'prepare the draft for HomeTax handoff';
+    case 'tax.sources.resume_sync':
+      return 'resume the blocked source sync flow';
+    default:
+      return action;
+  }
+}
+
 function buildFilingSummaryHeadline(workspace: FilingWorkspace): string {
   if (workspace.submissionReadiness === 'submission_assist_ready') {
-    return 'HomeTax preparation can proceed.';
+    return 'The filing draft is ready for HomeTax preparation.';
   }
   if (workspace.unresolvedReviewCount > 0) {
-    return 'Review decisions are still blocking filing progress.';
+    return 'The filing workflow is waiting on review decisions.';
   }
   if (workspace.lastBlockingReason === 'comparison_incomplete') {
-    return 'HomeTax comparison is still incomplete.';
+    return 'The draft still needs HomeTax comparison before preparation.';
+  }
+  if (workspace.lastBlockingReason === 'official_data_refresh_required') {
+    return 'Official data should be refreshed before moving forward.';
   }
   if (workspace.lastCollectionStatus === 'awaiting_user_action' || workspace.lastCollectionStatus === 'blocked') {
-    return 'Collection is waiting for user action.';
+    return 'Collection is paused until the user completes the next step.';
   }
-  return 'Filing workspace status is available.';
+  return 'The filing workspace is in a readable, in-progress state.';
 }
 
 function buildFilingSummaryText(params: {
@@ -728,24 +777,29 @@ function buildFilingSummaryText(params: {
   nextAction?: string;
   detailLevel: 'short' | 'standard';
 }): string {
-  const parts = [
-    `status=${params.workspace.status}`,
-    `reviews=${params.workspace.unresolvedReviewCount}`,
-    `submission=${params.workspace.submissionReadiness ?? 'not_ready'}`,
-  ];
+  const reviewSentence = params.workspace.unresolvedReviewCount > 0
+    ? `${params.workspace.unresolvedReviewCount} review item(s) still need resolution.`
+    : 'No review items are currently blocking the draft.';
 
-  if (params.blockers.length > 0) {
-    parts.push(`blockers=${params.blockers.join(',')}`);
-  }
-  if (params.nextAction) {
-    parts.push(`next=${params.nextAction}`);
-  }
-  if (params.detailLevel === 'standard' && params.draft) {
-    parts.push(`warnings=${params.draft.warnings.length}`);
-    parts.push(`fields=${params.draft.fieldValues?.length ?? 0}`);
+  const readinessSentence = `Submission readiness is ${humanizeToken(params.workspace.submissionReadiness ?? 'not_ready')}, with comparison ${humanizeToken(params.workspace.comparisonSummaryState ?? 'not_started')} and freshness ${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}.`;
+
+  const blockerSentence = params.blockers.length > 0
+    ? `Main blocker: ${params.blockers.map((blocker) => describeBlockingReason(blocker)).join(' ')}.`
+    : 'No blocking reason is currently recorded.';
+
+  const nextSentence = params.nextAction
+    ? `Recommended next action: ${describeRecommendedAction(params.nextAction)}.`
+    : 'No immediate next action is suggested right now.';
+
+  if (params.detailLevel === 'short') {
+    return [reviewSentence, blockerSentence, nextSentence].join(' ');
   }
 
-  return parts.join(' | ');
+  const detailSentence = params.draft
+    ? `Current draft has ${params.draft.fieldValues?.length ?? 0} field value(s) and ${params.draft.warnings.length} warning(s).`
+    : 'No draft snapshot is stored yet.';
+
+  return [reviewSentence, readinessSentence, blockerSentence, detailSentence, nextSentence].join(' ');
 }
 
 function isBlockingReason(value: string): value is BlockingReason {

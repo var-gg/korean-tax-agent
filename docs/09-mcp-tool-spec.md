@@ -455,6 +455,7 @@ Output:
 
 Notes:
 - this is the preferred narrative read model when an agent needs to explain status in plain language
+- `short` should emphasize blocker + next step, while `standard` should also include draft/readiness context
 
 #### `tax.filing.compare_with_hometax`
 Purpose:

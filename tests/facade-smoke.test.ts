@@ -71,6 +71,7 @@ describe('mcp facade', () => {
     expect(filingSummaryResult.ok).toBe(true);
     expect(typeof filingSummaryResult.data.headline).toBe('string');
     expect(typeof filingSummaryResult.data.summaryText).toBe('string');
+    expect(filingSummaryResult.data.summaryText).toContain('Recommended next action');
     expect(Array.isArray(filingSummaryResult.data.keyPoints)).toBe(true);
 
     const compareInvalid = facade.invokeTool({
@@ -80,6 +81,14 @@ describe('mcp facade', () => {
 
     expect(compareInvalid.ok).toBe(false);
     expect(compareInvalid.errorCode).toBe('invalid_input');
+
+    const standardSummaryResult = facade.invokeTool({
+      name: 'tax.filing.get_summary',
+      input: { workspaceId: demo.workspaceId, detailLevel: 'standard' },
+    });
+
+    expect(standardSummaryResult.ok).toBe(true);
+    expect(standardSummaryResult.data.summaryText).toContain('Submission readiness');
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',
