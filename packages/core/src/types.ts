@@ -97,11 +97,15 @@ export type BlockingReason =
   | 'export_required'
   | 'insufficient_metadata'
   | 'unsupported_source'
+  | 'unsupported_filing_path'
+  | 'missing_material_coverage'
   | 'awaiting_review_decision'
   | 'awaiting_final_approval'
   | 'draft_not_ready'
+  | 'submission_not_ready'
+  | 'comparison_incomplete'
+  | 'official_data_refresh_required'
   | 'unsupported_hometax_state';
-
 export type AuditEventType =
   | 'source_planned'
   | 'source_connected'
@@ -126,12 +130,35 @@ export type AuthCheckpointState = 'pending' | 'in_progress' | 'completed' | 'exp
 export type SyncMode = 'incremental' | 'full';
 export type SyncAttemptState = 'queued' | 'running' | 'paused' | 'awaiting_user_action' | 'blocked' | 'completed' | 'failed';
 export type CoverageGapState = 'open' | 'deferred' | 'resolved' | 'accepted_with_risk';
-export type FilingSupportTier = 'freelancer_basic' | 'sole_proprietor_basic' | 'mixed_income_basic' | 'manual_only';
+export type FilingSupportTier = 'tier_a' | 'tier_b' | 'tier_c' | 'undetermined';
+export type FilingPathKind =
+  | 'prefilled_simple'
+  | 'freelancer_withholding_clear'
+  | 'mixed_income_limited'
+  | 'expense_claim_simple'
+  | 'manual_heavy_general'
+  | 'official_data_unstable'
+  | 'platform_income_extra_review'
+  | 'bookkeeping_heavy'
+  | 'allocation_heavy'
+  | 'specialist_optimization'
+  | 'unknown';
 export type FilingFactCategory = 'taxpayer_profile' | 'income_stream' | 'deduction_eligibility' | 'business_use' | 'filing_path';
 export type FilingFactStatus = 'missing' | 'provided' | 'inferred' | 'review_required';
 export type SourceOfTruthType = 'official' | 'imported' | 'inferred' | 'user_asserted';
 export type EstimateConfidenceBand = 'low' | 'medium' | 'high';
+export type ReadinessLevel = 'not_ready' | 'estimate_ready' | 'draft_ready' | 'submission_assist_ready';
 export type FilingFieldComparisonState = 'not_compared' | 'matched' | 'mismatch' | 'manual_only';
+export type FilingComparisonSummaryState = 'not_started' | 'partial' | 'matched_enough' | 'material_mismatch' | 'manual_only';
+export type DataFreshnessState = 'current_enough' | 'refresh_recommended' | 'refresh_required' | 'stale_unknown';
+export type CoverageGapType =
+  | 'missing_income_source'
+  | 'missing_withholding_record'
+  | 'missing_expense_evidence'
+  | 'missing_deduction_fact'
+  | 'missing_filing_path_determination'
+  | 'missing_hometax_comparison'
+  | 'stale_official_data';
 
 export interface TaxpayerProfile {
   taxpayerId: string;
@@ -151,6 +178,14 @@ export interface FilingWorkspace {
   taxpayerProfileRef?: string;
   filingYear: number;
   status: WorkspaceStatus;
+  supportTier?: FilingSupportTier;
+  filingPathKind?: FilingPathKind;
+  estimateReadiness?: ReadinessLevel;
+  draftReadiness?: ReadinessLevel;
+  submissionReadiness?: ReadinessLevel;
+  comparisonSummaryState?: FilingComparisonSummaryState;
+  freshnessState?: DataFreshnessState;
+  majorUnknowns?: string[];
   createdAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
   currentDraftId?: string;
@@ -240,7 +275,7 @@ export interface EvidenceDocument {
 export interface CoverageGap {
   gapId: string;
   workspaceId: string;
-  gapType: string;
+  gapType: CoverageGapType;
   severity: ReviewSeverity;
   description: string;
   affectedArea: string;
@@ -294,6 +329,8 @@ export interface FilingFieldValue {
   sourceRefs?: string[];
   evidenceRefs?: string[];
   comparisonState?: FilingFieldComparisonState;
+  freshnessState?: DataFreshnessState;
+  supportTierHint?: FilingSupportTier;
   portalObservedValue?: string | number | boolean | null;
   mismatchSeverity?: ReviewSeverity;
 }
@@ -341,8 +378,14 @@ export interface FilingDraft {
   deductionsSummary: Record<string, unknown>;
   withholdingSummary: Record<string, unknown>;
   estimateConfidence?: EstimateConfidenceBand;
-  submissionReadiness?: 'not_ready' | 'review_required' | 'ready_for_hometax_assist';
-  blockerCodes?: string[];
+  estimateReadiness?: ReadinessLevel;
+  draftReadiness?: ReadinessLevel;
+  submissionReadiness?: ReadinessLevel;
+  supportTierAtComputation?: FilingSupportTier;
+  comparisonSummaryState?: FilingComparisonSummaryState;
+  freshnessState?: DataFreshnessState;
+  majorUnknowns?: string[];
+  blockerCodes?: BlockingReason[];
   assumptions: string[];
   warnings: string[];
   fieldValues?: FilingFieldValue[];
