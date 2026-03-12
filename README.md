@@ -56,12 +56,22 @@ The intended feeling is:
 
 ## Current status
 
-This repository is currently in **docs-first scaffold** stage.
+This repository is now in an **executable prototype** stage.
 
 That means:
-- the public architecture is being designed in the open,
-- workflow contracts are being documented before heavy implementation,
-- the product direction is already concrete enough to guide prototyping.
+- core workflow contracts are documented,
+- an in-memory MCP runtime exists for end-to-end filing flow exercises,
+- the repo already supports a checkpoint-driven prototype path from classification to HomeTax preparation.
+
+Implemented prototype coverage currently includes:
+- filing-path detection,
+- review queue generation and resolution,
+- draft computation with persisted readiness metadata,
+- official-data refresh,
+- HomeTax comparison,
+- mismatch-to-review escalation,
+- mismatch resolution applied back to the draft,
+- HomeTax preparation and browser-assist handoff.
 
 ## Start here
 
@@ -72,6 +82,24 @@ If you are new to the repo, read these first:
 4. [docs/21-first-agentic-scenario.md](./docs/21-first-agentic-scenario.md)
 
 Then use [docs/README.md](./docs/README.md) as the full document index.
+
+## Prototype workflow snapshot
+
+The current prototype filing loop is:
+1. `tax.profile.detect_filing_path`
+2. `tax.classify.run`
+3. `tax.classify.list_review_items`
+4. `tax.filing.compute_draft`
+5. `tax.classify.resolve_review_item`
+6. `tax.filing.compute_draft` (recompute)
+7. `tax.filing.refresh_official_data`
+8. `tax.filing.compare_with_hometax`
+9. if mismatches exist: create review items and resolve them
+10. `tax.filing.prepare_hometax`
+11. `tax.browser.start_hometax_assist`
+
+For a runnable example, use:
+- `npm run smoke:workflow`
 
 ## What this repo contains
 

@@ -55,12 +55,22 @@
 
 ## 현재 상태
 
-현재 이 저장소는 **docs-first scaffold** 단계입니다.
+현재 이 저장소는 **실행 가능한 프로토타입(executable prototype)** 단계로 올라와 있습니다.
 
 즉:
-- 공개 문서에서 제품/아키텍처를 먼저 정리하고 있고,
-- workflow contract를 먼저 문서화하고 있으며,
-- 그 위에서 구현 패키지를 점진적으로 맞춰가고 있습니다.
+- 핵심 workflow contract 문서가 정리되어 있고,
+- in-memory MCP runtime으로 end-to-end 흐름을 실제 실행해볼 수 있으며,
+- 종소세 준비 흐름의 주요 체크포인트가 프로토타입 코드로 연결되어 있습니다.
+
+현재 프로토타입 범위에는 다음이 포함됩니다.
+- 신고 경로(filing path) 판별
+- 리뷰 큐 생성과 해결
+- readiness metadata를 포함한 draft 계산
+- official data refresh
+- HomeTax 비교
+- mismatch를 review item으로 승격
+- mismatch 해결 결과를 draft에 반영
+- HomeTax 준비 및 browser assist handoff
 
 ## 먼저 읽으면 좋은 문서
 
@@ -72,6 +82,24 @@
 5. [docs/21-first-agentic-scenario.md](./docs/21-first-agentic-scenario.md)
 
 전체 문서 인덱스는 [docs/README.md](./docs/README.md)를 보면 됩니다.
+
+## 현재 프로토타입 워크플로우 요약
+
+지금 프로토타입에서 이어지는 대표 흐름은 아래와 같습니다.
+1. `tax.profile.detect_filing_path`
+2. `tax.classify.run`
+3. `tax.classify.list_review_items`
+4. `tax.filing.compute_draft`
+5. `tax.classify.resolve_review_item`
+6. `tax.filing.compute_draft` 재계산
+7. `tax.filing.refresh_official_data`
+8. `tax.filing.compare_with_hometax`
+9. mismatch가 있으면 review item 생성 및 해결
+10. `tax.filing.prepare_hometax`
+11. `tax.browser.start_hometax_assist`
+
+실행 예시는 아래로 확인할 수 있습니다.
+- `npm run smoke:workflow`
 
 ## 저장소 구성
 

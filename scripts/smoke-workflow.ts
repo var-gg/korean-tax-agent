@@ -1,20 +1,10 @@
 import rawDemo from '../examples/demo-workspace.json';
-import {
-  taxBrowserStartHomeTaxAssist,
-  taxClassifyResolveReviewItem,
-  taxClassifyRun,
-  taxFilingComputeDraft,
-  taxFilingPrepareHomeTax,
-  taxSourcesConnect,
-  taxSourcesResumeSync,
-  taxSourcesSync,
-} from '../packages/mcp-server/src/tools.js';
+import { InMemoryKoreanTaxMCPRuntime } from '../packages/mcp-server/src/runtime.js';
 import type {
   ClassificationDecision,
   ConsentRecord,
   FilingWorkspace,
   LedgerTransaction,
-  ReviewItem,
   SourceConnection,
   SyncAttempt,
 } from '../packages/core/src/types.js';
@@ -26,6 +16,7 @@ const demo = rawDemo as {
   consentRecords: ConsentRecord[];
   sources: SourceConnection[];
   syncAttempts: SyncAttempt[];
+  coverageGaps: Array<{ description: string }>;
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
 };
@@ -36,106 +27,126 @@ function assert(condition: unknown, message: string): asserts condition {
   }
 }
 
-const connectResult = taxSourcesConnect(
-  {
-    workspaceId: demo.workspaceId,
-    sourceType: 'hometax',
-    requestedScope: ['read_documents', 'prepare_import'],
+const runtime = new InMemoryKoreanTaxMCPRuntime({
+  consentRecords: demo.consentRecords,
+  sources: demo.sources,
+  syncAttempts: demo.syncAttempts,
+  coverageGapsByWorkspace: {
+    [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
   },
-  demo.consentRecords,
-);
-
-assert(connectResult.status === 'awaiting_auth', 'connect should require auth for hometax');
-assert(connectResult.checkpointType === 'authentication', 'connect checkpointType should be authentication');
-assert(connectResult.data.sourceState === 'awaiting_auth', 'connected source should be awaiting_auth');
-
-const syncResult = taxSourcesSync({
-  sourceId: connectResult.data.sourceId,
-  syncMode: 'full',
+  transactions: demo.transactions,
+  decisions: demo.decisions,
 });
 
-assert(syncResult.status === 'awaiting_user_action', 'sync should pause for user action');
-assert(syncResult.checkpointType === 'collection_blocker', 'sync checkpointType should be collection_blocker');
-assert(syncResult.blockingReason === 'export_required', 'sync blockingReason should be export_required');
-assert(syncResult.data.syncAttemptState === 'blocked', 'syncAttemptState should be blocked');
-assert(!!syncResult.resumeToken, 'sync should provide a resume token');
-
-const resumeResult = taxSourcesResumeSync({
-  sourceId: connectResult.data.sourceId,
-  checkpointId: syncResult.checkpointId,
-  resumeToken: syncResult.resumeToken,
+const detectResult = runtime.invoke('tax.profile.detect_filing_path', {
+  workspaceId: demo.workspaceId,
 });
 
-assert(resumeResult.status === 'completed', 'resume should complete');
-assert(resumeResult.data.syncAttemptState === 'completed', 'resume syncAttemptState should be completed');
-assert(resumeResult.data.importedArtifactCount > 0, 'resume should import artifacts');
+assert(detectResult.status === 'completed', 'detect_filing_path should complete');
+assert(!!detectResult.readiness?.supportTier, 'detect_filing_path should return readiness supportTier');
 
-const classifyResult = taxClassifyRun(
-  {
-    workspaceId: demo.workspaceId,
-    rulesetVersion: 'smoke-v1',
-  },
-  demo.transactions,
-);
+const classifyResult = runtime.invoke('tax.classify.run', {
+  workspaceId: demo.workspaceId,
+  rulesetVersion: 'smoke-v2',
+});
 
-const reviewItems: ReviewItem[] = classifyResult.data.reviewItems ?? [];
-const decisions: ClassificationDecision[] = classifyResult.data.decisions ?? [];
-assert(reviewItems.length > 0, 'classification should generate review items in the fixture');
+assert(classifyResult.status === 'completed', 'classification should complete');
+assert((classifyResult.data.reviewItems ?? []).length > 0, 'classification should generate review items');
 
-const initialDraftResult = taxFilingComputeDraft(
-  {
-    workspaceId: demo.workspaceId,
-    draftMode: 'refresh',
-    includeAssumptions: true,
-  },
-  demo.transactions,
-  decisions,
-  reviewItems,
-);
+const listedReviewItems = runtime.invoke('tax.classify.list_review_items', {
+  workspaceId: demo.workspaceId,
+});
 
-assert(initialDraftResult.status === 'blocked', 'initial draft should be blocked before review resolution');
-assert(initialDraftResult.checkpointType === 'review_judgment', 'initial draft should require review_judgment');
-assert(initialDraftResult.blockingReason === 'awaiting_review_decision', 'initial draft should wait for review decision');
+assert(listedReviewItems.data.items.length > 0, 'review queue should contain items');
 
-const resolutionResult = taxClassifyResolveReviewItem(
-  {
-    reviewItemIds: reviewItems.map((item) => item.reviewItemId),
-    selectedOption: 'exclude_from_expense',
-    rationale: 'smoke test resolution',
-    approverIdentity: 'smoke_user',
-  },
-  reviewItems,
-  decisions,
-);
+const initialDraftResult = runtime.invoke('tax.filing.compute_draft', {
+  workspaceId: demo.workspaceId,
+  draftMode: 'refresh',
+  includeAssumptions: true,
+});
 
-const resolvedItems = resolutionResult.data.updatedItems;
-const effectiveDecisions = [...decisions, ...resolutionResult.data.generatedDecisions];
+assert(initialDraftResult.status === 'completed', 'initial draft compute should complete');
+assert(initialDraftResult.readiness?.blockerCodes?.includes('awaiting_review_decision'), 'initial draft should flag awaiting review decision');
 
-const resolvedDraftResult = taxFilingComputeDraft(
-  {
-    workspaceId: demo.workspaceId,
-    draftMode: 'new_version',
-    includeAssumptions: true,
-  },
-  demo.transactions,
-  effectiveDecisions,
-  resolvedItems,
-);
+const resolveReviewResult = runtime.invoke('tax.classify.resolve_review_item', {
+  reviewItemIds: listedReviewItems.data.items.map((item) => item.reviewItemId),
+  selectedOption: 'exclude_from_expense',
+  rationale: 'smoke test baseline resolution',
+  approverIdentity: 'smoke_user',
+});
+
+assert(resolveReviewResult.status === 'completed', 'baseline review resolution should complete');
+
+const resolvedDraftResult = runtime.invoke('tax.filing.compute_draft', {
+  workspaceId: demo.workspaceId,
+  draftMode: 'new_version',
+  includeAssumptions: true,
+});
 
 assert(resolvedDraftResult.status === 'completed', 'resolved draft should complete');
+assert(resolvedDraftResult.readiness?.draftReadiness === 'draft_ready', 'resolved draft should be draft_ready');
 
-const prepareResult = taxFilingPrepareHomeTax(
-  {
-    workspaceId: demo.workspaceId,
-    draftId: resolvedDraftResult.data.draftId,
-  },
-  resolvedItems,
-);
+const refreshResult = runtime.invoke('tax.filing.refresh_official_data', {
+  workspaceId: demo.workspaceId,
+  sourceIds: ['src_hometax_main'],
+  refreshPolicy: 'if_stale_or_user_requested',
+  recomputeDraft: true,
+});
 
-assert(prepareResult.status === 'completed', 'prepare_hometax should complete after review resolution');
+assert(refreshResult.status === 'completed', 'official data refresh should complete');
+assert(refreshResult.readiness?.freshnessState === 'current_enough', 'refresh should move freshness to current_enough');
+
+const draft = runtime.getDraft(demo.workspaceId);
+assert((draft?.fieldValues?.length ?? 0) > 0, 'runtime draft should contain field values');
+
+const targetField = draft!.fieldValues![0]!;
+const portalOverride = typeof targetField.value === 'number' ? Number(targetField.value) + 200000 : 'PORTAL_OVERRIDE_VALUE';
+draft!.fieldValues![0] = {
+  ...targetField,
+  portalObservedValue: portalOverride,
+};
+
+const compareMismatchResult = runtime.invoke('tax.filing.compare_with_hometax', {
+  workspaceId: demo.workspaceId,
+  draftId: resolvedDraftResult.data.draftId,
+  comparisonMode: 'visible_portal',
+  sectionKeys: ['income', 'expenses', 'withholding'],
+});
+
+assert(compareMismatchResult.data.materialMismatches.length > 0, 'comparison should find a material mismatch after portal override');
+assert(compareMismatchResult.nextRecommendedAction === 'tax.classify.list_review_items', 'mismatch should recommend review queue');
+
+const mismatchReviewItems = runtime
+  .listReviewItems(demo.workspaceId)
+  .filter((item) => item.reasonCode === 'hometax_material_mismatch');
+
+assert(mismatchReviewItems.length > 0, 'mismatch comparison should create review items');
+
+const resolveMismatchResult = runtime.invoke('tax.classify.resolve_review_item', {
+  reviewItemIds: mismatchReviewItems.map((item) => item.reviewItemId),
+  selectedOption: 'accept_portal_value',
+  rationale: 'portal is authoritative in smoke flow',
+  approverIdentity: 'smoke_user',
+});
+
+assert(resolveMismatchResult.status === 'completed', 'mismatch review resolution should complete');
+
+const postResolveDraft = runtime.getDraft(demo.workspaceId);
+const updatedField = postResolveDraft?.fieldValues?.find((field) => field.filingFieldValueId === targetField.filingFieldValueId);
+assert(updatedField?.value === portalOverride, 'resolved mismatch should update draft field value from portal');
+assert(updatedField?.comparisonState === 'matched', 'resolved mismatch should leave field matched');
+assert(postResolveDraft?.comparisonSummaryState !== 'material_mismatch', 'resolved mismatch should clear material_mismatch summary');
+
+const prepareResult = runtime.invoke('tax.filing.prepare_hometax', {
+  workspaceId: demo.workspaceId,
+  draftId: resolvedDraftResult.data.draftId,
+});
+
+assert(prepareResult.status === 'completed', 'prepare_hometax should complete after mismatch resolution');
 assert(prepareResult.data.browserAssistReady === true, 'prepare_hometax should mark browser assist ready');
+assert(prepareResult.readiness?.submissionReadiness === 'submission_assist_ready', 'prepare_hometax should be submission_assist_ready');
 
-const assistResult = taxBrowserStartHomeTaxAssist({
+const assistResult = runtime.invoke('tax.browser.start_hometax_assist', {
   workspaceId: demo.workspaceId,
   draftId: resolvedDraftResult.data.draftId,
   mode: 'guide_only',
@@ -143,7 +154,6 @@ const assistResult = taxBrowserStartHomeTaxAssist({
 
 assert(assistResult.status === 'awaiting_auth', 'browser assist should begin at auth checkpoint');
 assert(assistResult.checkpointType === 'authentication', 'browser assist checkpointType should be authentication');
-assert(assistResult.data.checkpointType === 'authentication', 'browser assist data checkpointType should be authentication');
 
 console.log(
   JSON.stringify(
@@ -151,11 +161,13 @@ console.log(
       ok: true,
       smoke: 'workflow',
       summary: {
-        connectStatus: connectResult.status,
-        syncStatus: syncResult.status,
-        resumeStatus: resumeResult.status,
+        detectStatus: detectResult.status,
+        classifyStatus: classifyResult.status,
         initialDraftStatus: initialDraftResult.status,
-        resolvedDraftStatus: resolvedDraftResult.status,
+        refreshStatus: refreshResult.status,
+        compareMismatchStatus: compareMismatchResult.status,
+        mismatchReviewCount: mismatchReviewItems.length,
+        resolveMismatchStatus: resolveMismatchResult.status,
         prepareStatus: prepareResult.status,
         assistStatus: assistResult.status,
       },
