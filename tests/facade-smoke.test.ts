@@ -25,7 +25,7 @@ const demo = rawDemo as {
 };
 
 describe('mcp facade', () => {
-  it('exposes supported runtime tools through invokeTool', () => {
+  it('exposes supported runtime tools through invokeTool', async () => {
     const facade = new KoreanTaxMCPFacade({
       consentRecords: demo.consentRecords,
       workspaces: [demo.workspace],
