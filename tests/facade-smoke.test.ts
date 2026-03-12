@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { KoreanTaxMCPFacade, SUPPORTED_RUNTIME_TOOLS } from '../packages/mcp-server/src/facade.js';
+import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
@@ -94,6 +95,17 @@ describe('mcp facade', () => {
     expect(standardSummaryResult.data.summaryText).toContain('Submission readiness');
     expect(standardSummaryResult.data.operatorUpdate).toContain('COLLECTION BLOCKED');
     expect(standardSummaryResult.data.operatorUpdate).toContain('COLLECTION:');
+
+    const discordFormatted = formatFilingSummaryForDiscord(
+      standardSummaryResult as Parameters<typeof formatFilingSummaryForDiscord>[0],
+    );
+    expect(discordFormatted).toContain('COLLECTION BLOCKED');
+
+    const integratedDiscordReply = facade.invokeAndFormatFilingSummaryForDiscord({
+      workspaceId: demo.workspaceId,
+      detailLevel: 'short',
+    });
+    expect(integratedDiscordReply.message).toContain('COLLECTION BLOCKED');
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',

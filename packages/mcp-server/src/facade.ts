@@ -1,4 +1,5 @@
-import type { MCPResponseEnvelope } from './contracts.js';
+import type { GetFilingSummaryData, MCPResponseEnvelope } from './contracts.js';
+import { formatFilingSummaryForDiscord, formatFilingSummaryForReply, type ReplySurface } from './reply-formatters.js';
 import {
   InMemoryKoreanTaxMCPRuntime,
   type CreateRuntimeOptions,
@@ -110,6 +111,35 @@ export class KoreanTaxMCPFacade {
     } catch (error) {
       return createToolInvocationErrorResponse(request.name, error);
     }
+  }
+
+  invokeAndFormatFilingSummary(
+    input: Record<string, unknown>,
+    surface: ReplySurface = 'generic',
+  ): { response: MCPResponseEnvelope<GetFilingSummaryData>; message: string } {
+    const response = this.invokeTool({
+      name: 'tax.filing.get_summary',
+      input,
+    }) as MCPResponseEnvelope<GetFilingSummaryData>;
+
+    return {
+      response,
+      message: formatFilingSummaryForReply(response, surface),
+    };
+  }
+
+  invokeAndFormatFilingSummaryForDiscord(
+    input: Record<string, unknown>,
+  ): { response: MCPResponseEnvelope<GetFilingSummaryData>; message: string } {
+    const response = this.invokeTool({
+      name: 'tax.filing.get_summary',
+      input,
+    }) as MCPResponseEnvelope<GetFilingSummaryData>;
+
+    return {
+      response,
+      message: formatFilingSummaryForDiscord(response),
+    };
   }
 }
 

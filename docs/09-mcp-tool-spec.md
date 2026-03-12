@@ -461,6 +461,12 @@ Formatting note:
 Notes:
 - this is the preferred narrative read model when an agent needs to explain status in plain language
 - `short` should emphasize blocker + next step, while `standard` should also include draft/readiness context
+- for Discord-style operator replies, agents should prefer `operatorUpdate` over rebuilding formatting from raw fields
+
+Example integration:
+- invoke `tax.filing.get_summary`
+- on Discord/operator surfaces, send `operatorUpdate`
+- on generic chat surfaces, use `headline + summaryText`
 
 #### `tax.filing.compare_with_hometax`
 Purpose:
