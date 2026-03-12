@@ -478,8 +478,9 @@ Alerting pattern:
 - map severity into abstract routes such as `operator-immediate`, `operator-watch`, `operator-updates`, or `drop`
 - convert routes into provider-specific targets with a dispatch-plan adapter
 - apply duplicate suppression / cooldown before sending (example defaults: high=10m, medium=30m, info=2h)
+- persist the last delivery record in a store so dedupe can work across turns
 - for demos/tests, it is acceptable to simulate a transitioned snapshot directly from the previous snapshot
-- sample usage: `examples/filing-status-alert-example.ts`, `examples/filing-alert-dispatch-example.ts`, `examples/filing-alert-dedupe-example.ts`
+- sample usage: `examples/filing-status-alert-example.ts`, `examples/filing-alert-dispatch-example.ts`, `examples/filing-alert-dedupe-example.ts`, `examples/filing-alert-store-example.ts`
 
 #### `tax.filing.compare_with_hometax`
 Purpose:

@@ -3,6 +3,7 @@ import rawDemo from '../examples/demo-workspace.json';
 import { KoreanTaxMCPFacade, SUPPORTED_RUNTIME_TOOLS } from '../packages/mcp-server/src/facade.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
 import { shouldSendFilingAlert } from '../packages/mcp-server/src/alert-dedupe.js';
+import { InMemoryFilingAlertStore } from '../packages/mcp-server/src/alert-store.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
@@ -177,6 +178,31 @@ describe('mcp facade', () => {
     );
     expect(duplicateSuppressed.shouldSend).toBe(false);
     expect(duplicateSuppressed.reason).toBe('suppressed_duplicate');
+
+    const store = new InMemoryFilingAlertStore();
+    const storedFirstDecision = shouldSendFilingAlert(
+      demo.workspaceId,
+      updatesDispatchPlan,
+      store.getLastRecord(demo.workspaceId),
+      0,
+    );
+    const firstStoredRecord = store.applySendDecision(
+      demo.workspaceId,
+      updatesDispatchPlan,
+      storedFirstDecision,
+      0,
+    );
+    expect(firstStoredRecord?.workspaceId).toBe(demo.workspaceId);
+    expect(store.getLastRecord(demo.workspaceId)?.fingerprint).toBe(storedFirstDecision.fingerprint);
+
+    const storedSecondDecision = shouldSendFilingAlert(
+      demo.workspaceId,
+      updatesDispatchPlan,
+      store.getLastRecord(demo.workspaceId),
+      1,
+    );
+    expect(storedSecondDecision.shouldSend).toBe(false);
+    expect(storedSecondDecision.reason).toBe('suppressed_duplicate');
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',

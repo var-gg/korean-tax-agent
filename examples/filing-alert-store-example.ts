@@ -1,7 +1,8 @@
 import rawDemo from './demo-workspace.json';
-import { shouldSendFilingAlert, type FilingAlertDeliveryRecord } from '../packages/mcp-server/src/alert-dedupe.js';
-import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
+import { shouldSendFilingAlert } from '../packages/mcp-server/src/alert-dedupe.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
+import { InMemoryFilingAlertStore } from '../packages/mcp-server/src/alert-store.js';
+import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { KoreanTaxMCPFacade } from '../packages/mcp-server/src/facade.js';
 import { decideFilingAlert, toFilingAlertSnapshot, type FilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
@@ -44,21 +45,31 @@ const dispatchPlan = buildFilingAlertDispatchPlan(routing, decision, {
   updatesTarget: 'discord:#tax-operator-updates',
 });
 
-const firstTry = shouldSendFilingAlert(demo.workspaceId, dispatchPlan, undefined, 0);
-const previousRecord: FilingAlertDeliveryRecord = {
-  workspaceId: demo.workspaceId,
-  fingerprint: firstTry.fingerprint,
-  sentAtMs: 5 * 60 * 1000,
-  severity: dispatchPlan.severity,
-  route: dispatchPlan.route,
-};
-const secondTry = shouldSendFilingAlert(demo.workspaceId, dispatchPlan, previousRecord, 10 * 60 * 1000);
+const store = new InMemoryFilingAlertStore();
+const firstCheck = shouldSendFilingAlert(
+  demo.workspaceId,
+  dispatchPlan,
+  store.getLastRecord(demo.workspaceId),
+  0,
+);
+const firstSaved = store.applySendDecision(demo.workspaceId, dispatchPlan, firstCheck, 0);
 
-console.log('\n--- First try ---\n');
-console.log(firstTry);
-console.log('\n--- Second try ---\n');
-console.log(secondTry);
-console.log('\n(See examples/filing-alert-store-example.ts for persisted last-record handling.)');
+const secondCheck = shouldSendFilingAlert(
+  demo.workspaceId,
+  dispatchPlan,
+  store.getLastRecord(demo.workspaceId),
+  1,
+);
+const secondSaved = store.applySendDecision(demo.workspaceId, dispatchPlan, secondCheck, 1);
+
+console.log('\n--- First check ---\n');
+console.log(firstCheck);
+console.log('\n--- Stored record after first check ---\n');
+console.log(firstSaved);
+console.log('\n--- Second check ---\n');
+console.log(secondCheck);
+console.log('\n--- Stored record after second check ---\n');
+console.log(secondSaved);
 
 function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): FilingAlertSnapshot {
   return {
