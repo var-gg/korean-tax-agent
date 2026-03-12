@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import { dirname } from 'path';
 import type { FilingAlertDedupeDecision, FilingAlertDeliveryRecord } from './alert-dedupe.js';
 import type { FilingAlertDispatchPlan } from './alert-transport.js';
 
@@ -50,7 +50,9 @@ export class FileBackedFilingAlertStore {
       const raw = await readFile(this.filePath, 'utf8');
       return JSON.parse(raw) as Record<string, FilingAlertDeliveryRecord>;
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : undefined;
       if (code === 'ENOENT') {
         return {};
       }
