@@ -1,3 +1,4 @@
+import { compareWithHomeTax } from '../../core/src/compare.js';
 import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent.js';
 import { computeDraftFromLedger } from '../../core/src/draft.js';
 import { detectFilingPath } from '../../core/src/path.js';
@@ -16,6 +17,8 @@ import {
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection, TaxpayerFact, WithholdingRecord } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
+  CompareWithHomeTaxData,
+  CompareWithHomeTaxInput,
   ComputeDraftInput,
   ConnectSourceData,
   ConnectSourceInput,
@@ -587,6 +590,50 @@ export function taxFilingComputeDraft(
   };
 }
 
+export function taxFilingCompareWithHomeTax(
+  input: CompareWithHomeTaxInput,
+  fieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
+): MCPResponseEnvelope<CompareWithHomeTaxData> {
+  const comparison = compareWithHomeTax(
+    {
+      draftId: input.draftId,
+      fieldValues,
+      sectionKeys: input.sectionKeys,
+      comparisonMode: input.comparisonMode,
+    },
+    buildObservedFields(fieldValues, input.sectionKeys),
+  );
+
+  const readinessSummary = deriveReadinessSummary({
+    supportTier: 'tier_a',
+    filingPathKind: 'mixed_income_limited',
+    draft: {
+      draftId: input.draftId,
+      fieldValues: comparison.fieldValues,
+    },
+    comparisonSummaryState: comparison.comparisonSummaryState,
+  });
+  const blockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
+
+  return {
+    ok: blockingReason === undefined,
+    status: blockingReason === undefined ? 'completed' : 'blocked',
+    data: {
+      draftId: input.draftId,
+      sectionResults: comparison.sectionResults,
+      materialMismatches: comparison.materialMismatches,
+      fieldValues: comparison.fieldValues,
+    },
+    readiness: readinessSummary,
+    blockingReason,
+    checkpointType: blockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
+    pendingUserAction: blockingReason
+      ? derivePendingUserAction({ blockingReason, checkpointType: blockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined })
+      : undefined,
+    nextRecommendedAction: blockingReason === undefined ? 'tax.filing.prepare_hometax' : 'tax.classify.list_review_items',
+  };
+}
+
 export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems: ReviewItem[]): MCPResponseEnvelope<{
   sectionMapping: Record<string, unknown>;
   requiredManualFields: string[];
@@ -707,6 +754,27 @@ function deriveComputeDraftBlockingReason(readiness: { blockerCodes: string[]; d
   if (readiness.blockerCodes.includes('missing_material_coverage')) return 'missing_material_coverage';
   if (readiness.blockerCodes.includes('unsupported_filing_path')) return 'unsupported_filing_path';
   return 'draft_not_ready';
+}
+
+function buildObservedFields(
+  fieldValues: import('../../core/src/types.js').FilingFieldValue[],
+  sectionKeys?: string[],
+): Array<{ sectionKey: string; fieldKey: string; portalObservedValue: string | number | boolean | null }> {
+  const allowedSections = new Set(sectionKeys ?? []);
+  return fieldValues
+    .filter((field) => allowedSections.size === 0 || allowedSections.has(field.sectionKey))
+    .filter((field) => !field.requiresManualEntry)
+    .map((field) => ({
+      sectionKey: field.sectionKey,
+      fieldKey: field.fieldKey,
+      portalObservedValue: toPortalObservedScalar(field.portalObservedValue ?? field.value),
+    }));
+}
+
+function toPortalObservedScalar(value: unknown): string | number | boolean | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  return JSON.stringify(value);
 }
 
 function derivePrepareHomeTaxBlockingReason(readiness: { blockerCodes: string[]; submissionReadiness: string }): import('../../core/src/types.js').BlockingReason | undefined {

@@ -28,6 +28,7 @@ describe('mcp facade', () => {
 
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.connect');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compute_draft');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compare_with_hometax');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.profile.detect_filing_path');
 
     const statusResult = facade.invokeTool({
@@ -47,6 +48,14 @@ describe('mcp facade', () => {
     expect(pathResult.data.workspaceId).toBe(demo.workspaceId);
     expect(typeof pathResult.data.supportTier).toBe('string');
     expect(pathResult.readiness).toBeTruthy();
+
+    const compareInvalid = facade.invokeTool({
+      name: 'tax.filing.compare_with_hometax',
+      input: { workspaceId: demo.workspaceId },
+    });
+
+    expect(compareInvalid.ok).toBe(false);
+    expect(compareInvalid.errorCode).toBe('invalid_input');
 
     const unsupported = facade.invokeTool({
       name: 'tax.not_real.tool',

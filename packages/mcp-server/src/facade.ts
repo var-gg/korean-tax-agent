@@ -20,6 +20,7 @@ export const SUPPORTED_RUNTIME_TOOLS: SupportedRuntimeToolName[] = [
   'tax.classify.list_review_items',
   'tax.classify.resolve_review_item',
   'tax.filing.compute_draft',
+  'tax.filing.compare_with_hometax',
   'tax.filing.prepare_hometax',
   'tax.browser.start_hometax_assist',
 ];
@@ -120,6 +121,7 @@ function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<
     'tax.classify.list_review_items': ['workspaceId'],
     'tax.classify.resolve_review_item': ['reviewItemIds', 'selectedOption', 'rationale', 'approverIdentity'],
     'tax.filing.compute_draft': ['workspaceId'],
+    'tax.filing.compare_with_hometax': ['workspaceId', 'draftId'],
     'tax.filing.prepare_hometax': ['workspaceId', 'draftId'],
     'tax.browser.start_hometax_assist': ['workspaceId', 'draftId', 'mode'],
   };

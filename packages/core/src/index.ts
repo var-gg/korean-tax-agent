@@ -6,3 +6,4 @@ export * from './draft.js';
 export * from './state.js';
 export * from './readiness.js';
 export * from './path.js';
+export * from './compare.js';

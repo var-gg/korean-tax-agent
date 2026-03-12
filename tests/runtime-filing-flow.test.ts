@@ -70,6 +70,17 @@ describe('in-memory runtime filing flow', () => {
     expect(resolvedDraft.status).toBe('completed');
     expect(resolvedDraft.readiness?.draftReadiness).toBe('draft_ready');
 
+    const compareResult = runtime.invoke('tax.filing.compare_with_hometax', {
+      workspaceId: demo.workspaceId,
+      draftId: resolvedDraft.data.draftId,
+      comparisonMode: 'visible_portal',
+      sectionKeys: ['income', 'expenses', 'withholding'],
+    });
+
+    expect(compareResult.status).toBe('completed');
+    expect(compareResult.data.sectionResults.length).toBeGreaterThan(0);
+    expect(compareResult.readiness?.comparisonSummaryState).toBe('matched_enough');
+
     const prepareResult = runtime.invoke('tax.filing.prepare_hometax', {
       workspaceId: demo.workspaceId,
       draftId: resolvedDraft.data.draftId,

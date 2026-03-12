@@ -1,6 +1,8 @@
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
+  CompareWithHomeTaxData,
+  CompareWithHomeTaxInput,
   ComputeDraftData,
   ComputeDraftInput,
   ConnectSourceData,
@@ -29,6 +31,7 @@ import {
   taxClassifyResolveReviewItem,
   taxClassifyRun,
   taxProfileDetectFilingPath,
+  taxFilingCompareWithHomeTax,
   taxFilingComputeDraft,
   taxFilingPrepareHomeTax,
   taxSourcesConnect,
@@ -47,6 +50,7 @@ export type SupportedRuntimeToolName =
   | 'tax.classify.list_review_items'
   | 'tax.classify.resolve_review_item'
   | 'tax.filing.compute_draft'
+  | 'tax.filing.compare_with_hometax'
   | 'tax.filing.prepare_hometax'
   | 'tax.browser.start_hometax_assist';
 
@@ -102,6 +106,7 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.classify.list_review_items', input: { workspaceId: string }): MCPResponseEnvelope<{ items: ReviewItem[]; summary: ReturnType<typeof taxClassifyListReviewItems>['data']['summary'] }>;
   invoke(name: 'tax.classify.resolve_review_item', input: ResolveReviewItemInput): MCPResponseEnvelope<ResolveReviewItemData>;
   invoke(name: 'tax.filing.compute_draft', input: ComputeDraftInput): MCPResponseEnvelope<ComputeDraftData>;
+  invoke(name: 'tax.filing.compare_with_hometax', input: CompareWithHomeTaxInput): MCPResponseEnvelope<CompareWithHomeTaxData>;
   invoke(name: 'tax.filing.prepare_hometax', input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData>;
   invoke(name: 'tax.browser.start_hometax_assist', input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData>;
   invoke<TName extends SupportedRuntimeToolName>(
@@ -127,6 +132,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         return this.resolveReviewItems(input as ResolveReviewItemInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.filing.compute_draft':
         return this.computeDraft(input as ComputeDraftInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.filing.compare_with_hometax':
+        return this.compareWithHomeTax(input as CompareWithHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.filing.prepare_hometax':
         return this.prepareHomeTax(input as PrepareHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.browser.start_hometax_assist':
@@ -309,6 +316,11 @@ export class InMemoryKoreanTaxMCPRuntime {
     );
     this.store.draftsByWorkspace.set(input.workspaceId, result.data);
     return result;
+  }
+
+  private compareWithHomeTax(input: CompareWithHomeTaxInput): MCPResponseEnvelope<CompareWithHomeTaxData> {
+    const draft = this.getDraft(input.workspaceId);
+    return taxFilingCompareWithHomeTax(input, draft?.fieldValues ?? []);
   }
 
   private prepareHomeTax(input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData> {
