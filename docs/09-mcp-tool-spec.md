@@ -456,6 +456,7 @@ Output:
 
 Formatting note:
 - `operatorUpdate` should be compact and channel-friendly for operator surfaces like Discord
+- prefer status-specific templates such as review-pending, collection-blocked, ready-for-assist, and submission-in-progress
 
 Notes:
 - this is the preferred narrative read model when an agent needs to explain status in plain language

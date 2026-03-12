@@ -73,6 +73,7 @@ describe('mcp facade', () => {
     expect(typeof filingSummaryResult.data.summaryText).toBe('string');
     expect(typeof filingSummaryResult.data.operatorUpdate).toBe('string');
     expect(filingSummaryResult.data.operatorUpdate).toContain('STATUS:');
+    expect(filingSummaryResult.data.operatorUpdate).toContain('COLLECTION BLOCKED');
     expect(filingSummaryResult.data.summaryText).toContain('Recommended next action');
     expect(Array.isArray(filingSummaryResult.data.keyPoints)).toBe(true);
 
@@ -91,7 +92,8 @@ describe('mcp facade', () => {
 
     expect(standardSummaryResult.ok).toBe(true);
     expect(standardSummaryResult.data.summaryText).toContain('Submission readiness');
-    expect(standardSummaryResult.data.operatorUpdate).toContain('READINESS:');
+    expect(standardSummaryResult.data.operatorUpdate).toContain('COLLECTION BLOCKED');
+    expect(standardSummaryResult.data.operatorUpdate).toContain('COLLECTION:');
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',

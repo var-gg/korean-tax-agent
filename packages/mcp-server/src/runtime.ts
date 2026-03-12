@@ -769,25 +769,86 @@ function buildOperatorUpdate(params: {
   detailLevel: 'short' | 'standard';
   headline: string;
 }): string {
-  const lines = [
-    `STATUS: ${params.headline}`,
-    `READINESS: submission=${humanizeToken(params.workspace.submissionReadiness ?? 'not_ready')} | comparison=${humanizeToken(params.workspace.comparisonSummaryState ?? 'not_started')} | freshness=${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}`,
-    `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | warnings=${params.draft?.warnings.length ?? 0} | draft=${params.workspace.currentDraftId ?? 'none'}`,
-  ];
-
-  if (params.blockers.length > 0) {
-    lines.push(`BLOCKER: ${describeBlockingReason(params.blockers[0])}`);
-  }
-
-  if (params.nextAction) {
-    lines.push(`NEXT: ${describeRecommendedAction(params.nextAction)}`);
-  }
-
-  if (params.detailLevel === 'standard' && (params.draft?.fieldValues?.length ?? 0) > 0) {
-    lines.push(`DRAFT: fields=${params.draft?.fieldValues?.length ?? 0}`);
-  }
-
+  const lines = buildOperatorUpdateLines(params);
   return lines.join('\n');
+}
+
+function buildOperatorUpdateLines(params: {
+  workspace: FilingWorkspace;
+  draft?: ComputeDraftData;
+  blockers: string[];
+  nextAction?: string;
+  detailLevel: 'short' | 'standard';
+  headline: string;
+}): string[] {
+  const readinessLine = `READINESS: submission=${humanizeToken(params.workspace.submissionReadiness ?? 'not_ready')} | comparison=${humanizeToken(params.workspace.comparisonSummaryState ?? 'not_started')} | freshness=${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}`;
+  const queueLine = `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | warnings=${params.draft?.warnings.length ?? 0} | draft=${params.workspace.currentDraftId ?? 'none'}`;
+  const blockerLine = params.blockers.length > 0 ? `BLOCKER: ${describeBlockingReason(params.blockers[0])}` : undefined;
+  const nextLine = params.nextAction ? `NEXT: ${describeRecommendedAction(params.nextAction)}` : undefined;
+  const draftLine = params.detailLevel === 'standard' && (params.draft?.fieldValues?.length ?? 0) > 0
+    ? `DRAFT: fields=${params.draft?.fieldValues?.length ?? 0}`
+    : undefined;
+
+  if (params.workspace.status === 'submission_in_progress') {
+    return compactLines([
+      '🚀 SUBMISSION IN PROGRESS',
+      `STATUS: ${params.headline}`,
+      readinessLine,
+      nextLine,
+      draftLine,
+    ]);
+  }
+
+  if (params.workspace.status === 'ready_for_hometax_assist' || params.workspace.submissionReadiness === 'submission_assist_ready') {
+    return compactLines([
+      '✅ READY FOR HOMETAX ASSIST',
+      `STATUS: ${params.headline}`,
+      readinessLine,
+      queueLine,
+      nextLine,
+      draftLine,
+    ]);
+  }
+
+  if (params.workspace.status === 'review_pending' || params.workspace.unresolvedReviewCount > 0) {
+    return compactLines([
+      '🟨 REVIEW PENDING',
+      `STATUS: ${params.headline}`,
+      `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | draft=${params.workspace.currentDraftId ?? 'none'}`,
+      blockerLine,
+      nextLine,
+      draftLine,
+    ]);
+  }
+
+  if (
+    params.workspace.lastCollectionStatus === 'awaiting_user_action'
+    || params.workspace.lastCollectionStatus === 'blocked'
+    || params.workspace.lastBlockingReason === 'missing_auth'
+    || params.workspace.lastBlockingReason === 'missing_consent'
+  ) {
+    return compactLines([
+      '⏸️ COLLECTION BLOCKED',
+      `STATUS: ${params.headline}`,
+      blockerLine,
+      nextLine,
+      `COLLECTION: state=${humanizeToken(params.workspace.lastCollectionStatus ?? 'unknown')}`,
+    ]);
+  }
+
+  return compactLines([
+    '🧾 FILING STATUS',
+    `STATUS: ${params.headline}`,
+    readinessLine,
+    queueLine,
+    blockerLine,
+    nextLine,
+    draftLine,
+  ]);
+}
+
+function compactLines(lines: Array<string | undefined>): string[] {
+  return lines.filter((line): line is string => Boolean(line));
 }
 
 function buildFilingSummaryHeadline(workspace: FilingWorkspace): string {
