@@ -1,3 +1,4 @@
+import { deriveReadinessSummary } from '../../core/src/readiness.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
@@ -311,7 +312,85 @@ export class InMemoryKoreanTaxMCPRuntime {
     for (const decision of result.data.generatedDecisions ?? []) {
       this.store.decisions.set(decision.decisionId, decision);
     }
+
+    const touchedWorkspaceIds = new Set((result.data.updatedItems ?? []).map((item) => item.workspaceId));
+    for (const workspaceId of touchedWorkspaceIds) {
+      this.applyComparisonReviewResolution(workspaceId, result.data.updatedItems ?? [], input.selectedOption);
+    }
+
     return result;
+  }
+
+  private applyComparisonReviewResolution(workspaceId: string, updatedItems: ReviewItem[], selectedOption: string): void {
+    const draft = this.getDraft(workspaceId);
+    if (!draft?.fieldValues?.length) return;
+
+    const mismatchItems = updatedItems.filter((item) => item.workspaceId === workspaceId && item.reasonCode === 'hometax_material_mismatch');
+    if (mismatchItems.length === 0) return;
+
+    const itemMap = new Map(mismatchItems.map((item) => {
+      const fieldRef = item.linkedEntityIds.find((id) => id.includes(':'));
+      return [fieldRef, item] as const;
+    }));
+
+    const nextFieldValues = draft.fieldValues.map((field) => {
+      const key = `${field.sectionKey}:${field.fieldKey}`;
+      const item = itemMap.get(key);
+      if (!item) return field;
+
+      if (selectedOption === 'accept_portal_value') {
+        return {
+          ...field,
+          value: field.portalObservedValue ?? field.value,
+          comparisonState: 'matched' as const,
+          mismatchSeverity: undefined,
+        };
+      }
+
+      if (selectedOption === 'keep_draft_value') {
+        return {
+          ...field,
+          comparisonState: 'matched' as const,
+          mismatchSeverity: undefined,
+        };
+      }
+
+      if (selectedOption === 'mark_manual_followup') {
+        return {
+          ...field,
+          requiresManualEntry: true,
+          comparisonState: 'manual_only' as const,
+          mismatchSeverity: undefined,
+        };
+      }
+
+      return field;
+    });
+
+    const unresolvedItems = this.listReviewItems(workspaceId);
+    const readiness = deriveReadinessSummary({
+      supportTier: draft.supportTier,
+      filingPathKind: draft.filingPathKind,
+      reviewItems: unresolvedItems,
+      draft: {
+        draftId: draft.draftId,
+        fieldValues: nextFieldValues,
+      },
+    });
+
+    this.store.draftsByWorkspace.set(workspaceId, {
+      ...draft,
+      fieldValues: nextFieldValues,
+      blockerCodes: readiness.blockerCodes,
+      supportTier: readiness.supportTier,
+      filingPathKind: readiness.filingPathKind,
+      estimateReadiness: readiness.estimateReadiness,
+      draftReadiness: readiness.draftReadiness,
+      submissionReadiness: readiness.submissionReadiness,
+      comparisonSummaryState: readiness.comparisonSummaryState,
+      freshnessState: readiness.freshnessState,
+      majorUnknowns: readiness.majorUnknowns,
+    });
   }
 
   private computeDraft(input: ComputeDraftInput): MCPResponseEnvelope<ComputeDraftData> {

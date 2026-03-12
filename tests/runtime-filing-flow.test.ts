@@ -148,4 +148,60 @@ describe('in-memory runtime filing flow', () => {
     expect(compareResult.nextRecommendedAction).toBe('tax.classify.list_review_items');
     expect(runtime.listReviewItems(demo.workspaceId).some((item) => item.reasonCode === 'hometax_material_mismatch')).toBe(true);
   });
+
+  it('applies resolved hometax mismatch reviews back to the draft', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime({
+      consentRecords: demo.consentRecords,
+      sources: demo.sources,
+      syncAttempts: demo.syncAttempts,
+      coverageGapsByWorkspace: {
+        [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
+      },
+      transactions: demo.transactions,
+      decisions: demo.decisions,
+    });
+
+    const draftResult = runtime.invoke('tax.filing.compute_draft', {
+      workspaceId: demo.workspaceId,
+      draftMode: 'new_version',
+      includeAssumptions: true,
+    });
+
+    const draft = runtime.getDraft(demo.workspaceId);
+    const fieldValues = (draft?.fieldValues ?? []) as FilingFieldValue[];
+    expect(fieldValues.length).toBeGreaterThan(0);
+
+    const originalValue = fieldValues[0].value;
+    const portalValue = typeof originalValue === 'number' ? Number(originalValue) + 200000 : 'PORTAL_OVERRIDE_VALUE';
+
+    fieldValues[0] = {
+      ...fieldValues[0],
+      portalObservedValue: portalValue,
+    };
+
+    runtime.invoke('tax.filing.compare_with_hometax', {
+      workspaceId: demo.workspaceId,
+      draftId: draftResult.data.draftId,
+      comparisonMode: 'visible_portal',
+      sectionKeys: [fieldValues[0].sectionKey],
+    });
+
+    const mismatchItems = runtime.listReviewItems(demo.workspaceId).filter((item) => item.reasonCode === 'hometax_material_mismatch');
+    expect(mismatchItems.length).toBeGreaterThan(0);
+
+    const resolveResult = runtime.invoke('tax.classify.resolve_review_item', {
+      reviewItemIds: mismatchItems.map((item) => item.reviewItemId),
+      selectedOption: 'accept_portal_value',
+      rationale: 'portal is authoritative',
+      approverIdentity: 'runtime_test_user',
+    });
+
+    expect(resolveResult.status).toBe('completed');
+
+    const updatedDraft = runtime.getDraft(demo.workspaceId);
+    const updatedField = updatedDraft?.fieldValues?.find((field) => field.filingFieldValueId === fieldValues[0].filingFieldValueId);
+    expect(updatedField?.value).toBe(portalValue);
+    expect(updatedField?.comparisonState).toBe('matched');
+    expect(updatedDraft?.comparisonSummaryState).not.toBe('material_mismatch');
+  });
 });
