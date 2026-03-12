@@ -51,3 +51,5 @@ for (const digest of digests) {
   console.log(digest);
   console.log('');
 }
+
+console.log('(See examples/filing-alert-delivery-policy-example.ts for immediate-vs-digest orchestration.)');

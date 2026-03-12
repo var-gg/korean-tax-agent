@@ -481,8 +481,9 @@ Alerting pattern:
 - persist the last delivery record in a store so dedupe can work across turns
 - use a file-backed store when dedupe must survive process restarts
 - optionally aggregate `medium` / `info` dispatch plans into digest messages by target/route before sending
+- a delivery-policy helper can split `high` alerts into immediate sends while routing `medium` / `info` alerts into digest generation
 - for demos/tests, it is acceptable to simulate a transitioned snapshot directly from the previous snapshot
-- sample usage: `examples/filing-status-alert-example.ts`, `examples/filing-alert-dispatch-example.ts`, `examples/filing-alert-dedupe-example.ts`, `examples/filing-alert-store-example.ts`, `examples/filing-alert-file-store-example.ts`, `examples/filing-alert-digest-example.ts`
+- sample usage: `examples/filing-status-alert-example.ts`, `examples/filing-alert-dispatch-example.ts`, `examples/filing-alert-dedupe-example.ts`, `examples/filing-alert-store-example.ts`, `examples/filing-alert-file-store-example.ts`, `examples/filing-alert-digest-example.ts`, `examples/filing-alert-delivery-policy-example.ts`
 
 #### `tax.filing.compare_with_hometax`
 Purpose:

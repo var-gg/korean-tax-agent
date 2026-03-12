@@ -9,6 +9,7 @@ import { shouldSendFilingAlert } from '../packages/mcp-server/src/alert-dedupe.j
 import { InMemoryFilingAlertStore } from '../packages/mcp-server/src/alert-store.js';
 import { FileBackedFilingAlertStore } from '../packages/mcp-server/src/alert-file-store.js';
 import { buildFilingAlertDigests } from '../packages/mcp-server/src/alert-digest.js';
+import { planFilingAlertDelivery } from '../packages/mcp-server/src/alert-delivery-policy.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
@@ -189,6 +190,35 @@ describe('mcp facade', () => {
     ]);
     expect(digestPlans).toHaveLength(2);
     expect(digestPlans[0]?.workspaceIds.length).toBeGreaterThanOrEqual(1);
+
+    const deliveryPolicy = planFilingAlertDelivery([
+      {
+        workspaceId: 'workspace_high',
+        dispatchPlan: {
+          shouldSend: true,
+          target: 'discord:#tax-operator-immediate',
+          route: 'operator-immediate',
+          severity: 'high',
+          message: '⏸️ COLLECTION BLOCKED\nNEXT: resume the blocked source sync flow',
+        },
+      },
+      {
+        workspaceId: demo.workspaceId,
+        dispatchPlan: updatesDispatchPlan,
+      },
+      {
+        workspaceId: 'workspace_gamma',
+        dispatchPlan: {
+          shouldSend: true,
+          target: 'discord:#tax-operator-watch',
+          route: 'operator-watch',
+          severity: 'medium',
+          message: '⚠️ REVIEW PENDING\nNEXT: resolve review items before preparation',
+        },
+      },
+    ]);
+    expect(deliveryPolicy.immediateSends).toHaveLength(1);
+    expect(deliveryPolicy.digests).toHaveLength(2);
 
     const firstSendDecision = shouldSendFilingAlert(demo.workspaceId, updatesDispatchPlan, undefined, 0);
     expect(firstSendDecision.shouldSend).toBe(true);
