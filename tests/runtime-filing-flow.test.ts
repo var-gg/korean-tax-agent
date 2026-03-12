@@ -70,6 +70,17 @@ describe('in-memory runtime filing flow', () => {
     expect(resolvedDraft.status).toBe('completed');
     expect(resolvedDraft.readiness?.draftReadiness).toBe('draft_ready');
 
+    const refreshResult = runtime.invoke('tax.filing.refresh_official_data', {
+      workspaceId: demo.workspaceId,
+      sourceIds: ['src_hometax_main'],
+      refreshPolicy: 'if_stale_or_user_requested',
+      recomputeDraft: true,
+    });
+
+    expect(refreshResult.status).toBe('completed');
+    expect(refreshResult.data.refreshedSources.length).toBeGreaterThan(0);
+    expect(runtime.getDraft(demo.workspaceId)?.fieldValues?.every((field) => field.freshnessState === 'current_enough')).toBe(true);
+
     const compareResult = runtime.invoke('tax.filing.compare_with_hometax', {
       workspaceId: demo.workspaceId,
       draftId: resolvedDraft.data.draftId,

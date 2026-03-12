@@ -28,6 +28,8 @@ import type {
   MCPResponseEnvelope,
   PlanCollectionInput,
   PrepareHomeTaxInput,
+  RefreshOfficialDataData,
+  RefreshOfficialDataInput,
   ResolveReviewItemInput,
   ResumeSyncData,
   ResumeSyncInput,
@@ -631,6 +633,59 @@ export function taxFilingCompareWithHomeTax(
       ? derivePendingUserAction({ blockingReason, checkpointType: blockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined })
       : undefined,
     nextRecommendedAction: blockingReason === undefined ? 'tax.filing.prepare_hometax' : 'tax.classify.list_review_items',
+  };
+}
+
+export function taxFilingRefreshOfficialData(
+  input: RefreshOfficialDataInput,
+  draft?: { draftId: string; fieldValues?: import('../../core/src/types.js').FilingFieldValue[] },
+): MCPResponseEnvelope<RefreshOfficialDataData> {
+  const refreshedFieldValues = (draft?.fieldValues ?? []).map((field) => ({
+    ...field,
+    freshnessState: 'current_enough' as const,
+  }));
+  const readinessSummary = deriveReadinessSummary({
+    supportTier: 'tier_a',
+    filingPathKind: 'mixed_income_limited',
+    draft: draft
+      ? {
+          draftId: draft.draftId,
+          fieldValues: refreshedFieldValues,
+        }
+      : undefined,
+  });
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'import_completed',
+    actorType: 'system',
+    entityRefs: input.sourceIds ?? [],
+    summary: `Refreshed official data for workspace ${input.workspaceId}.`,
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      refreshedSources: (input.sourceIds ?? ['src_hometax_main']).map((sourceId, index) => ({
+        sourceId,
+        syncAttemptId: `sync_refresh_${index + 1}_${input.workspaceId}`,
+        changeSummary: {
+          newArtifacts: 1,
+          changedWithholdingRecords: 1,
+          changedDraftFields: refreshedFieldValues.length,
+        },
+      })),
+      recomputedDraftId: input.recomputeDraft ? draft?.draftId : undefined,
+      supersededDraftId: input.recomputeDraft ? draft?.draftId : undefined,
+      readinessDowngraded: false,
+      downgradeReasons: [],
+    },
+    readiness: readinessSummary,
+    audit: {
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_refreshed',
+    },
+    nextRecommendedAction: 'tax.filing.compare_with_hometax',
   };
 }
 

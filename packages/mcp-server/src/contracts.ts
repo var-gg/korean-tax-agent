@@ -300,6 +300,29 @@ export type CompareWithHomeTaxData = {
   fieldValues?: FilingFieldValue[];
 };
 
+export type RefreshOfficialDataInput = {
+  workspaceId: string;
+  sourceIds?: string[];
+  refreshPolicy?: 'always' | 'if_stale_or_user_requested' | 'force';
+  recomputeDraft?: boolean;
+};
+
+export type RefreshOfficialDataData = {
+  refreshedSources: Array<{
+    sourceId: string;
+    syncAttemptId: string;
+    changeSummary: {
+      newArtifacts: number;
+      changedWithholdingRecords: number;
+      changedDraftFields: number;
+    };
+  }>;
+  recomputedDraftId?: string;
+  supersededDraftId?: string;
+  readinessDowngraded: boolean;
+  downgradeReasons: string[];
+};
+
 export type PrepareHomeTaxInput = {
   workspaceId: string;
   draftId: string;
@@ -381,6 +404,10 @@ export interface KoreanTaxMCPContracts {
   'tax.filing.compare_with_hometax': {
     input: CompareWithHomeTaxInput;
     output: MCPResponseEnvelope<CompareWithHomeTaxData>;
+  };
+  'tax.filing.refresh_official_data': {
+    input: RefreshOfficialDataInput;
+    output: MCPResponseEnvelope<RefreshOfficialDataData>;
   };
   'tax.filing.prepare_hometax': {
     input: PrepareHomeTaxInput;
