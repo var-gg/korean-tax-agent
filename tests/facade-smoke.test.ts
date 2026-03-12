@@ -65,6 +65,7 @@ describe('mcp facade', () => {
 
     expect(refreshResult.ok).toBe(true);
     expect(Array.isArray(refreshResult.data.refreshedSources)).toBe(true);
+    expect(refreshResult.readiness).toBeTruthy();
 
     const unsupported = facade.invokeTool({
       name: 'tax.not_real.tool',

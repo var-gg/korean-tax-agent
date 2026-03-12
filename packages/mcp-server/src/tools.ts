@@ -19,6 +19,7 @@ import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
   CompareWithHomeTaxInput,
+  ComputeDraftData,
   ComputeDraftInput,
   ConnectSourceData,
   ConnectSourceInput,
@@ -489,20 +490,7 @@ export function taxFilingComputeDraft(
   transactions: LedgerTransaction[],
   decisions: ClassificationDecision[],
   reviewItems: ReviewItem[],
-): MCPResponseEnvelope<{
-  draftId: string;
-  unresolvedBlockerCount: number;
-  warnings: string[];
-  incomeSummary: Record<string, unknown>;
-  expenseSummary: Record<string, unknown>;
-  deductionsSummary: Record<string, unknown>;
-  withholdingSummary: Record<string, unknown>;
-  estimateConfidence?: 'low' | 'medium' | 'high';
-  blockerCodes?: string[];
-  taxpayerFacts?: TaxpayerFact[];
-  withholdingRecords?: WithholdingRecord[];
-  fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
-}> {
+): MCPResponseEnvelope<ComputeDraftData> {
   const filingYear = input.workspaceId.match(/(20\d{2})/)?.[1];
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
   const scopedDecisions = decisions.filter((decision) => scopedTransactions.some((tx) => tx.transactionId === decision.entityId));
@@ -573,6 +561,14 @@ export function taxFilingComputeDraft(
       taxpayerFacts,
       withholdingRecords,
       fieldValues: draft.fieldValues,
+      supportTier: readinessSummary.supportTier,
+      filingPathKind: readinessSummary.filingPathKind,
+      estimateReadiness: readinessSummary.estimateReadiness,
+      draftReadiness: readinessSummary.draftReadiness,
+      submissionReadiness: readinessSummary.submissionReadiness,
+      comparisonSummaryState: readinessSummary.comparisonSummaryState,
+      freshnessState: readinessSummary.freshnessState,
+      majorUnknowns: readinessSummary.majorUnknowns,
     },
     readiness: readinessSummary,
     checkpointType: computeBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,

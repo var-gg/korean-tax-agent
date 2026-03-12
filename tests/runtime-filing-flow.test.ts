@@ -69,6 +69,9 @@ describe('in-memory runtime filing flow', () => {
 
     expect(resolvedDraft.status).toBe('completed');
     expect(resolvedDraft.readiness?.draftReadiness).toBe('draft_ready');
+    expect(runtime.getDraft(demo.workspaceId)?.supportTier).toBe(resolvedDraft.readiness?.supportTier);
+    expect(runtime.getDraft(demo.workspaceId)?.filingPathKind).toBe(resolvedDraft.readiness?.filingPathKind);
+    expect(runtime.getDraft(demo.workspaceId)?.draftReadiness).toBe('draft_ready');
 
     const refreshResult = runtime.invoke('tax.filing.refresh_official_data', {
       workspaceId: demo.workspaceId,
@@ -80,6 +83,7 @@ describe('in-memory runtime filing flow', () => {
     expect(refreshResult.status).toBe('completed');
     expect(refreshResult.data.refreshedSources.length).toBeGreaterThan(0);
     expect(runtime.getDraft(demo.workspaceId)?.fieldValues?.every((field) => field.freshnessState === 'current_enough')).toBe(true);
+    expect(runtime.getDraft(demo.workspaceId)?.freshnessState).toBe(refreshResult.readiness?.freshnessState);
 
     const compareResult = runtime.invoke('tax.filing.compare_with_hometax', {
       workspaceId: demo.workspaceId,
@@ -92,6 +96,8 @@ describe('in-memory runtime filing flow', () => {
     expect(compareResult.data.sectionResults.length).toBeGreaterThan(0);
     expect(compareResult.readiness?.comparisonSummaryState).toBe('matched_enough');
     expect(runtime.getDraft(demo.workspaceId)?.fieldValues?.some((field) => field.comparisonState === 'matched')).toBe(true);
+    expect(runtime.getDraft(demo.workspaceId)?.comparisonSummaryState).toBe('matched_enough');
+    expect(runtime.getDraft(demo.workspaceId)?.submissionReadiness).toBe(compareResult.readiness?.submissionReadiness);
 
     const prepareResult = runtime.invoke('tax.filing.prepare_hometax', {
       workspaceId: demo.workspaceId,

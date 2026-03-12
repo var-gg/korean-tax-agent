@@ -272,6 +272,14 @@ export type ComputeDraftData = {
   taxpayerFacts?: TaxpayerFact[];
   withholdingRecords?: WithholdingRecord[];
   fieldValues?: FilingFieldValue[];
+  supportTier?: FilingSupportTier;
+  filingPathKind?: FilingPathKind;
+  estimateReadiness?: ReadinessLevel;
+  draftReadiness?: ReadinessLevel;
+  submissionReadiness?: ReadinessLevel;
+  comparisonSummaryState?: FilingComparisonSummaryState;
+  freshnessState?: DataFreshnessState;
+  majorUnknowns?: string[];
 };
 
 export type CompareWithHomeTaxInput = {

@@ -329,11 +329,19 @@ export class InMemoryKoreanTaxMCPRuntime {
     const draft = this.getDraft(input.workspaceId);
     const result = taxFilingCompareWithHomeTax(input, draft?.fieldValues ?? []);
 
-    if (draft && result.data.fieldValues) {
+    if (draft && result.data.fieldValues && result.readiness) {
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         fieldValues: result.data.fieldValues,
-        blockerCodes: result.readiness?.blockerCodes,
+        blockerCodes: result.readiness.blockerCodes,
+        supportTier: result.readiness.supportTier,
+        filingPathKind: result.readiness.filingPathKind,
+        estimateReadiness: result.readiness.estimateReadiness,
+        draftReadiness: result.readiness.draftReadiness,
+        submissionReadiness: result.readiness.submissionReadiness,
+        comparisonSummaryState: result.readiness.comparisonSummaryState,
+        freshnessState: result.readiness.freshnessState,
+        majorUnknowns: result.readiness.majorUnknowns,
       });
     }
 
@@ -344,11 +352,20 @@ export class InMemoryKoreanTaxMCPRuntime {
     const draft = this.getDraft(input.workspaceId);
     const result = taxFilingRefreshOfficialData(input, draft ? { draftId: draft.draftId, fieldValues: draft.fieldValues } : undefined);
 
-    if (draft?.fieldValues) {
+    if (draft?.fieldValues && result.readiness) {
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         draftId: result.data.recomputedDraftId ?? draft.draftId,
         fieldValues: draft.fieldValues.map((field) => ({ ...field, freshnessState: 'current_enough' })),
+        blockerCodes: result.readiness.blockerCodes,
+        supportTier: result.readiness.supportTier,
+        filingPathKind: result.readiness.filingPathKind,
+        estimateReadiness: result.readiness.estimateReadiness,
+        draftReadiness: result.readiness.draftReadiness,
+        submissionReadiness: result.readiness.submissionReadiness,
+        comparisonSummaryState: result.readiness.comparisonSummaryState,
+        freshnessState: result.readiness.freshnessState,
+        majorUnknowns: result.readiness.majorUnknowns,
       });
     }
 
@@ -362,8 +379,8 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.listReviewItems(input.workspaceId),
       draft?.fieldValues ?? [],
       {
-        supportTier: draft?.fieldValues && draft.fieldValues.length > 0 ? 'tier_a' : 'undetermined',
-        filingPathKind: draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown',
+        supportTier: draft?.supportTier ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'tier_a' : 'undetermined'),
+        filingPathKind: draft?.filingPathKind ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown'),
       },
     );
   }
