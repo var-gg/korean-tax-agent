@@ -79,6 +79,7 @@ async function main(): Promise<void> {
     console.log(secondCheck);
     console.log('\n--- File contents ---\n');
     console.log(fileContents);
+    console.log('\n(See examples/filing-alert-digest-example.ts for batched medium/info delivery.)');
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
