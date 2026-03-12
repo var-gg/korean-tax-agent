@@ -365,6 +365,7 @@ Input:
 #### `tax.classify.resolve_review_item`
 Purpose:
 - apply a human-approved resolution to one or more review items
+- for HomeTax comparison mismatch reviews, propagate the approved outcome back into the draft state
 
 Input:
 - review item ids
@@ -375,15 +376,21 @@ Input:
 Output:
 - resolved items
 - affected draft/decision deltas
+- updated review state that may unblock draft or submission readiness
 
 Notes:
 - should emit strong audit metadata
+- when resolving `hometax_material_mismatch` items, runtime implementations may:
+  - accept portal value into the draft,
+  - keep the draft value with explicit override,
+  - or mark the field for manual follow-up
 
 ### filing
 
 #### `tax.filing.compute_draft`
 Purpose:
 - compute or refresh the filing draft from current normalized and resolved data
+- persist a filing-state snapshot that downstream tools can reuse
 
 Input:
 - workspace id
@@ -392,11 +399,21 @@ Input:
 
 Output:
 - draft id
-- readiness level (`estimate_ready`, `draft_ready`, `submission_assist_ready`)
 - income/expense/deduction/withholding summaries
 - warnings
 - unresolved blockers
 - material unknowns
+- persisted readiness metadata, including:
+  - `supportTier`
+  - `filingPathKind`
+  - `estimateReadiness`
+  - `draftReadiness`
+  - `submissionReadiness`
+  - `comparisonSummaryState`
+  - `freshnessState`
+  - `majorUnknowns`
+  - `blockerCodes`
+  - `fieldValues`
 
 #### `tax.filing.get_summary`
 Purpose:
@@ -419,9 +436,50 @@ Possible outputs:
 Notes:
 - exporting to an external destination may require distinct consent depending on target
 
+#### `tax.filing.compare_with_hometax`
+Purpose:
+- compare current filing draft values against visible/imported HomeTax-observed values
+- update filing-field comparison state and derive submission readiness gates
+
+Input:
+- workspace id
+- draft id
+- comparison mode
+- optional section keys
+
+Output:
+- section-level comparison results
+- material mismatches
+- updated field values with comparison state
+- readiness summary after comparison
+
+Notes:
+- if material mismatches remain, the workflow should route to review resolution rather than straight to preparation
+- runtime implementations may create `hometax_material_mismatch` review items from material mismatches
+
+#### `tax.filing.refresh_official_data`
+Purpose:
+- refresh HomeTax-adjacent official data before comparison or preparation
+
+Input:
+- workspace id
+- optional source ids
+- refresh policy
+- recompute draft flag
+
+Output:
+- refreshed sources with change summary
+- recomputed / superseded draft ids when relevant
+- readiness downgrade indicator
+- readiness summary after refresh
+
+Notes:
+- runtime implementations may persist updated freshness state back into the draft metadata
+
 #### `tax.filing.prepare_hometax`
 Purpose:
 - convert draft outputs into a HomeTax-assist-ready structure
+- use persisted filing-path/readiness state to decide whether preparation is allowed
 
 Output:
 - section mapping
@@ -430,6 +488,9 @@ Output:
 - comparison readiness
 - browser assist readiness
 - refresh requirement / freshness note
+
+Notes:
+- should remain blocked when comparison is incomplete, review remains unresolved, or official-data freshness is insufficient
 
 ### browser assist
 
@@ -509,9 +570,26 @@ When the workflow is waiting for judgment rather than login:
 3. `tax.setup.list_connectors`
 4. `tax.sources.connect` / upload imports
 5. `tax.ledger.normalize`
-6. `tax.classify.run`
-7. `tax.classify.list_review_items`
-8. `tax.classify.resolve_review_item`
+6. `tax.profile.detect_filing_path`
+7. `tax.classify.run`
+8. `tax.classify.list_review_items`
 9. `tax.filing.compute_draft`
-10. `tax.filing.prepare_hometax`
-11. `tax.browser.start_hometax_assist`
+10. `tax.classify.resolve_review_item` (for classification/review blockers)
+11. `tax.filing.compute_draft` (recompute)
+12. `tax.filing.refresh_official_data`
+13. `tax.filing.compare_with_hometax`
+14. if material mismatches exist: `tax.classify.list_review_items` → `tax.classify.resolve_review_item`
+15. `tax.filing.prepare_hometax`
+16. `tax.browser.start_hometax_assist`
+
+Practical prototype loop:
+- detect path
+- classify
+- compute draft
+- resolve open review items
+- recompute draft
+- refresh official data
+- compare with HomeTax
+- resolve mismatch reviews if needed
+- prepare HomeTax
+- hand off to browser assist
