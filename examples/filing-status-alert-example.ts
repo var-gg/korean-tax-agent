@@ -1,5 +1,6 @@
 import rawDemo from './demo-workspace.json';
 import { KoreanTaxMCPFacade } from '../packages/mcp-server/src/facade.js';
+import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
 import { decideFilingAlert, toFilingAlertSnapshot, type FilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
@@ -34,11 +35,14 @@ const beforeSnapshot = toFilingAlertSnapshot((before as typeof before & { data: 
 
 const afterSnapshot = simulateReadyForAssistTransition(beforeSnapshot);
 const decision = decideFilingAlert(beforeSnapshot, afterSnapshot);
+const routing = routeFilingAlert(decision);
 
 console.log('\n--- Before snapshot ---\n');
 console.log(beforeSnapshot.operatorUpdate);
 console.log('\n--- Alert decision ---\n');
 console.log(`reason=${decision.reason} severity=${decision.severity}`);
+console.log('\n--- Routing ---\n');
+console.log(`route=${routing.route} shouldSend=${routing.shouldSend}`);
 console.log('\n--- Message to send ---\n');
 console.log(decision.message ?? 'NO_MESSAGE');
 
