@@ -320,11 +320,30 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private compareWithHomeTax(input: CompareWithHomeTaxInput): MCPResponseEnvelope<CompareWithHomeTaxData> {
     const draft = this.getDraft(input.workspaceId);
-    return taxFilingCompareWithHomeTax(input, draft?.fieldValues ?? []);
+    const result = taxFilingCompareWithHomeTax(input, draft?.fieldValues ?? []);
+
+    if (draft && result.data.fieldValues) {
+      this.store.draftsByWorkspace.set(input.workspaceId, {
+        ...draft,
+        fieldValues: result.data.fieldValues,
+        blockerCodes: result.readiness?.blockerCodes,
+      });
+    }
+
+    return result;
   }
 
   private prepareHomeTax(input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData> {
-    return taxFilingPrepareHomeTax(input, this.listReviewItems(input.workspaceId));
+    const draft = this.getDraft(input.workspaceId);
+    return taxFilingPrepareHomeTax(
+      input,
+      this.listReviewItems(input.workspaceId),
+      draft?.fieldValues ?? [],
+      {
+        supportTier: draft?.fieldValues && draft.fieldValues.length > 0 ? 'tier_a' : 'undetermined',
+        filingPathKind: draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown',
+      },
+    );
   }
 
   private startHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {

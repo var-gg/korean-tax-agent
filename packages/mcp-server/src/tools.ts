@@ -634,39 +634,46 @@ export function taxFilingCompareWithHomeTax(
   };
 }
 
-export function taxFilingPrepareHomeTax(input: PrepareHomeTaxInput, reviewItems: ReviewItem[]): MCPResponseEnvelope<{
+export function taxFilingPrepareHomeTax(
+  input: PrepareHomeTaxInput,
+  reviewItems: ReviewItem[],
+  existingFieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
+  readinessHints?: { supportTier?: import('../../core/src/types.js').FilingSupportTier; filingPathKind?: import('../../core/src/types.js').FilingPathKind },
+): MCPResponseEnvelope<{
   sectionMapping: Record<string, unknown>;
   requiredManualFields: string[];
   blockedFields: string[];
   browserAssistReady: boolean;
   fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
 }> {
-  const fieldValues = [
-    {
-      filingFieldValueId: `field_${input.draftId}_income_total`,
-      draftId: input.draftId,
-      sectionKey: 'income',
-      fieldKey: 'total_income',
-      value: null,
-      sourceOfTruth: 'imported' as const,
-      comparisonState: 'not_compared' as const,
-      freshnessState: 'current_enough' as const,
-    },
-    {
-      filingFieldValueId: `field_${input.draftId}_withholding_total`,
-      draftId: input.draftId,
-      sectionKey: 'withholding',
-      fieldKey: 'total_withheld_tax',
-      value: null,
-      sourceOfTruth: 'official' as const,
-      requiresManualEntry: true,
-      comparisonState: 'manual_only' as const,
-      freshnessState: 'refresh_recommended' as const,
-    },
-  ];
+  const fieldValues = existingFieldValues.length > 0
+    ? existingFieldValues
+    : [
+        {
+          filingFieldValueId: `field_${input.draftId}_income_total`,
+          draftId: input.draftId,
+          sectionKey: 'income',
+          fieldKey: 'total_income',
+          value: null,
+          sourceOfTruth: 'imported' as const,
+          comparisonState: 'not_compared' as const,
+          freshnessState: 'current_enough' as const,
+        },
+        {
+          filingFieldValueId: `field_${input.draftId}_withholding_total`,
+          draftId: input.draftId,
+          sectionKey: 'withholding',
+          fieldKey: 'total_withheld_tax',
+          value: null,
+          sourceOfTruth: 'official' as const,
+          requiresManualEntry: true,
+          comparisonState: 'manual_only' as const,
+          freshnessState: 'refresh_recommended' as const,
+        },
+      ];
   const readinessSummary = deriveReadinessSummary({
-    supportTier: 'undetermined',
-    filingPathKind: 'unknown',
+    supportTier: readinessHints?.supportTier ?? 'undetermined',
+    filingPathKind: readinessHints?.filingPathKind ?? 'unknown',
     reviewItems,
     draft: {
       draftId: input.draftId,

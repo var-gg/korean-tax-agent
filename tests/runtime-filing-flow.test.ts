@@ -80,15 +80,16 @@ describe('in-memory runtime filing flow', () => {
     expect(compareResult.status).toBe('completed');
     expect(compareResult.data.sectionResults.length).toBeGreaterThan(0);
     expect(compareResult.readiness?.comparisonSummaryState).toBe('matched_enough');
+    expect(runtime.getDraft(demo.workspaceId)?.fieldValues?.some((field) => field.comparisonState === 'matched')).toBe(true);
 
     const prepareResult = runtime.invoke('tax.filing.prepare_hometax', {
       workspaceId: demo.workspaceId,
       draftId: resolvedDraft.data.draftId,
     });
 
-    expect(prepareResult.status).toBe('blocked');
-    expect(prepareResult.blockingReason).toBe('comparison_incomplete');
-    expect(prepareResult.data.browserAssistReady).toBe(false);
-    expect(prepareResult.readiness?.submissionReadiness).toBe('draft_ready');
+    expect(prepareResult.status).toBe('completed');
+    expect(prepareResult.blockingReason).toBeUndefined();
+    expect(prepareResult.data.browserAssistReady).toBe(true);
+    expect(prepareResult.readiness?.submissionReadiness).toBe('submission_assist_ready');
   });
 });
