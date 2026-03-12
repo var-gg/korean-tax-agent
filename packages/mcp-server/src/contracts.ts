@@ -201,6 +201,24 @@ export type NormalizeLedgerData = {
   duplicateCandidateCount: number;
 };
 
+export type DetectFilingPathInput = {
+  workspaceId: string;
+  taxpayerProfileRef?: string;
+  includeEvidenceSummary?: boolean;
+  includeCoverageGaps?: boolean;
+  includeWithholdingSummary?: boolean;
+};
+
+export type DetectFilingPathData = {
+  workspaceId: string;
+  supportTier: FilingSupportTier;
+  filingPathKind: FilingPathKind;
+  confidence: number;
+  reasons: string[];
+  missingFacts: string[];
+  escalationFlags: string[];
+};
+
 export type RunClassificationInput = {
   workspaceId: string;
   rulesetVersion?: string;
@@ -313,6 +331,10 @@ export interface KoreanTaxMCPContracts {
   'tax.ledger.normalize': {
     input: NormalizeLedgerInput;
     output: MCPResponseEnvelope<NormalizeLedgerData>;
+  };
+  'tax.profile.detect_filing_path': {
+    input: DetectFilingPathInput;
+    output: MCPResponseEnvelope<DetectFilingPathData>;
   };
   'tax.classify.run': {
     input: RunClassificationInput;

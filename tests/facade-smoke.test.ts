@@ -28,6 +28,7 @@ describe('mcp facade', () => {
 
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.connect');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compute_draft');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.profile.detect_filing_path');
 
     const statusResult = facade.invokeTool({
       name: 'tax.sources.get_collection_status',
@@ -36,6 +37,16 @@ describe('mcp facade', () => {
 
     expect(statusResult.ok).toBe(true);
     expect(Array.isArray(statusResult.data.connectedSources)).toBe(true);
+
+    const pathResult = facade.invokeTool({
+      name: 'tax.profile.detect_filing_path',
+      input: { workspaceId: demo.workspaceId },
+    });
+
+    expect(pathResult.ok).toBe(true);
+    expect(pathResult.data.workspaceId).toBe(demo.workspaceId);
+    expect(typeof pathResult.data.supportTier).toBe('string');
+    expect(pathResult.readiness).toBeTruthy();
 
     const unsupported = facade.invokeTool({
       name: 'tax.not_real.tool',

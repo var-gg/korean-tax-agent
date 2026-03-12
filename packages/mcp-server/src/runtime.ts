@@ -5,6 +5,8 @@ import type {
   ComputeDraftInput,
   ConnectSourceData,
   ConnectSourceInput,
+  DetectFilingPathData,
+  DetectFilingPathInput,
   GetCollectionStatusInput,
   KoreanTaxMCPContracts,
   MCPResponseEnvelope,
@@ -26,6 +28,7 @@ import {
   taxClassifyListReviewItems,
   taxClassifyResolveReviewItem,
   taxClassifyRun,
+  taxProfileDetectFilingPath,
   taxFilingComputeDraft,
   taxFilingPrepareHomeTax,
   taxSourcesConnect,
@@ -39,6 +42,7 @@ export type SupportedRuntimeToolName =
   | 'tax.sources.connect'
   | 'tax.sources.sync'
   | 'tax.sources.resume_sync'
+  | 'tax.profile.detect_filing_path'
   | 'tax.classify.run'
   | 'tax.classify.list_review_items'
   | 'tax.classify.resolve_review_item'
@@ -93,6 +97,7 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.sources.connect', input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData>;
   invoke(name: 'tax.sources.sync', input: SyncSourceInput): MCPResponseEnvelope<SyncSourceData>;
   invoke(name: 'tax.sources.resume_sync', input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData>;
+  invoke(name: 'tax.profile.detect_filing_path', input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData>;
   invoke(name: 'tax.classify.run', input: RunClassificationInput): MCPResponseEnvelope<RunClassificationData>;
   invoke(name: 'tax.classify.list_review_items', input: { workspaceId: string }): MCPResponseEnvelope<{ items: ReviewItem[]; summary: ReturnType<typeof taxClassifyListReviewItems>['data']['summary'] }>;
   invoke(name: 'tax.classify.resolve_review_item', input: ResolveReviewItemInput): MCPResponseEnvelope<ResolveReviewItemData>;
@@ -112,6 +117,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         return this.syncSource(input as SyncSourceInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.sources.resume_sync':
         return this.resumeSync(input as ResumeSyncInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.profile.detect_filing_path':
+        return this.detectFilingPath(input as DetectFilingPathInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.classify.run':
         return this.runClassification(input as RunClassificationInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.classify.list_review_items':
@@ -256,6 +263,15 @@ export class InMemoryKoreanTaxMCPRuntime {
     }
 
     return result;
+  }
+
+  private detectFilingPath(input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData> {
+    return taxProfileDetectFilingPath(
+      input,
+      Array.from(this.store.transactions.values()),
+      this.listReviewItems(input.workspaceId),
+      [],
+    );
   }
 
   private runClassification(input: RunClassificationInput): MCPResponseEnvelope<RunClassificationData> {

@@ -19,6 +19,8 @@ import type {
   ComputeDraftInput,
   ConnectSourceData,
   ConnectSourceInput,
+  DetectFilingPathData,
+  DetectFilingPathInput,
   GetCollectionStatusInput,
   MCPResponseEnvelope,
   PlanCollectionInput,
@@ -332,6 +334,43 @@ export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelop
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_import_completed',
     },
+  };
+}
+
+export function taxProfileDetectFilingPath(
+  input: DetectFilingPathInput,
+  transactions: LedgerTransaction[] = [],
+  reviewItems: ReviewItem[] = [],
+  coverageGaps: import('../../core/src/types.js').CoverageGap[] = [],
+): MCPResponseEnvelope<DetectFilingPathData> {
+  const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
+  const scopedReviewItems = reviewItems.filter((item) => item.workspaceId === input.workspaceId);
+  const detection = detectFilingPath({
+    transactions: scopedTransactions,
+    reviewItems: scopedReviewItems,
+    coverageGaps,
+  });
+  const readiness = deriveReadinessSummary({
+    supportTier: detection.supportTier,
+    filingPathKind: detection.filingPathKind,
+    reviewItems: scopedReviewItems,
+    coverageGaps,
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId: input.workspaceId,
+      supportTier: detection.supportTier,
+      filingPathKind: detection.filingPathKind,
+      confidence: detection.confidence,
+      reasons: detection.reasons,
+      missingFacts: detection.missingFacts,
+      escalationFlags: detection.escalationFlags,
+    },
+    readiness: readiness,
+    nextRecommendedAction: 'tax.filing.compute_draft',
   };
 }
 
