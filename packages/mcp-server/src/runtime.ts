@@ -3,6 +3,8 @@ import type { BlockingReason, ClassificationDecision, ConsentRecord, FilingWorks
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
+  GetWorkspaceStatusData,
+  GetWorkspaceStatusInput,
   CompareWithHomeTaxInput,
   ComputeDraftData,
   ComputeDraftInput,
@@ -46,6 +48,7 @@ import {
 
 export type SupportedRuntimeToolName =
   | 'tax.sources.get_collection_status'
+  | 'tax.workspace.get_status'
   | 'tax.sources.connect'
   | 'tax.sources.sync'
   | 'tax.sources.resume_sync'
@@ -106,6 +109,7 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   invoke(name: 'tax.sources.get_collection_status', input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData>;
+  invoke(name: 'tax.workspace.get_status', input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData>;
   invoke(name: 'tax.sources.connect', input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData>;
   invoke(name: 'tax.sources.sync', input: SyncSourceInput): MCPResponseEnvelope<SyncSourceData>;
   invoke(name: 'tax.sources.resume_sync', input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData>;
@@ -125,6 +129,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     switch (name) {
       case 'tax.sources.get_collection_status':
         return this.getCollectionStatus(input as GetCollectionStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.workspace.get_status':
+        return this.getWorkspaceStatus(input as GetWorkspaceStatusInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.sources.connect':
         return this.connectSource(input as ConnectSourceInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.sources.sync':
@@ -249,6 +255,58 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.listSources(input.workspaceId),
       this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
     );
+  }
+
+  private getWorkspaceStatus(input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData> {
+    this.syncWorkspaceSnapshot(input.workspaceId);
+    const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
+    const draft = this.getDraft(input.workspaceId);
+
+    return {
+      ok: true,
+      status: 'completed',
+      data: {
+        workspace: {
+          workspaceId: workspace.workspaceId,
+          status: workspace.status,
+          currentDraftId: workspace.currentDraftId,
+          unresolvedReviewCount: workspace.unresolvedReviewCount,
+          openCoverageGapCount: workspace.openCoverageGapCount,
+          supportTier: workspace.supportTier,
+          filingPathKind: workspace.filingPathKind,
+          estimateReadiness: workspace.estimateReadiness,
+          draftReadiness: workspace.draftReadiness,
+          submissionReadiness: workspace.submissionReadiness,
+          comparisonSummaryState: workspace.comparisonSummaryState,
+          freshnessState: workspace.freshnessState,
+          lastBlockingReason: workspace.lastBlockingReason,
+          lastCollectionStatus: workspace.lastCollectionStatus,
+          majorUnknowns: workspace.majorUnknowns,
+          updatedAt: workspace.updatedAt,
+        },
+        draft: draft
+          ? {
+              draftId: draft.draftId,
+              blockerCodes: draft.blockerCodes,
+              warningCount: draft.warnings.length,
+              fieldValueCount: draft.fieldValues?.length ?? 0,
+            }
+          : undefined,
+        nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
+      },
+      readiness: {
+        supportTier: workspace.supportTier ?? 'undetermined',
+        filingPathKind: workspace.filingPathKind ?? 'unknown',
+        estimateReadiness: workspace.estimateReadiness ?? 'not_ready',
+        draftReadiness: workspace.draftReadiness ?? 'not_ready',
+        submissionReadiness: workspace.submissionReadiness ?? 'not_ready',
+        comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
+        freshnessState: workspace.freshnessState ?? 'stale_unknown',
+        majorUnknowns: workspace.majorUnknowns ?? [],
+        blockerCodes: workspace.lastBlockingReason ? [workspace.lastBlockingReason] : [],
+      },
+      nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
+    };
   }
 
   private connectSource(input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData> {
@@ -578,6 +636,28 @@ export class InMemoryKoreanTaxMCPRuntime {
     });
     return result;
   }
+}
+
+function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {
+  if (workspace.lastCollectionStatus === 'awaiting_user_action' || workspace.lastCollectionStatus === 'blocked') {
+    return 'tax.sources.resume_sync';
+  }
+  if (workspace.unresolvedReviewCount > 0) {
+    return 'tax.classify.list_review_items';
+  }
+  if (!workspace.currentDraftId) {
+    return 'tax.filing.compute_draft';
+  }
+  if (workspace.freshnessState === 'refresh_required' || workspace.freshnessState === 'stale_unknown') {
+    return 'tax.filing.refresh_official_data';
+  }
+  if (workspace.comparisonSummaryState !== 'matched_enough' && workspace.comparisonSummaryState !== 'manual_only') {
+    return 'tax.filing.compare_with_hometax';
+  }
+  if (workspace.submissionReadiness === 'submission_assist_ready') {
+    return 'tax.filing.prepare_hometax';
+  }
+  return undefined;
 }
 
 function prioritizeBlockingReason(blockerCodes?: string[]): FilingWorkspace['lastBlockingReason'] | undefined {

@@ -520,6 +520,25 @@ Purpose:
 Purpose:
 - inspect current HomeTax progress, blockers, and pending user actions
 
+#### `tax.workspace.get_status`
+Purpose:
+- retrieve the current filing workspace snapshot as a stateful progress view
+
+Input:
+- workspace id
+
+Output:
+- workspace status
+- current draft id
+- unresolved review count
+- readiness summary
+- representative blocking reason
+- collection status
+- next recommended action
+
+Notes:
+- this is the preferred read model for agents that need to explain current progress or decide what to do next
+
 ## Collection-specific response expectations
 
 For source-planning and source-sync tools, the response should help the agent explain both progress and failure recovery.

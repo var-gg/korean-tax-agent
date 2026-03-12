@@ -5,6 +5,7 @@ import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceCo
 
 const demo = rawDemo as {
   workspaceId: string;
+  workspace: import('../packages/core/src/types.js').FilingWorkspace;
   consentRecords: ConsentRecord[];
   sources: SourceConnection[];
   syncAttempts: SyncAttempt[];
@@ -17,6 +18,7 @@ describe('mcp facade', () => {
   it('exposes supported runtime tools through invokeTool', () => {
     const facade = new KoreanTaxMCPFacade({
       consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
       sources: demo.sources,
       syncAttempts: demo.syncAttempts,
       coverageGapsByWorkspace: {
@@ -27,6 +29,7 @@ describe('mcp facade', () => {
     });
 
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.connect');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.workspace.get_status');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compute_draft');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compare_with_hometax');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.refresh_official_data');
@@ -49,6 +52,15 @@ describe('mcp facade', () => {
     expect(pathResult.data.workspaceId).toBe(demo.workspaceId);
     expect(typeof pathResult.data.supportTier).toBe('string');
     expect(pathResult.readiness).toBeTruthy();
+
+    const workspaceStatusResult = facade.invokeTool({
+      name: 'tax.workspace.get_status',
+      input: { workspaceId: demo.workspaceId },
+    });
+
+    expect(workspaceStatusResult.ok).toBe(true);
+    expect(workspaceStatusResult.data.workspace.workspaceId).toBe(demo.workspaceId);
+    expect(typeof workspaceStatusResult.data.workspace.status).toBe('string');
 
     const compareInvalid = facade.invokeTool({
       name: 'tax.filing.compare_with_hometax',

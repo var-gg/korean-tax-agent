@@ -128,6 +128,10 @@ export type GetCollectionStatusInput = {
   workspaceId: string;
 };
 
+export type GetWorkspaceStatusInput = {
+  workspaceId: string;
+};
+
 export type CollectionStatusData = {
   connectedSources: Array<{
     sourceId: string;
@@ -356,6 +360,34 @@ export type StartHomeTaxAssistData = {
   authRequired: boolean;
 };
 
+export type GetWorkspaceStatusData = {
+  workspace: {
+    workspaceId: string;
+    status: string;
+    currentDraftId?: string;
+    unresolvedReviewCount: number;
+    openCoverageGapCount?: number;
+    supportTier?: FilingSupportTier;
+    filingPathKind?: FilingPathKind;
+    estimateReadiness?: ReadinessLevel;
+    draftReadiness?: ReadinessLevel;
+    submissionReadiness?: ReadinessLevel;
+    comparisonSummaryState?: FilingComparisonSummaryState;
+    freshnessState?: DataFreshnessState;
+    lastBlockingReason?: BlockingReason;
+    lastCollectionStatus?: SyncAttemptState;
+    majorUnknowns?: string[];
+    updatedAt: string;
+  };
+  draft?: {
+    draftId: string;
+    blockerCodes?: string[];
+    warningCount: number;
+    fieldValueCount: number;
+  };
+  nextRecommendedAction?: string;
+};
+
 export interface KoreanTaxMCPContracts {
   'tax.setup.inspect_environment': {
     input: InspectEnvironmentInput;
@@ -372,6 +404,10 @@ export interface KoreanTaxMCPContracts {
   'tax.sources.get_collection_status': {
     input: GetCollectionStatusInput;
     output: MCPResponseEnvelope<CollectionStatusData>;
+  };
+  'tax.workspace.get_status': {
+    input: GetWorkspaceStatusInput;
+    output: MCPResponseEnvelope<GetWorkspaceStatusData>;
   };
   'tax.sources.connect': {
     input: ConnectSourceInput;

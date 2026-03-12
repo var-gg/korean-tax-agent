@@ -12,6 +12,7 @@ export type InvokeToolRequest = {
 
 export const SUPPORTED_RUNTIME_TOOLS: SupportedRuntimeToolName[] = [
   'tax.sources.get_collection_status',
+  'tax.workspace.get_status',
   'tax.sources.connect',
   'tax.sources.sync',
   'tax.sources.resume_sync',
@@ -114,6 +115,7 @@ export class KoreanTaxMCPFacade {
 function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<string, unknown>): string[] {
   const requiredFieldsByTool: Partial<Record<SupportedRuntimeToolName, string[]>> = {
     'tax.sources.get_collection_status': ['workspaceId'],
+    'tax.workspace.get_status': ['workspaceId'],
     'tax.sources.connect': ['workspaceId', 'sourceType', 'requestedScope'],
     'tax.sources.sync': ['sourceId', 'syncMode'],
     'tax.sources.resume_sync': [],
