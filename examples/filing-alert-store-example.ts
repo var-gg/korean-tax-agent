@@ -70,6 +70,7 @@ console.log('\n--- Second check ---\n');
 console.log(secondCheck);
 console.log('\n--- Stored record after second check ---\n');
 console.log(secondSaved);
+console.log('\n(See examples/filing-alert-file-store-example.ts for restart-safe persistence.)');
 
 function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): FilingAlertSnapshot {
   return {

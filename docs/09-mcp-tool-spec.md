@@ -479,8 +479,9 @@ Alerting pattern:
 - convert routes into provider-specific targets with a dispatch-plan adapter
 - apply duplicate suppression / cooldown before sending (example defaults: high=10m, medium=30m, info=2h)
 - persist the last delivery record in a store so dedupe can work across turns
+- use a file-backed store when dedupe must survive process restarts
 - for demos/tests, it is acceptable to simulate a transitioned snapshot directly from the previous snapshot
-- sample usage: `examples/filing-status-alert-example.ts`, `examples/filing-alert-dispatch-example.ts`, `examples/filing-alert-dedupe-example.ts`, `examples/filing-alert-store-example.ts`
+- sample usage: `examples/filing-status-alert-example.ts`, `examples/filing-alert-dispatch-example.ts`, `examples/filing-alert-dedupe-example.ts`, `examples/filing-alert-store-example.ts`, `examples/filing-alert-file-store-example.ts`
 
 #### `tax.filing.compare_with_hometax`
 Purpose:

@@ -1,9 +1,13 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { KoreanTaxMCPFacade, SUPPORTED_RUNTIME_TOOLS } from '../packages/mcp-server/src/facade.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
 import { shouldSendFilingAlert } from '../packages/mcp-server/src/alert-dedupe.js';
 import { InMemoryFilingAlertStore } from '../packages/mcp-server/src/alert-store.js';
+import { FileBackedFilingAlertStore } from '../packages/mcp-server/src/alert-file-store.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
@@ -203,6 +207,30 @@ describe('mcp facade', () => {
     );
     expect(storedSecondDecision.shouldSend).toBe(false);
     expect(storedSecondDecision.reason).toBe('suppressed_duplicate');
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'filing-alert-test-'));
+    try {
+      const fileStore = new FileBackedFilingAlertStore(join(tempDir, 'alert-store.json'));
+      const fileFirstDecision = shouldSendFilingAlert(
+        demo.workspaceId,
+        updatesDispatchPlan,
+        await fileStore.getLastRecord(demo.workspaceId),
+        0,
+      );
+      await fileStore.applySendDecision(demo.workspaceId, updatesDispatchPlan, fileFirstDecision, 0);
+
+      const reloadedFileStore = new FileBackedFilingAlertStore(join(tempDir, 'alert-store.json'));
+      const fileSecondDecision = shouldSendFilingAlert(
+        demo.workspaceId,
+        updatesDispatchPlan,
+        await reloadedFileStore.getLastRecord(demo.workspaceId),
+        1,
+      );
+      expect(fileSecondDecision.shouldSend).toBe(false);
+      expect(fileSecondDecision.reason).toBe('suppressed_duplicate');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
 
     const refreshResult = facade.invokeTool({
       name: 'tax.filing.refresh_official_data',
