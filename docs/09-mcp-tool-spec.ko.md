@@ -1,7 +1,9 @@
 # MCP Tool Spec
 
 - 상태: companion
-- 기준 원문: [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)

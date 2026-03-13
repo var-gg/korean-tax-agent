@@ -1,7 +1,9 @@
 # Workspace 상태 모델
 
 - 상태: companion
-- 기준 원문: [20-workspace-state-model.md](./20-workspace-state-model.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [20-workspace-state-model.md](./20-workspace-state-model.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)

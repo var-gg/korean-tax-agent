@@ -1,7 +1,9 @@
 # Core type 갭 분석
 
 - 상태: companion
-- 기준 원문: [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)

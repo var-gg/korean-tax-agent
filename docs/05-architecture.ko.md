@@ -1,15 +1,17 @@
 # 아키텍처
 
 - 상태: companion
-- 기준 원문: [05-architecture.md](./05-architecture.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [05-architecture.md](./05-architecture.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [06-data-model.ko.md](./06-data-model.ko.md)
   - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
   - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
 - 다음 읽기:
-  - [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md)
-  - [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
+  - [06-data-model.ko.md](./06-data-model.ko.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
 
 ## 목적
 이 문서는 한국 종합소득세 신고를 위한 agentic workflow를

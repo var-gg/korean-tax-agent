@@ -1,7 +1,9 @@
 # Workflow 상태 머신
 
 - 상태: companion
-- 기준 원문: [24-workflow-state-machine.md](./24-workflow-state-machine.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [24-workflow-state-machine.md](./24-workflow-state-machine.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
