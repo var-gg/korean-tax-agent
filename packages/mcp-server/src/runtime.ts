@@ -880,7 +880,7 @@ function getRuntimeMajorUnknowns(workspace: FilingWorkspace): string[] {
   return workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [];
 }
 
-function getRuntimeSupportTier(workspace: FilingWorkspace): string {
+function getRuntimeSupportTier(workspace: FilingWorkspace): import('../../core/src/types.js').FilingSupportTier {
   return workspace.runtime?.readiness.supportTier ?? workspace.supportTier ?? 'undetermined';
 }
 
