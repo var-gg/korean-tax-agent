@@ -280,6 +280,7 @@ export type ComputeDraftInput = {
 
 export type ComputeDraftData = {
   draftId: string;
+  computedAt?: string;
   unresolvedBlockerCount: number;
   warnings: string[];
   incomeSummary: Record<string, unknown>;
