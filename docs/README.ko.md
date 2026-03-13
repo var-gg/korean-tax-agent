@@ -120,6 +120,7 @@ Korean Tax Agent는:
 - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) (EN) — 영문 원문
 - [28-three-party-happy-path.md](./28-three-party-happy-path.md) (EN) — 사용자 / 에이전트 / MCP 3자 happy path와 단계별 노티 및 설계 공백 점검
 - [29-source-strategy-for-real-tax-work.md](./29-source-strategy-for-real-tax-work.md) (EN) — 실제 종소세 업무에서 무엇이 anchor 자료이고 무엇이 enrichment 자료인지, source planning을 어떻게 봐야 하는지 정리
+- [30-source-planning-conversation.md](./30-source-planning-conversation.md) (EN) — HomeTax-first / local-first / export-first 등 source planning 대화를 사용자 / 에이전트 / MCP 관점에서 구체화
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) (EN) — 구현 로드맵

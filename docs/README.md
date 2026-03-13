@@ -134,6 +134,7 @@ Read:
 - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) — explicit V1 support boundaries, readiness levels, and stop conditions
 - [28-three-party-happy-path.md](./28-three-party-happy-path.md) — user/agent/MCP happy-path conversation with stage-by-stage notification and design-gap analysis
 - [29-source-strategy-for-real-tax-work.md](./29-source-strategy-for-real-tax-work.md) — what data really matters first in tax work, what counts as anchor vs enrichment, and how source planning should work
+- [30-source-planning-conversation.md](./30-source-planning-conversation.md) — concrete user/agent/MCP source-planning dialogue patterns, including HomeTax-first, local-first, and export-first cases
 
 ## Korean companion docs
 Current Korean companions:
