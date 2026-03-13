@@ -115,6 +115,56 @@ function mapLegacyReadinessState(readiness: {
   };
 }
 
+function buildCollectionReadinessState(params: {
+  supportTier?: import('../../core/src/types.js').FilingSupportTier;
+  pendingCheckpoints?: number;
+  blockedAttempts?: string[];
+  coverageGaps?: string[];
+  sourceState?: import('../../core/src/types.js').SourceState;
+  blockingReason?: import('../../core/src/types.js').BlockingReason;
+  resumed?: boolean;
+}): MappedReadinessState {
+  const blocked = (params.blockedAttempts?.length ?? 0) > 0 || params.blockingReason !== undefined;
+  const hasCoverageGaps = (params.coverageGaps?.length ?? 0) > 0;
+  const submissionComparison = params.resumed ? 'partial' : 'weak';
+  const coverageByDomain: CoverageByDomain = {
+    filingPath: hasCoverageGaps ? 'weak' : 'partial',
+    incomeInventory: params.resumed ? 'partial' : 'weak',
+    withholdingPrepaidTax: blocked || hasCoverageGaps ? 'weak' : 'partial',
+    expenseEvidence: params.resumed ? 'partial' : 'weak',
+    deductionFacts: 'weak',
+    submissionComparison,
+  };
+
+  const majorUnknowns = [
+    ...(blocked ? ['Source collection is still blocked or incomplete.'] : []),
+    ...(hasCoverageGaps ? ['Collection coverage gaps remain open.'] : []),
+    ...((params.pendingCheckpoints ?? 0) > 0 ? ['A user checkpoint is still pending before stronger readiness claims.'] : []),
+  ];
+
+  return {
+    readiness: {
+      estimateReadiness: params.resumed ? 'limited' : 'not_ready',
+      draftReadiness: params.resumed && !hasCoverageGaps ? 'limited' : 'not_ready',
+      submissionReadiness: blocked || hasCoverageGaps ? 'blocked' : 'not_ready',
+      confidenceBand: params.resumed ? 'medium' : 'low',
+      supportTier: params.supportTier ?? 'undetermined',
+      majorUnknowns,
+    },
+    coverageByDomain,
+    materialCoverageSummary: summarizeCoverage(coverageByDomain),
+    majorUnknowns,
+    supportTier: params.supportTier ?? 'undetermined',
+    readinessImpact: params.blockingReason
+      ? {
+          estimateReadiness: 'unchanged',
+          draftReadiness: 'downgraded_to_not_ready',
+          submissionReadiness: 'blocked',
+        }
+      : undefined,
+  };
+}
+
 export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPResponseEnvelope<{
   recommendedSources: Array<{
     sourceType: string;
@@ -207,6 +257,11 @@ export function taxSourcesGetCollectionStatus(
       coverageGaps,
       blockedAttempts,
     },
+    readinessState: buildCollectionReadinessState({
+      pendingCheckpoints: pendingCheckpoints.length,
+      blockedAttempts,
+      coverageGaps,
+    }),
     nextRecommendedAction: pendingCheckpoints.length > 0 ? 'Resolve pending checkpoint and resume collection' : 'tax.sources.plan_collection',
   };
 }
@@ -236,6 +291,11 @@ export function taxSourcesConnect(
         checkpointId: `checkpoint_consent_${input.sourceType}_${input.workspaceId}`,
         fallbackOptions: ['Narrow the requested scope', 'Use manual upload/export ingestion instead'],
       },
+      readinessState: buildCollectionReadinessState({
+        pendingCheckpoints: 1,
+        sourceState: 'awaiting_consent',
+        blockingReason: 'missing_consent',
+      }),
       requiresConsent: true,
       checkpointType: 'source_consent',
       blockingReason: 'missing_consent',
@@ -283,6 +343,11 @@ export function taxSourcesConnect(
       checkpointId: authRequired ? `checkpoint_auth_${input.sourceType}_${input.workspaceId}` : undefined,
       fallbackOptions: authRequired ? ['Import exported files instead', 'Collect local evidence first and return later'] : [],
     },
+    readinessState: buildCollectionReadinessState({
+      pendingCheckpoints: authRequired ? 1 : 0,
+      sourceState: authRequired ? 'awaiting_auth' : 'ready',
+      blockingReason: authRequired ? 'missing_auth' : undefined,
+    }),
     requiresAuth: authRequired,
     checkpointType: sourceCheckpointType,
     checkpointId: authRequired ? `checkpoint_auth_${input.sourceType}_${input.workspaceId}` : undefined,
@@ -350,6 +415,12 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<Sync
       checkpointId: blockedAttempt.checkpointId,
       fallbackOptions: blockedAttempt.fallbackOptions,
     },
+    readinessState: buildCollectionReadinessState({
+      pendingCheckpoints: 1,
+      blockedAttempts: [blockedAttempt.syncAttemptId],
+      sourceState: 'blocked',
+      blockingReason: blockedAttempt.blockingReason,
+    }),
     checkpointType: blockedAttempt.checkpointType,
     blockingReason: blockedAttempt.blockingReason,
     checkpointId: blockedAttempt.checkpointId,
@@ -404,6 +475,11 @@ export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelop
       importedArtifactCount: 3,
       nextCheckpointId: undefined,
     },
+    readinessState: buildCollectionReadinessState({
+      pendingCheckpoints: 0,
+      sourceState: 'completed',
+      resumed: true,
+    }),
     progress: {
       phase: 'source_sync',
       step: 'resume_and_finalize',
