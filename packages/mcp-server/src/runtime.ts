@@ -219,17 +219,25 @@ export class InMemoryKoreanTaxMCPRuntime {
   private syncWorkspaceSnapshot(workspaceId: string, hints: { lastBlockingReason?: FilingWorkspace['lastBlockingReason']; lastCollectionStatus?: FilingWorkspace['lastCollectionStatus']; status?: FilingWorkspace['status'] } = {}): void {
     const workspace = this.ensureWorkspace(workspaceId);
     const draft = this.getDraft(workspaceId);
-    const unresolvedReviewCount = this.listReviewItems(workspaceId).filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed').length;
+    const unresolvedReviewItems = this.listReviewItems(workspaceId).filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed');
+    const unresolvedReviewCount = unresolvedReviewItems.length;
     const openCoverageGapCount = (this.store.coverageGapsByWorkspace.get(workspaceId) ?? []).length;
     const latestSyncAttempt = this.listSyncAttempts().filter((attempt) => attempt.workspaceId === workspaceId).sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0];
 
-    const calibratedRuntime = draft
-      ? {
-          readiness: draft.calibration?.readiness,
-          coverageByDomain: draft.calibration?.coverageByDomain,
-          materialCoverageSummary: draft.calibration?.materialCoverageSummary,
-        }
-      : undefined;
+    const calibratedRuntime = deriveCalibratedReadiness({
+      supportTier: draft?.supportTier ?? workspace.supportTier,
+      filingPathKind: draft?.filingPathKind ?? workspace.filingPathKind,
+      reviewItems: unresolvedReviewItems,
+      coverageGaps: [],
+      draft: draft
+        ? {
+            draftId: draft.draftId,
+            fieldValues: draft.fieldValues,
+          }
+        : undefined,
+      comparisonSummaryState: draft?.comparisonSummaryState ?? workspace.comparisonSummaryState,
+      freshnessState: draft?.freshnessState ?? workspace.freshnessState,
+    });
 
     this.store.workspaces.set(workspaceId, {
       ...workspace,
@@ -243,28 +251,37 @@ export class InMemoryKoreanTaxMCPRuntime {
               : latestSyncAttempt
                 ? 'collecting_sources'
                 : workspace.status),
-      supportTier: draft?.supportTier ?? workspace.supportTier,
-      filingPathKind: draft?.filingPathKind ?? workspace.filingPathKind,
+      supportTier: calibratedRuntime.supportTier,
+      filingPathKind: calibratedRuntime.filingPathKind,
       estimateReadiness: draft?.estimateReadiness ?? workspace.estimateReadiness,
       draftReadiness: draft?.draftReadiness ?? workspace.draftReadiness,
       submissionReadiness: draft?.submissionReadiness ?? workspace.submissionReadiness,
-      comparisonSummaryState: draft?.comparisonSummaryState ?? workspace.comparisonSummaryState,
-      freshnessState: draft?.freshnessState ?? workspace.freshnessState,
-      majorUnknowns: draft?.majorUnknowns ?? workspace.majorUnknowns,
-      runtime: draft?.calibration
-        ? {
-            readiness: draft.calibration.readiness,
-            coverageByDomain: draft.calibration.coverageByDomain,
-            materialCoverageSummary: draft.calibration.materialCoverageSummary,
-            activeBlockers: (workspace.runtime?.activeBlockers ?? []).filter(Boolean),
-            submissionComparison: workspace.runtime?.submissionComparison,
-          }
-        : workspace.runtime,
+      comparisonSummaryState: calibratedRuntime.comparisonSummaryState,
+      freshnessState: calibratedRuntime.freshnessState,
+      majorUnknowns: calibratedRuntime.majorUnknowns,
+      runtime: {
+        readiness: calibratedRuntime.workspaceReadiness,
+        coverageByDomain: calibratedRuntime.coverageByDomain,
+        materialCoverageSummary: calibratedRuntime.materialCoverageSummary,
+        activeBlockers: calibratedRuntime.activeBlockers,
+        submissionComparison: {
+          submissionComparisonState: calibratedRuntime.submissionComparisonState,
+          mismatchSummary: calibratedRuntime.activeBlockers
+            .filter((blocker) => blocker.blockerType === 'comparison_block')
+            .map((blocker) => ({
+              sectionKey: blocker.affectedDomains.join('+'),
+              mismatchSeverity: blocker.severity,
+              count: 1,
+            })),
+          manualEntryRequired: draft?.fieldValues?.some((field) => field.requiresManualEntry) ?? false,
+          lastComparedAt: draft?.computedAt,
+        },
+      },
       currentDraftId: draft?.draftId ?? workspace.currentDraftId,
       unresolvedReviewCount,
       openCoverageGapCount,
       lastBlockingReason: hints.lastBlockingReason
-        ?? prioritizeBlockingReason(draft?.blockerCodes)
+        ?? prioritizeBlockingReason(calibratedRuntime.blockerCodes)
         ?? latestSyncAttempt?.blockingReason
         ?? workspace.lastBlockingReason,
       lastCollectionStatus: hints.lastCollectionStatus ?? latestSyncAttempt?.state ?? workspace.lastCollectionStatus,
@@ -607,6 +624,15 @@ export class InMemoryKoreanTaxMCPRuntime {
     });
 
     const unresolvedItems = this.listReviewItems(workspaceId);
+    const calibrated = deriveCalibratedReadiness({
+      supportTier: draft.supportTier,
+      filingPathKind: draft.filingPathKind,
+      reviewItems: unresolvedItems,
+      draft: {
+        draftId: draft.draftId,
+        fieldValues: nextFieldValues,
+      },
+    });
     const readiness = deriveReadinessSummary({
       supportTier: draft.supportTier,
       filingPathKind: draft.filingPathKind,
@@ -629,6 +655,15 @@ export class InMemoryKoreanTaxMCPRuntime {
       comparisonSummaryState: readiness.comparisonSummaryState,
       freshnessState: readiness.freshnessState,
       majorUnknowns: readiness.majorUnknowns,
+      calibration: {
+        readiness: calibrated.workspaceReadiness,
+        coverageByDomain: calibrated.coverageByDomain,
+        materialCoverageSummary: calibrated.materialCoverageSummary,
+        majorUnknowns: calibrated.majorUnknowns,
+        highSeverityReviewCount: unresolvedItems.filter((item) => item.severity === 'high' || item.severity === 'critical').length,
+        submissionComparisonState: calibrated.submissionComparisonState,
+        capturedAt: new Date().toISOString(),
+      },
     });
   }
 
@@ -648,7 +683,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const draft = this.getDraft(input.workspaceId);
     const result = taxFilingCompareWithHomeTax(input, draft?.fieldValues ?? []);
 
-    if (draft && result.data.fieldValues && result.readiness) {
+    if (draft && result.data.fieldValues && result.readinessState && result.readiness) {
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         fieldValues: result.data.fieldValues,
@@ -661,6 +696,17 @@ export class InMemoryKoreanTaxMCPRuntime {
         comparisonSummaryState: result.readiness.comparisonSummaryState,
         freshnessState: result.readiness.freshnessState,
         majorUnknowns: result.readiness.majorUnknowns,
+        calibration: {
+          readiness: result.readinessState.readiness,
+          coverageByDomain: result.readinessState.coverageByDomain ?? draft.calibration?.coverageByDomain ?? {
+            filingPath: 'weak', incomeInventory: 'weak', withholdingPrepaidTax: 'weak', expenseEvidence: 'weak', deductionFacts: 'weak', submissionComparison: 'weak',
+          },
+          materialCoverageSummary: result.readinessState.materialCoverageSummary ?? draft.calibration?.materialCoverageSummary ?? { strongDomains: [], partialDomains: [], weakDomains: ['filingPath', 'incomeInventory', 'withholdingPrepaidTax', 'expenseEvidence', 'deductionFacts', 'submissionComparison'] },
+          majorUnknowns: result.readinessState.majorUnknowns ?? result.readiness.majorUnknowns,
+          highSeverityReviewCount: this.listReviewItems(input.workspaceId).filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed' && (item.severity === 'high' || item.severity === 'critical')).length,
+          submissionComparisonState: getRuntimeComparisonSubmissionStateFromReadinessState(result.readinessState),
+          capturedAt: new Date().toISOString(),
+        },
       });
     }
 
@@ -682,7 +728,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const draft = this.getDraft(input.workspaceId);
     const result = taxFilingRefreshOfficialData(input, draft ? { draftId: draft.draftId, fieldValues: draft.fieldValues } : undefined);
 
-    if (draft?.fieldValues && result.readiness) {
+    if (draft?.fieldValues && result.readinessState && result.readiness) {
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         draftId: result.data.recomputedDraftId ?? draft.draftId,
@@ -696,6 +742,17 @@ export class InMemoryKoreanTaxMCPRuntime {
         comparisonSummaryState: result.readiness.comparisonSummaryState,
         freshnessState: result.readiness.freshnessState,
         majorUnknowns: result.readiness.majorUnknowns,
+        calibration: {
+          readiness: result.readinessState.readiness,
+          coverageByDomain: result.readinessState.coverageByDomain ?? draft.calibration?.coverageByDomain ?? {
+            filingPath: 'weak', incomeInventory: 'weak', withholdingPrepaidTax: 'weak', expenseEvidence: 'weak', deductionFacts: 'weak', submissionComparison: 'weak',
+          },
+          materialCoverageSummary: result.readinessState.materialCoverageSummary ?? draft.calibration?.materialCoverageSummary ?? { strongDomains: [], partialDomains: [], weakDomains: ['filingPath', 'incomeInventory', 'withholdingPrepaidTax', 'expenseEvidence', 'deductionFacts', 'submissionComparison'] },
+          majorUnknowns: result.readinessState.majorUnknowns ?? result.readiness.majorUnknowns,
+          highSeverityReviewCount: this.listReviewItems(input.workspaceId).filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed' && (item.severity === 'high' || item.severity === 'critical')).length,
+          submissionComparisonState: getRuntimeComparisonSubmissionStateFromReadinessState(result.readinessState),
+          capturedAt: new Date().toISOString(),
+        },
       });
     }
 
@@ -870,6 +927,14 @@ function compactLines(lines: Array<string | undefined>): string[] {
 
 function getRuntimeSubmissionReadiness(workspace: FilingWorkspace): string {
   return workspace.runtime?.readiness.submissionReadiness ?? workspace.submissionReadiness ?? 'not_ready';
+}
+
+function getRuntimeComparisonSubmissionStateFromReadinessState(readinessState: NonNullable<MCPResponseEnvelope['readinessState']>): import('../../core/src/types.js').SubmissionComparisonState {
+  const comparisonCoverage = readinessState.coverageByDomain?.submissionComparison;
+  if (comparisonCoverage === 'strong') return 'strong';
+  if (comparisonCoverage === 'partial') return 'partial';
+  if (readinessState.readiness.submissionReadiness === 'blocked') return 'blocked';
+  return 'not_started';
 }
 
 function getRuntimeComparisonState(workspace: FilingWorkspace): string {
