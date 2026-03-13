@@ -124,6 +124,7 @@ Korean Tax Agent는:
 - [31-source-collection-blocked-path.md](./31-source-collection-blocked-path.md) (EN) — UI 변경, export_required, provider block, readiness downgrade 등 blocked path를 사용자 / 에이전트 / MCP 관점에서 구체화
 - [32-readiness-calibration-by-input-coverage.md](./32-readiness-calibration-by-input-coverage.md) (EN) — 파일 개수나 draft 존재 여부가 아니라 도메인 coverage 기준으로 estimate / draft / submission readiness를 어떻게 보정할지 정리
 - [33-runtime-and-mcp-fields-for-readiness-and-coverage.md](./33-runtime-and-mcp-fields-for-readiness-and-coverage.md) (EN) — readiness / coverage / blocker / major unknowns를 runtime과 MCP 응답 필드로 어떻게 구체화할지 정리
+- [34-proposed-type-shapes-for-runtime-coverage-and-readiness.md](./34-proposed-type-shapes-for-runtime-coverage-and-readiness.md) (EN) — workspace readiness, coverage, blocker, gap, draft calibration, MCP readiness state를 위한 TypeScript 친화 타입 제안
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) (EN) — 구현 로드맵
