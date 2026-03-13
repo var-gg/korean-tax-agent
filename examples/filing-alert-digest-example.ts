@@ -1,4 +1,4 @@
-import { buildFilingAlertDigests } from '../packages/mcp-server/src/alert-digest.js';
+import { buildFilingAlertDigests } from '../packages/mcp-server/src/integrations/alert-digest.js';
 import type { FilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 
 const digestInputs: Array<{ workspaceId: string; dispatchPlan: FilingAlertDispatchPlan }> = [

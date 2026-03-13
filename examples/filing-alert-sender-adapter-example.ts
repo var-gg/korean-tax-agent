@@ -1,5 +1,5 @@
-import { planFilingAlertDelivery } from '../packages/mcp-server/src/alert-delivery-policy.js';
-import { buildFilingAlertSenderBatch, discordFilingAlertChannel } from '../packages/mcp-server/src/alert-sender-adapter.js';
+import { planFilingAlertDelivery } from '../packages/mcp-server/src/integrations/alert-delivery-policy.js';
+import { buildFilingAlertSenderBatch, discordFilingAlertChannel } from '../packages/mcp-server/src/integrations/alert-sender-adapter.js';
 import type { FilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 
 const candidates: Array<{ workspaceId: string; dispatchPlan: FilingAlertDispatchPlan }> = [

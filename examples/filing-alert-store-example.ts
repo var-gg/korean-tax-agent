@@ -1,7 +1,7 @@
 import rawDemo from './demo-workspace.json';
 import { shouldSendFilingAlert } from '../packages/mcp-server/src/alert-dedupe.js';
 import { routeFilingAlert } from '../packages/mcp-server/src/alert-routing.js';
-import { InMemoryFilingAlertStore } from '../packages/mcp-server/src/alert-store.js';
+import { InMemoryFilingAlertStore } from '../packages/mcp-server/src/integrations/alert-store.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { KoreanTaxMCPFacade } from '../packages/mcp-server/src/facade.js';
 import { decideFilingAlert, toFilingAlertSnapshot, type FilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
