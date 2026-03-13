@@ -1,6 +1,6 @@
 import type { ClassificationDecision, FilingDraft, FilingFieldValue, LedgerTransaction, ReviewItem, ReviewSeverity, WithholdingRecord } from './types.js';
 import { detectFilingPath } from './path.js';
-import { deriveReadinessSummary } from './readiness.js';
+import { deriveCalibratedReadiness, deriveReadinessSummary } from './readiness.js';
 
 export type DraftReadiness = {
   readyForReview: boolean;
@@ -244,6 +244,15 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
     reviewItems: input.reviewItems,
   });
 
+  const calibratedReadiness = deriveCalibratedReadiness({
+    supportTier: filingPathDetection.supportTier,
+    filingPathKind: filingPathDetection.filingPathKind,
+    reviewItems: input.reviewItems,
+    draft: {
+      draftId: draft.draftId,
+      fieldValues,
+    },
+  });
   const readinessSummary = deriveReadinessSummary({
     supportTier: filingPathDetection.supportTier,
     filingPathKind: filingPathDetection.filingPathKind,
@@ -262,6 +271,15 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
   draft.freshnessState = readinessSummary.freshnessState;
   draft.majorUnknowns = [...new Set([...filingPathDetection.missingFacts, ...readinessSummary.majorUnknowns])];
   draft.blockerCodes = readinessSummary.blockerCodes;
+  draft.calibration = {
+    readiness: calibratedReadiness.workspaceReadiness,
+    coverageByDomain: calibratedReadiness.coverageByDomain,
+    materialCoverageSummary: calibratedReadiness.materialCoverageSummary,
+    majorUnknowns: [...new Set([...filingPathDetection.missingFacts, ...calibratedReadiness.majorUnknowns])],
+    highSeverityReviewCount: input.reviewItems.filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed' && (item.severity === 'high' || item.severity === 'critical')).length,
+    submissionComparisonState: calibratedReadiness.submissionComparisonState,
+    capturedAt: draft.computedAt,
+  };
   return draft;
 }
 

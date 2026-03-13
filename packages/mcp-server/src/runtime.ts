@@ -1,4 +1,4 @@
-import { deriveReadinessSummary } from '../../core/src/readiness.js';
+import { deriveCalibratedReadiness, deriveReadinessSummary } from '../../core/src/readiness.js';
 import type { BlockingReason, ClassificationDecision, ConsentRecord, FilingWorkspace, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
@@ -223,6 +223,14 @@ export class InMemoryKoreanTaxMCPRuntime {
     const openCoverageGapCount = (this.store.coverageGapsByWorkspace.get(workspaceId) ?? []).length;
     const latestSyncAttempt = this.listSyncAttempts().filter((attempt) => attempt.workspaceId === workspaceId).sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0];
 
+    const calibratedRuntime = draft
+      ? {
+          readiness: draft.calibration?.readiness,
+          coverageByDomain: draft.calibration?.coverageByDomain,
+          materialCoverageSummary: draft.calibration?.materialCoverageSummary,
+        }
+      : undefined;
+
     this.store.workspaces.set(workspaceId, {
       ...workspace,
       status: hints.status
@@ -243,6 +251,15 @@ export class InMemoryKoreanTaxMCPRuntime {
       comparisonSummaryState: draft?.comparisonSummaryState ?? workspace.comparisonSummaryState,
       freshnessState: draft?.freshnessState ?? workspace.freshnessState,
       majorUnknowns: draft?.majorUnknowns ?? workspace.majorUnknowns,
+      runtime: draft?.calibration
+        ? {
+            readiness: draft.calibration.readiness,
+            coverageByDomain: draft.calibration.coverageByDomain,
+            materialCoverageSummary: draft.calibration.materialCoverageSummary,
+            activeBlockers: (workspace.runtime?.activeBlockers ?? []).filter(Boolean),
+            submissionComparison: workspace.runtime?.submissionComparison,
+          }
+        : workspace.runtime,
       currentDraftId: draft?.draftId ?? workspace.currentDraftId,
       unresolvedReviewCount,
       openCoverageGapCount,
@@ -278,7 +295,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           currentDraftId: workspace.currentDraftId,
           unresolvedReviewCount: workspace.unresolvedReviewCount,
           openCoverageGapCount: workspace.openCoverageGapCount,
-          supportTier: workspace.supportTier,
+          supportTier: workspace.runtime?.readiness.supportTier ?? workspace.supportTier,
           filingPathKind: workspace.filingPathKind,
           estimateReadiness: workspace.estimateReadiness,
           draftReadiness: workspace.draftReadiness,
@@ -287,7 +304,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           freshnessState: workspace.freshnessState,
           lastBlockingReason: workspace.lastBlockingReason,
           lastCollectionStatus: workspace.lastCollectionStatus,
-          majorUnknowns: workspace.majorUnknowns,
+          majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns,
           updatedAt: workspace.updatedAt,
         },
         draft: draft
@@ -301,14 +318,14 @@ export class InMemoryKoreanTaxMCPRuntime {
         nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
       },
       readiness: {
-        supportTier: workspace.supportTier ?? 'undetermined',
+        supportTier: workspace.runtime?.readiness.supportTier ?? workspace.supportTier ?? 'undetermined',
         filingPathKind: workspace.filingPathKind ?? 'unknown',
         estimateReadiness: workspace.estimateReadiness ?? 'not_ready',
         draftReadiness: workspace.draftReadiness ?? 'not_ready',
         submissionReadiness: workspace.submissionReadiness ?? 'not_ready',
         comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
         freshnessState: workspace.freshnessState ?? 'stale_unknown',
-        majorUnknowns: workspace.majorUnknowns ?? [],
+        majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [],
         blockerCodes: workspace.lastBlockingReason ? [workspace.lastBlockingReason] : [],
       },
       nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
@@ -329,7 +346,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       `workspace_status=${workspace.status}`,
       workspace.currentDraftId ? `current_draft=${workspace.currentDraftId}` : 'current_draft=none',
       `unresolved_reviews=${workspace.unresolvedReviewCount}`,
-      `submission_readiness=${workspace.submissionReadiness ?? 'not_ready'}`,
+      `submission_readiness=${workspace.runtime?.readiness.submissionReadiness ?? workspace.submissionReadiness ?? 'not_ready'}`,
       `comparison=${workspace.comparisonSummaryState ?? 'not_started'}`,
       `freshness=${workspace.freshnessState ?? 'stale_unknown'}`,
     ];
@@ -372,14 +389,14 @@ export class InMemoryKoreanTaxMCPRuntime {
         },
       },
       readiness: {
-        supportTier: workspace.supportTier ?? 'undetermined',
+        supportTier: workspace.runtime?.readiness.supportTier ?? workspace.supportTier ?? 'undetermined',
         filingPathKind: workspace.filingPathKind ?? 'unknown',
         estimateReadiness: workspace.estimateReadiness ?? 'not_ready',
         draftReadiness: workspace.draftReadiness ?? 'not_ready',
         submissionReadiness: workspace.submissionReadiness ?? 'not_ready',
         comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
         freshnessState: workspace.freshnessState ?? 'stale_unknown',
-        majorUnknowns: workspace.majorUnknowns ?? [],
+        majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [],
         blockerCodes: blockers.filter((code): code is BlockingReason => isBlockingReason(code)),
       },
       nextRecommendedAction: nextAction,
