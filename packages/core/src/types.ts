@@ -148,6 +148,24 @@ export type FilingFactStatus = 'missing' | 'provided' | 'inferred' | 'review_req
 export type SourceOfTruthType = 'official' | 'imported' | 'inferred' | 'user_asserted';
 export type EstimateConfidenceBand = 'low' | 'medium' | 'high';
 export type ReadinessLevel = 'not_ready' | 'estimate_ready' | 'draft_ready' | 'submission_assist_ready';
+export type CalibratedReadinessLevel = 'not_ready' | 'limited' | 'ready';
+export type SubmissionReadinessLevel = 'not_ready' | 'blocked' | 'ready' | 'unsupported';
+export type ConfidenceBand = 'low' | 'medium' | 'high';
+export type FilingCoverageDomain =
+  | 'filingPath'
+  | 'incomeInventory'
+  | 'withholdingPrepaidTax'
+  | 'expenseEvidence'
+  | 'deductionFacts'
+  | 'submissionComparison';
+export type CoverageStrength = 'none' | 'weak' | 'partial' | 'strong';
+export type ReadinessKind = 'estimate' | 'draft' | 'submission';
+export type BlockerType =
+  | 'source_block'
+  | 'coverage_gap'
+  | 'review_block'
+  | 'comparison_block'
+  | 'support_boundary';
 export type FilingFieldComparisonState = 'not_compared' | 'matched' | 'mismatch' | 'manual_only';
 export type FilingComparisonSummaryState = 'not_started' | 'partial' | 'matched_enough' | 'material_mismatch' | 'manual_only';
 export type DataFreshnessState = 'current_enough' | 'refresh_recommended' | 'refresh_required' | 'stale_unknown';
@@ -159,6 +177,106 @@ export type CoverageGapType =
   | 'missing_filing_path_determination'
   | 'missing_hometax_comparison'
   | 'stale_official_data';
+
+export interface WorkspaceReadiness {
+  estimateReadiness: CalibratedReadinessLevel;
+  draftReadiness: CalibratedReadinessLevel;
+  submissionReadiness: SubmissionReadinessLevel;
+  confidenceBand: ConfidenceBand;
+  supportTier: FilingSupportTier;
+  majorUnknowns: string[];
+  readinessUpdatedAt?: ISODateTimeString;
+}
+
+export type CoverageByDomain = Record<FilingCoverageDomain, CoverageStrength>;
+
+export interface MaterialCoverageSummary {
+  strongDomains: FilingCoverageDomain[];
+  partialDomains: FilingCoverageDomain[];
+  weakDomains: FilingCoverageDomain[];
+}
+
+export interface ActiveBlocker {
+  blockerType: BlockerType;
+  blockingReason: BlockingReason;
+  severity: ReviewSeverity;
+  affectedDomains: FilingCoverageDomain[];
+  affectsReadiness: ReadinessKind[];
+  message: string;
+  sourceId?: string;
+  syncAttemptId?: string;
+  reviewItemId?: string;
+  gapId?: string;
+}
+
+export type ReadinessDelta =
+  | 'unchanged'
+  | 'upgraded_to_limited'
+  | 'upgraded_to_ready'
+  | 'downgraded_to_limited'
+  | 'downgraded_to_not_ready'
+  | 'blocked'
+  | 'unsupported';
+
+export interface ReadinessImpact {
+  estimateReadiness?: ReadinessDelta;
+  draftReadiness?: ReadinessDelta;
+  submissionReadiness?: ReadinessDelta;
+}
+
+export interface ReviewReadinessEffect {
+  affectedDomains: FilingCoverageDomain[];
+  blocksDraft: boolean;
+  blocksSubmission: boolean;
+  assumptionAllowed: boolean;
+  assumptionDisclosure?: string;
+}
+
+export type SubmissionComparisonState = 'not_started' | 'partial' | 'strong' | 'blocked';
+
+export interface SubmissionComparisonCoverage {
+  sectionCoverage: Record<string, CoverageStrength>;
+}
+
+export interface SubmissionComparisonSummary {
+  submissionComparisonState: SubmissionComparisonState;
+  comparisonCoverage?: SubmissionComparisonCoverage;
+  mismatchSummary?: Array<{
+    sectionKey: string;
+    mismatchSeverity: ReviewSeverity;
+    count?: number;
+  }>;
+  manualEntryRequired?: boolean;
+  lastComparedAt?: ISODateTimeString;
+}
+
+export interface DraftCalibrationSnapshot {
+  readiness: WorkspaceReadiness;
+  coverageByDomain: CoverageByDomain;
+  materialCoverageSummary: MaterialCoverageSummary;
+  majorUnknowns: string[];
+  highSeverityReviewCount: number;
+  submissionComparisonState: SubmissionComparisonState;
+  capturedAt: ISODateTimeString;
+}
+
+export interface FilingWorkspaceRuntimeExtensions {
+  readiness: WorkspaceReadiness;
+  coverageByDomain: CoverageByDomain;
+  materialCoverageSummary: MaterialCoverageSummary;
+  activeBlockers: ActiveBlocker[];
+  submissionComparison?: SubmissionComparisonSummary;
+}
+
+export interface MappedReadinessState {
+  readiness: WorkspaceReadiness;
+  coverageByDomain?: CoverageByDomain;
+  materialCoverageSummary?: MaterialCoverageSummary;
+  majorUnknowns?: string[];
+  activeBlockers?: ActiveBlocker[];
+  supportTier?: FilingSupportTier;
+  readinessImpact?: ReadinessImpact;
+}
 
 export interface TaxpayerProfile {
   taxpayerId: string;
@@ -186,6 +304,7 @@ export interface FilingWorkspace {
   comparisonSummaryState?: FilingComparisonSummaryState;
   freshnessState?: DataFreshnessState;
   majorUnknowns?: string[];
+  runtime?: FilingWorkspaceRuntimeExtensions;
   createdAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
   currentDraftId?: string;
@@ -279,9 +398,18 @@ export interface CoverageGap {
   severity: ReviewSeverity;
   description: string;
   affectedArea: string;
+  affectedDomains?: FilingCoverageDomain[];
+  materiality?: ReviewSeverity;
+  blocksEstimate?: boolean;
+  blocksDraft?: boolean;
+  blocksSubmission?: boolean;
+  recommendedNextSource?: string;
   recommendedNextAction?: string;
   relatedSourceIds: string[];
+  sourceRefs?: string[];
   state: CoverageGapState;
+  createdAt?: ISODateTimeString;
+  updatedAt?: ISODateTimeString;
 }
 
 export interface TaxpayerFact {
@@ -361,6 +489,7 @@ export interface ReviewItem {
   suggestedOption?: string;
   linkedEntityIds: string[];
   impactEstimate?: Record<string, unknown>;
+  readinessEffect?: ReviewReadinessEffect;
   resolutionState: ResolutionState;
   resolvedBy?: string;
   resolvedAt?: ISODateTimeString;
@@ -386,6 +515,7 @@ export interface FilingDraft {
   freshnessState?: DataFreshnessState;
   majorUnknowns?: string[];
   blockerCodes?: BlockingReason[];
+  calibration?: DraftCalibrationSnapshot;
   assumptions: string[];
   warnings: string[];
   fieldValues?: FilingFieldValue[];

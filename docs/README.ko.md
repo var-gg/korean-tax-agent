@@ -126,6 +126,7 @@ Korean Tax Agent는:
 - [33-runtime-and-mcp-fields-for-readiness-and-coverage.md](./33-runtime-and-mcp-fields-for-readiness-and-coverage.md) (EN) — readiness / coverage / blocker / major unknowns를 runtime과 MCP 응답 필드로 어떻게 구체화할지 정리
 - [34-proposed-type-shapes-for-runtime-coverage-and-readiness.md](./34-proposed-type-shapes-for-runtime-coverage-and-readiness.md) (EN) — workspace readiness, coverage, blocker, gap, draft calibration, MCP readiness state를 위한 TypeScript 친화 타입 제안
 - [35-mapping-current-core-types-to-proposed-readiness-types.md](./35-mapping-current-core-types-to-proposed-readiness-types.md) (EN) — 현재 core types를 proposed readiness/coverage 모델로 어떻게 additive migration 할지 1:1 매핑 정리
+- [36-staged-patch-plan-for-core-types-and-mcp-contracts.md](./36-staged-patch-plan-for-core-types-and-mcp-contracts.md) (EN) — core types → MCP contracts → consumer migration 순으로 가는 짧은 실행 패치 플랜
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) (EN) — 구현 로드맵

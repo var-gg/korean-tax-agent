@@ -140,6 +140,7 @@ Read:
 - [33-runtime-and-mcp-fields-for-readiness-and-coverage.md](./33-runtime-and-mcp-fields-for-readiness-and-coverage.md) — concrete runtime fields and MCP response shapes for readiness, coverage, blockers, and major unknowns
 - [34-proposed-type-shapes-for-runtime-coverage-and-readiness.md](./34-proposed-type-shapes-for-runtime-coverage-and-readiness.md) — TypeScript-friendly proposed types for workspace readiness, coverage, blockers, gaps, draft calibration, and MCP readiness state
 - [35-mapping-current-core-types-to-proposed-readiness-types.md](./35-mapping-current-core-types-to-proposed-readiness-types.md) — 1:1 migration map from current core types to the proposed readiness/coverage model with additive rollout guidance
+- [36-staged-patch-plan-for-core-types-and-mcp-contracts.md](./36-staged-patch-plan-for-core-types-and-mcp-contracts.md) — short execution plan for patching core types first, then MCP contracts, then consumer migration
 
 ## Korean companion docs
 Current Korean companions:
