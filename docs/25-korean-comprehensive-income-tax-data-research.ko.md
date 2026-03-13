@@ -1,7 +1,9 @@
 # 한국 종합소득세 입력 데이터 리서치
 
 - 상태: companion
-- 기준 원문: [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)

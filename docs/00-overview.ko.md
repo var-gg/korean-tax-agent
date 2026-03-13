@@ -1,13 +1,17 @@
 # Overview (Korean Companion)
 
-> 참고:
-> - 이 문서는 `00-overview.md`의 한국어 companion 문서입니다.
-> - 기술 정본은 영문 문서입니다.
-> - 차이가 있을 경우 영문 문서가 우선합니다.
->
-> See also:
-> - `00-overview.md`
-> - `23-documentation-language-policy.md`
+- 상태: companion
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [00-overview.md](./00-overview.md) (EN)
+- 상위 문서: [README.ko.md](./README.ko.md)
+- 관련 문서:
+  - [16-v1-prd.ko.md](./16-v1-prd.ko.md)
+  - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+  - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
+- 다음 읽기:
+  - [16-v1-prd.ko.md](./16-v1-prd.ko.md)
+  - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
 
 ## 제품 정의
 

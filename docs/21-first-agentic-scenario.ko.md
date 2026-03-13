@@ -1,13 +1,17 @@
 # First Agentic Scenario (Korean Companion)
 
-> 참고:
-> - 이 문서는 `21-first-agentic-scenario.md`의 한국어 companion 문서입니다.
-> - 기술 정본은 영문 문서입니다.
-> - 차이가 있을 경우 영문 문서가 우선합니다.
->
-> See also:
-> - `21-first-agentic-scenario.md`
-> - `23-documentation-language-policy.md`
+- 상태: companion
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [21-first-agentic-scenario.md](./21-first-agentic-scenario.md) (EN)
+- 상위 문서: [README.ko.md](./README.ko.md)
+- 관련 문서:
+  - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+  - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+  - [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
+- 다음 읽기:
+  - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
+  - [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
 
 ## 목적
 이 프로젝트가 가장 먼저 최적화해야 할 **첫 end-to-end 시나리오**를 설명합니다.

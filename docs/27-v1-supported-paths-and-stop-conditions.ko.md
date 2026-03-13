@@ -1,7 +1,9 @@
 # V1 지원 경로와 중단 조건
 
 - 상태: companion
-- 기준 원문: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [16-v1-prd.ko.md](./16-v1-prd.ko.md)

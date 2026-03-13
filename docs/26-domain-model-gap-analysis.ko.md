@@ -1,7 +1,9 @@
 # 실제 신고 입력 관점의 도메인 모델 갭 분석
 
 - 상태: companion
-- 기준 원문: [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)

@@ -1,13 +1,18 @@
 # Data Collection Strategy (Korean Companion)
 
-> 참고:
-> - 이 문서는 `17-data-collection-strategy.md`의 한국어 companion 문서입니다.
-> - 기술 정본은 영문 문서입니다.
-> - 차이가 있을 경우 영문 문서가 우선합니다.
->
-> See also:
-> - `17-data-collection-strategy.md`
-> - `23-documentation-language-policy.md`
+- 상태: companion
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [17-data-collection-strategy.md](./17-data-collection-strategy.md) (EN)
+- 상위 문서: [README.ko.md](./README.ko.md)
+- 관련 문서:
+  - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
+  - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+  - [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
+  - [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
+- 다음 읽기:
+  - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
+  - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
 
 ## 목적
 이 시스템은 에이전트가 **신고 관련 데이터를 가능한 한 많이 스스로 수집**하되,

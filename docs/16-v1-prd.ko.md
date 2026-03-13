@@ -1,7 +1,9 @@
 # V1 PRD
 
 - 상태: companion
-- 기준 원문: [16-v1-prd.md](./16-v1-prd.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [16-v1-prd.md](./16-v1-prd.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [00-overview.ko.md](./00-overview.ko.md)
