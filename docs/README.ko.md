@@ -122,6 +122,7 @@ Korean Tax Agent는:
 - [29-source-strategy-for-real-tax-work.md](./29-source-strategy-for-real-tax-work.md) (EN) — 실제 종소세 업무에서 무엇이 anchor 자료이고 무엇이 enrichment 자료인지, source planning을 어떻게 봐야 하는지 정리
 - [30-source-planning-conversation.md](./30-source-planning-conversation.md) (EN) — HomeTax-first / local-first / export-first 등 source planning 대화를 사용자 / 에이전트 / MCP 관점에서 구체화
 - [31-source-collection-blocked-path.md](./31-source-collection-blocked-path.md) (EN) — UI 변경, export_required, provider block, readiness downgrade 등 blocked path를 사용자 / 에이전트 / MCP 관점에서 구체화
+- [32-readiness-calibration-by-input-coverage.md](./32-readiness-calibration-by-input-coverage.md) (EN) — 파일 개수나 draft 존재 여부가 아니라 도메인 coverage 기준으로 estimate / draft / submission readiness를 어떻게 보정할지 정리
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) (EN) — 구현 로드맵

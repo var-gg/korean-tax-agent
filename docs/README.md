@@ -136,6 +136,7 @@ Read:
 - [29-source-strategy-for-real-tax-work.md](./29-source-strategy-for-real-tax-work.md) — what data really matters first in tax work, what counts as anchor vs enrichment, and how source planning should work
 - [30-source-planning-conversation.md](./30-source-planning-conversation.md) — concrete user/agent/MCP source-planning dialogue patterns, including HomeTax-first, local-first, and export-first cases
 - [31-source-collection-blocked-path.md](./31-source-collection-blocked-path.md) — realistic blocked-path handling for UI drift, export-required branches, provider blocks, and honest readiness downgrades
+- [32-readiness-calibration-by-input-coverage.md](./32-readiness-calibration-by-input-coverage.md) — how estimate, draft, and submission-assist readiness should be calibrated from domain coverage rather than file volume
 
 ## Korean companion docs
 Current Korean companions:
