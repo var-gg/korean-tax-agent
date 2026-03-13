@@ -11,7 +11,7 @@
   - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
   - [28-three-party-happy-path.md](./28-three-party-happy-path.md)
 - Next recommended reading:
-  - [30-source-planning-conversation.md](./30-source-planning-conversation.md)
+  - [28-three-party-happy-path.md](./28-three-party-happy-path.md)
   - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md)
 
 ## Objective
