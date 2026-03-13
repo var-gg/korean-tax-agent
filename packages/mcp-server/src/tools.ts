@@ -2,7 +2,7 @@ import { compareWithHomeTax } from '../../core/src/compare.js';
 import { buildConsentPrompt, evaluateConsent, type ConsentRequirement } from '../../core/src/consent.js';
 import { computeDraftFromLedger } from '../../core/src/draft.js';
 import { detectFilingPath } from '../../core/src/path.js';
-import { deriveReadinessSummary } from '../../core/src/readiness.js';
+import { deriveCalibratedReadiness, deriveReadinessSummary } from '../../core/src/readiness.js';
 import { classifyTransactions } from '../../core/src/classify.js';
 import { buildReviewQueue, resolveReviewItems, summarizeReviewQueue } from '../../core/src/review.js';
 import {
@@ -79,6 +79,17 @@ function summarizeCoverage(coverage: CoverageByDomain) {
     strongDomains: entries.filter(([, value]) => value === 'strong').map(([key]) => key),
     partialDomains: entries.filter(([, value]) => value === 'partial').map(([key]) => key),
     weakDomains: entries.filter(([, value]) => value === 'weak' || value === 'none').map(([key]) => key),
+  };
+}
+
+function mapCalibratedReadinessState(result: ReturnType<typeof deriveCalibratedReadiness>): MappedReadinessState {
+  return {
+    readiness: result.workspaceReadiness,
+    coverageByDomain: result.coverageByDomain,
+    materialCoverageSummary: result.materialCoverageSummary,
+    majorUnknowns: result.majorUnknowns,
+    activeBlockers: result.activeBlockers,
+    supportTier: result.supportTier,
   };
 }
 
@@ -506,6 +517,12 @@ export function taxProfileDetectFilingPath(
     reviewItems: scopedReviewItems,
     coverageGaps,
   });
+  const calibratedReadiness = deriveCalibratedReadiness({
+    supportTier: detection.supportTier,
+    filingPathKind: detection.filingPathKind,
+    reviewItems: scopedReviewItems,
+    coverageGaps,
+  });
   const readiness = deriveReadinessSummary({
     supportTier: detection.supportTier,
     filingPathKind: detection.filingPathKind,
@@ -526,7 +543,7 @@ export function taxProfileDetectFilingPath(
       escalationFlags: detection.escalationFlags,
     },
     readiness: readiness,
-    readinessState: mapLegacyReadinessState(readiness),
+    readinessState: mapCalibratedReadinessState(calibratedReadiness),
     nextRecommendedAction: 'tax.filing.compute_draft',
   };
 }
@@ -677,6 +694,15 @@ export function taxFilingComputeDraft(
     withholdingRecords,
     reviewItems,
   });
+  const calibratedReadiness = deriveCalibratedReadiness({
+    supportTier: filingPathDetection.supportTier,
+    filingPathKind: filingPathDetection.filingPathKind,
+    reviewItems,
+    draft: {
+      draftId: draft.draftId,
+      fieldValues: draft.fieldValues,
+    },
+  });
   const readinessSummary = deriveReadinessSummary({
     supportTier: filingPathDetection.supportTier,
     filingPathKind: filingPathDetection.filingPathKind,
@@ -722,7 +748,7 @@ export function taxFilingComputeDraft(
       majorUnknowns: readinessSummary.majorUnknowns,
     },
     readiness: readinessSummary,
-    readinessState: mapLegacyReadinessState(readinessSummary),
+    readinessState: mapCalibratedReadinessState(calibratedReadiness),
     checkpointType: computeBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
     blockingReason: computeBlockingReason,
     pendingUserAction: computeBlockingReason
@@ -754,6 +780,15 @@ export function taxFilingCompareWithHomeTax(
     buildObservedFields(fieldValues, input.sectionKeys),
   );
 
+  const calibratedReadiness = deriveCalibratedReadiness({
+    supportTier: 'tier_a',
+    filingPathKind: 'mixed_income_limited',
+    draft: {
+      draftId: input.draftId,
+      fieldValues: comparison.fieldValues,
+    },
+    comparisonSummaryState: comparison.comparisonSummaryState,
+  });
   const readinessSummary = deriveReadinessSummary({
     supportTier: 'tier_a',
     filingPathKind: 'mixed_income_limited',
@@ -775,7 +810,7 @@ export function taxFilingCompareWithHomeTax(
       fieldValues: comparison.fieldValues,
     },
     readiness: readinessSummary,
-    readinessState: mapLegacyReadinessState(readinessSummary),
+    readinessState: mapCalibratedReadinessState(calibratedReadiness),
     blockingReason,
     checkpointType: blockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
     pendingUserAction: blockingReason
@@ -793,6 +828,16 @@ export function taxFilingRefreshOfficialData(
     ...field,
     freshnessState: 'current_enough' as const,
   }));
+  const calibratedReadiness = deriveCalibratedReadiness({
+    supportTier: 'tier_a',
+    filingPathKind: 'mixed_income_limited',
+    draft: draft
+      ? {
+          draftId: draft.draftId,
+          fieldValues: refreshedFieldValues,
+        }
+      : undefined,
+  });
   const readinessSummary = deriveReadinessSummary({
     supportTier: 'tier_a',
     filingPathKind: 'mixed_income_limited',
@@ -830,7 +875,7 @@ export function taxFilingRefreshOfficialData(
       downgradeReasons: [],
     },
     readiness: readinessSummary,
-    readinessState: mapLegacyReadinessState(readinessSummary),
+    readinessState: mapCalibratedReadinessState(calibratedReadiness),
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_refreshed',
