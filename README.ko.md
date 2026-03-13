@@ -1,70 +1,56 @@
 # Korean Tax Agent
 
-> 한국어 문서 읽기 인덱스: [docs/README.ko.md](./docs/README.ko.md)
-
-
 **언어:** [English](README.md) | [한국어](README.ko.md)
 
 한국의 **종합소득세 신고 준비**를 위한 오픈소스, 에이전트 네이티브 워크플로우입니다.
 
-> 참고:
-> - 기술 정본 문서는 현재 **영문**이 기준입니다.
-> - 이 문서는 공개 소개와 온보딩을 위한 한국어 companion 문서입니다.
-> - 영문 문서와 차이가 있을 경우 영문 문서가 우선합니다.
->
-> See also:
-> - [README.md](./README.md)
-> - [docs/23-documentation-language-policy.md](./docs/23-documentation-language-policy.md)
+이 저장소는 **한국 종합소득세 workflow용 host-agnostic MCP core**와, 여러 agent runtime에서 선택적으로 붙일 수 있는 integration/example 레이어를 함께 만드는 프로젝트입니다.
+즉 OpenClaw, Codex 계열 앱, Claude 계열 agent workspace 등 **어떤 호스트를 쓰더라도 붙일 수 있는 구조**를 지향합니다.
 
-## 이 프로젝트는 무엇인가
+## 제품 메시지
 
-이 프로젝트는 한국 종합소득세 신고 대상자 중에서,
-**AGENT AI 도구를 실제로 사용할 수 있는 사람들**을 위한 워크플로우를 만듭니다.
+이 프로젝트는 다음을 목표로 하지 않습니다.
+- 글로벌 범용 세무 엔진
+- 모든 것을 대신하는 범용 에이전트 플랫폼
+- 사용자 모르게 끝까지 진행되는 완전 자동 세무 신고
 
-핵심은 다음과 같습니다.
-- 세무 준비 과정의 반복 작업을 줄이고,
-- 필요한 시점에만 사용자 승인/로그인/확인을 요청하고,
-- 애매하거나 위험한 항목만 리뷰 큐로 올리고,
-- 신고 초안을 만들고,
-- 필요하면 HomeTax 입력까지 브라우저 보조 형태로 이어주는 것.
+이 프로젝트는 다음을 목표로 합니다.
+- 한국 종합소득세 신고 준비 workflow
+- agent-guided 수집 / 검토 / 초안 생성 / HomeTax 보조 입력
+- consent-gated / checkpoint-driven 운영
+- 여러 agent runtime이 채택할 수 있는 portable MCP surface
 
-즉, “자료를 전부 먼저 업로드하세요”가 아니라,
-**“필요할 때 로그인하고 승인하면 에이전트가 흐름을 계속 진행하는 구조”**를 목표로 합니다.
+한 줄로 정리하면:
+- **제품 범위:** 한국 종합소득세 workflow
+- **핵심 인터페이스:** host-agnostic MCP contract + state model
+- **런타임 자세:** 특정 브릿지/메신저 종속이 아니라 여러 agent runtime에서 사용 가능
+- **제출 자세:** silent automation이 아니라 assisted / explicit flow
 
-## 이 프로젝트가 지향하는 경계
+## 왜 이 프로젝트가 필요한가
 
-이 프로젝트는 **범용 글로벌 세무 엔진**을 목표로 하지 않습니다.
+한국 세무 신고는 단순 계산 문제가 아니라 **워크플로우 문제**입니다.
 
-우리는 우선적으로 다음 문제에 집중합니다.
-- 한국 종합소득세 신고 준비
-- 한국 사용자의 실제 자료수집 흐름
-- HomeTax 보조 입력과 검토 중심 자동화
-- 사람 승인 기반의 세무 워크플로우
+사용자는 실제로 다음을 해야 합니다.
+- 여러 소스에서 자료를 모으고,
+- 누락되거나 애매한 근거를 해소하고,
+- 위험한 분류 항목을 검토하고,
+- API처럼 다루기 어려운 정부-facing 단계를 직접 통과해야 합니다.
 
-다만 구현 과정에서 나오는 일부 패턴은 다른 규제성 워크플로우에도 참고될 수 있습니다.
-예를 들면:
-- consent checkpoint
-- review queue
-- resumable sync
-- workspace state model
-- audit trail
-
-즉,
-- **제품 범위는 한국 종합소득세에 집중**하고,
-- **일부 워크플로우 primitive는 재사용 가능하게 설계**하는 방향입니다.
+그래서 이 프로젝트는 세무 신고를 하나의 계산기나 폼이 아니라,
+**에이전트가 이어주는 workflow**로 다룹니다.
 
 ## 현재 상태
 
-현재 이 저장소는 **실행 가능한 프로토타입(executable prototype)** 단계로 올라와 있습니다.
+현재 이 저장소는 **실행 가능한 프로토타입(executable prototype)** 단계입니다.
 
 즉:
 - 핵심 workflow contract 문서가 정리되어 있고,
-- in-memory MCP runtime으로 end-to-end 흐름을 실제 실행해볼 수 있으며,
-- 종소세 준비 흐름의 주요 체크포인트가 프로토타입 코드로 연결되어 있습니다.
+- in-memory MCP runtime으로 end-to-end 흐름을 실행해볼 수 있으며,
+- 분류부터 HomeTax 준비까지 주요 checkpoint가 프로토타입 코드로 연결되어 있습니다.
 
-현재 프로토타입 범위에는 다음이 포함됩니다.
-- 신고 경로(filing path) 판별
-- 리뷰 큐 생성과 해결
+현재 포함된 프로토타입 범위:
+- filing path 판별
+- review queue 생성/해결
 - readiness metadata를 포함한 draft 계산
 - official data refresh
 - HomeTax 비교
@@ -72,20 +58,29 @@
 - mismatch 해결 결과를 draft에 반영
 - HomeTax 준비 및 browser assist handoff
 
-## 먼저 읽으면 좋은 문서
+## 시작 경로
 
-처음 보는 경우 아래 순서를 추천합니다.
-1. [README.md](./README.md)
-2. [docs/00-overview.md](./docs/00-overview.md)
-3. [docs/16-v1-prd.md](./docs/16-v1-prd.md)
-4. [docs/17-data-collection-strategy.md](./docs/17-data-collection-strategy.md)
-5. [docs/21-first-agentic-scenario.md](./docs/21-first-agentic-scenario.md)
+### 한국어로 읽고 싶다면
+아래 순서로 시작하면 됩니다.
+1. [README.ko.md](./README.ko.md)
+2. [docs/README.ko.md](./docs/README.ko.md)
+3. [docs/00-overview.ko.md](./docs/00-overview.ko.md)
+4. [docs/16-v1-prd.ko.md](./docs/16-v1-prd.ko.md)
+5. [docs/17-data-collection-strategy.ko.md](./docs/17-data-collection-strategy.ko.md)
+6. [docs/21-first-agentic-scenario.ko.md](./docs/21-first-agentic-scenario.ko.md)
 
-전체 문서 인덱스는 [docs/README.md](./docs/README.md)를 보면 됩니다.
+### 영어로 읽고 싶다면
+영어 경로는 여기서 시작합니다.
+1. [README.md](./README.md) (EN)
+2. [docs/README.md](./docs/README.md) (EN)
+
+원칙은 단순합니다.
+- 한국어 companion이 있으면 **ko -> ko**로 읽을 수 있게 하고,
+- 없을 때만 **명시적으로 (EN)** 문서로 넘어갑니다.
 
 ## 현재 프로토타입 워크플로우 요약
 
-지금 프로토타입에서 이어지는 대표 흐름은 아래와 같습니다.
+지금 프로토타입의 대표 흐름은 아래와 같습니다.
 1. `tax.profile.detect_filing_path`
 2. `tax.classify.run`
 3. `tax.classify.list_review_items`
@@ -98,15 +93,15 @@
 10. `tax.filing.prepare_hometax`
 11. `tax.browser.start_hometax_assist`
 
-실행 예시는 아래로 확인할 수 있습니다.
+실행 예시:
 - `npm run smoke:workflow`
 
 ## 저장소 구성
 
-- `docs/` — 제품, 아키텍처, 워크플로우, 로드맵 문서
+- `docs/` — 제품, 아키텍처, workflow, 로드맵 문서
 - `packages/` — core logic, MCP server, browser assist 구현 패키지
 - `skills/` — OpenClaw용 tax workflow skill
-- `examples/` — 예제 fixture / import 샘플
+- `examples/` — 예제 config / import 샘플
 - `templates/` — 사용자 동의 / 입력 템플릿
 
 ## 핵심 원칙
@@ -117,6 +112,25 @@
 - 자동 분류와 초안 계산에는 audit trail 유지
 - 숨겨진 자동화보다 checkpoint 기반 자동화
 - 공개 아키텍처, 비공개 사용자 데이터
+- docs-first implementation
+
+## 문서 언어와 탐독 규칙
+
+기술적 source of truth 문서는 현재 **영문이 기준**입니다.
+이건 유지합니다.
+
+하지만 읽기 경험은 별개로 다룹니다.
+
+읽기 언어 규칙:
+- 영어로 읽기 시작한 사람은 영어 경로로 계속 읽을 수 있어야 합니다.
+- 한국어로 읽기 시작한 사람은 한국어 companion이 있는 동안 한국어 경로로 계속 읽을 수 있어야 합니다.
+- 한국어 companion이 없는 경우에만 영어 원문으로 이동합니다.
+- 영문 기준 문서와 한국어 문서가 다르면 **영문이 canonical**입니다.
+
+참고:
+- [docs/README.ko.md](./docs/README.ko.md)
+- [docs/README.md](./docs/README.md) (EN)
+- [docs/23-documentation-language-policy.md](./docs/23-documentation-language-policy.md) (EN)
 
 ## v1에서 하지 않는 것
 

@@ -1,38 +1,65 @@
 # Docs Index
 
-**Languages:** technical specs are canonical in English; Korean companion docs are added selectively. Korean reading entry: [README.ko.md](./README.ko.md).
+**Languages:** [English](./README.md) | [한국어](./README.ko.md)
 
 This directory contains the public product and engineering design documents for Korean Tax Agent.
 
-## Language note
+## Positioning in one page
+
+Korean Tax Agent is building:
+- a **Korean comprehensive income tax workflow product**,
+- with a **host-agnostic MCP core**,
+- plus optional runtime-specific integration patterns and examples.
+
+The repo is intentionally not limited to one agent host.
+It should remain understandable and adoptable across multiple agent environments.
+
+## Language and reading policy
+
 Technical source-of-truth docs are authored in **English**.
-Korean companion docs may be added selectively for public onboarding and tax-domain explanation.
+Korean companion docs are added selectively for onboarding, product understanding, and Korea-specific explanation.
 If there is ever a mismatch, the English document is the canonical version.
 
+Reading-language rule:
+- If you start in English, you should be able to keep reading in English.
+- If you start in Korean, you should be able to keep reading in Korean when a Korean companion exists.
+- When no Korean companion exists, the English original should be linked explicitly.
+
 See also:
+- [README.ko.md](./README.ko.md)
 - [23-documentation-language-policy.md](./23-documentation-language-policy.md)
 - [../README.ko.md](../README.ko.md)
+
+## Recommended reading order
+
+### English reading path
+If you are new to the project and want to stay in English:
+1. [00-overview.md](./00-overview.md)
+2. [16-v1-prd.md](./16-v1-prd.md)
+3. [17-data-collection-strategy.md](./17-data-collection-strategy.md)
+4. [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
+5. [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
+6. [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md)
+7. [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
+
+### Korean reading path
+If you want the Korean companion path instead, start here:
+1. [README.ko.md](./README.ko.md)
+2. [00-overview.ko.md](./00-overview.ko.md)
+3. [16-v1-prd.ko.md](./16-v1-prd.ko.md)
+4. [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+5. [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
+6. [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
+7. [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
+8. [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
+
+## Reading layers
 
 The docs are meant to be readable in layers:
 - first understand the product,
 - then understand the agentic collection model,
 - then understand the technical architecture and state model,
 - then understand the implementation path.
-
-## Recommended reading order
-
-### If you are new to the project
-Start here:
-1. [00-overview.md](./00-overview.md)
-2. [16-v1-prd.md](./16-v1-prd.md)
-3. [17-data-collection-strategy.md](./17-data-collection-strategy.md)
-4. [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
-
-These four documents explain:
-- what the project is
-- who it is for
-- why the workflow is agentic rather than upload-first
-- what the first realistic end-to-end scenario looks like
 
 ### If you want the architecture
 Read next:
@@ -44,28 +71,13 @@ Read next:
 6. [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
 7. [10-skill-design.md](./10-skill-design.md)
 
-These documents explain:
-- the major components
-- the canonical entities
-- the persistent state backbone
-- the workflow control vocabulary and transition model
-- the current doc-to-code gaps
-- the MCP surface
-- the agent skill layer
-
-### If you want to understand collection and trust boundaries
+### If you want collection and trust boundaries
 Read:
 1. [17-data-collection-strategy.md](./17-data-collection-strategy.md)
 2. [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md)
 3. [19-agentic-auth-and-consent-flow.md](./19-agentic-auth-and-consent-flow.md)
 4. [07-consent-model.md](./07-consent-model.md)
 5. [08-hometax-submission-flow.md](./08-hometax-submission-flow.md)
-
-These documents explain:
-- how data collection should work in practice
-- which source paths are realistic in v1
-- how authentication and consent checkpoints should behave
-- how HomeTax assistance stays visible and user-controlled
 
 ### If you want review, risk, and governance context
 Read:
@@ -122,23 +134,25 @@ Read:
 - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) — explicit V1 support boundaries, readiness levels, and stop conditions
 
 ## Korean companion docs
-Currently available:
-- [README.ko.md](./README.ko.md) — Korean docs index and reading path
-- [../README.ko.md](../README.ko.md) — Korean repository introduction
-- [00-overview.ko.md](./00-overview.ko.md) — Korean companion for the product overview
-- [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md) — Korean companion for the assisted filing flow
-- [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md) — Korean companion for the MCP tool spec
-- [16-v1-prd.ko.md](./16-v1-prd.ko.md) — Korean companion for the v1 PRD
-- [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md) — Korean companion for the data collection strategy
-- [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md) — Korean companion for the source feasibility matrix
-- [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md) — Korean companion for the auth and consent flow
-- [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md) — Korean companion for the workspace state model
-- [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md) — Korean companion for the first agentic scenario
-- [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md) — Korean companion for the core type gap analysis
-- [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md) — Korean companion for the workflow state machine
-- [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md) — Korean companion for filing-input research
-- [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md) — Korean companion for the domain gap analysis
-- [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md) — Korean companion for V1 support boundaries and stop conditions
+Current Korean companions:
+- [README.ko.md](./README.ko.md)
+- [../README.ko.md](../README.ko.md)
+- [00-overview.ko.md](./00-overview.ko.md)
+- [05-architecture.ko.md](./05-architecture.ko.md)
+- [06-data-model.ko.md](./06-data-model.ko.md)
+- [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md)
+- [09-mcp-tool-spec.ko.md](./09-mcp-tool-spec.ko.md)
+- [16-v1-prd.ko.md](./16-v1-prd.ko.md)
+- [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+- [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
+- [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)
+- [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+- [21-first-agentic-scenario.ko.md](./21-first-agentic-scenario.ko.md)
+- [22-core-type-gap-analysis.ko.md](./22-core-type-gap-analysis.ko.md)
+- [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
+- [25-korean-comprehensive-income-tax-data-research.ko.md](./25-korean-comprehensive-income-tax-data-research.ko.md)
+- [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
+- [27-v1-supported-paths-and-stop-conditions.ko.md](./27-v1-supported-paths-and-stop-conditions.ko.md)
 
 ## Reading philosophy
 If you only read one technical document, read [20-workspace-state-model.md](./20-workspace-state-model.md).

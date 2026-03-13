@@ -4,7 +4,27 @@
 
 Open-source, agent-native workflow for **Korean comprehensive income tax preparation**.
 
-This repository explores how an AI agent can guide a taxpayer through setup, consent, data collection, review, draft generation, and HomeTax-adjacent filing assistance — while keeping the human in control at critical checkpoints.
+This repository is building a **host-agnostic MCP core** for Korean comprehensive income tax workflow, plus optional runtime-specific integrations and examples.
+It should remain usable whether the operator runs it through OpenClaw, Codex-style apps, Claude-oriented agent workspaces, or other agent runtimes.
+
+## Product message
+
+This project is not trying to be:
+- a global tax engine,
+- a generic “do everything” agent platform,
+- or silent fully autonomous tax filing.
+
+This project is trying to be:
+- a Korea-specific tax workflow product,
+- an agent-guided preparation and review system,
+- a consent-gated and checkpoint-driven filing flow,
+- and a portable MCP surface that different agent runtimes can adopt.
+
+In short:
+- **product scope:** Korean comprehensive income tax workflow
+- **core interface:** host-agnostic MCP contracts and state model
+- **runtime posture:** works with multiple agent runtimes; not tied to one bridge or messenger
+- **submission posture:** assisted and explicit, not silent automation
 
 ## Why this exists
 
@@ -18,41 +38,6 @@ Users often need to:
 - and manually move through government-facing steps that do not feel API-native.
 
 This project treats tax filing as an **agent-guided workflow** rather than a single form or calculator.
-
-## Positioning
-
-This project is for **Korean comprehensive income tax filers who are willing to use agentic AI tooling**.
-It is not limited to freelance developers.
-
-The product scope is intentionally focused:
-- **product scope:** Korean comprehensive income tax workflow
-- **interaction model:** consent-gated, review-driven, agent-assisted
-- **submission posture:** assisted and explicit, not silent automation
-
-This is a **Korea-specific product workflow**, not a universal global tax engine.
-Some internal patterns may later be reusable beyond this product, such as:
-- consent checkpoints,
-- review queues,
-- resumable sync flows,
-- workspace state models,
-- audit trails for agent actions.
-
-## Core idea
-
-A user should be able to:
-1. clone the repo,
-2. run a bootstrap/setup flow,
-3. connect filing-relevant data sources with explicit consent,
-4. let the agent collect and normalize tax data,
-5. review only ambiguous or high-risk items,
-6. generate a filing draft,
-7. optionally use browser assistance for HomeTax preparation and input.
-
-The intended feeling is not:
-> "Please upload everything first."
-
-The intended feeling is:
-> "I log in or approve when asked, and the agent keeps the workflow moving."
 
 ## Current status
 
@@ -75,13 +60,22 @@ Implemented prototype coverage currently includes:
 
 ## Start here
 
-If you are new to the repo, read these first:
-1. [docs/00-overview.md](./docs/00-overview.md)
-2. [docs/16-v1-prd.md](./docs/16-v1-prd.md)
-3. [docs/17-data-collection-strategy.md](./docs/17-data-collection-strategy.md)
-4. [docs/21-first-agentic-scenario.md](./docs/21-first-agentic-scenario.md)
+### English reading path
+If you want to stay in English, read in this order:
+1. [docs/README.md](./docs/README.md)
+2. [docs/00-overview.md](./docs/00-overview.md)
+3. [docs/16-v1-prd.md](./docs/16-v1-prd.md)
+4. [docs/17-data-collection-strategy.md](./docs/17-data-collection-strategy.md)
+5. [docs/21-first-agentic-scenario.md](./docs/21-first-agentic-scenario.md)
 
-Then use [docs/README.md](./docs/README.md) as the full document index.
+### Korean reading path
+If you want to stay in Korean, start here instead:
+1. [README.ko.md](./README.ko.md)
+2. [docs/README.ko.md](./docs/README.ko.md)
+
+This repo is intended to be readable in either language without losing the main path.
+When a Korean companion exists, Korean readers should be able to continue in Korean.
+When a Korean companion does not exist, the English original is linked explicitly.
 
 ## Prototype workflow snapshot
 
@@ -119,7 +113,7 @@ For a runnable example, use:
 - Public architecture, private user data
 - Docs-first implementation
 
-## Documentation language
+## Documentation language and navigation
 
 Technical source-of-truth docs are currently written in **English**.
 This is intentional.
@@ -129,12 +123,17 @@ Why:
 - the contributor surface is part of the broader MCP / agent tooling ecosystem,
 - technical specs need tight alignment with code, types, and protocol terms.
 
-Korean companion docs may be added selectively for public onboarding and Korea-specific tax-domain clarity.
-If an English spec and a translated doc diverge, the **English version is canonical**.
+Korean companion docs are provided selectively for onboarding, product understanding, and Korea-specific tax-domain clarity.
+
+Reading-language rule:
+- English readers should be able to continue through English docs without being forced into Korean.
+- Korean readers should be able to continue through Korean companion docs when available.
+- If an English spec and a translated doc diverge, the **English version is canonical**.
 
 See also:
+- [docs/README.md](./docs/README.md)
+- [docs/README.ko.md](./docs/README.ko.md)
 - [docs/23-documentation-language-policy.md](./docs/23-documentation-language-policy.md)
-- [README.ko.md](./README.ko.md)
 
 ## Important docs
 
@@ -172,26 +171,6 @@ See also:
 - [docs/25-korean-comprehensive-income-tax-data-research.md](./docs/25-korean-comprehensive-income-tax-data-research.md)
 - [docs/26-domain-model-gap-analysis.md](./docs/26-domain-model-gap-analysis.md)
 - [docs/15-backlog.md](./docs/15-backlog.md)
-
-## Initial scope
-
-- Target users: Korean comprehensive income tax filers comfortable using AI agents
-- Primary mode: personal/self-hosted or operator-controlled workflow
-- Filing posture: semi-automated, consent-gated, review-driven
-- Submission posture: assisted, not silent/hidden full automation
-
-## Non-goals for v1
-
-- fully autonomous, zero-review tax filing
-- replacing professional tax/legal advice
-- broad financial-data aggregation via regulated MyData partnerships
-- supporting every taxpayer type from day one
-- pretending all important data sources have stable APIs
-
-## Repo workflow
-
-Public product and engineering TODOs live in docs and GitHub Issues.
-Private operational notes and real taxpayer data should stay outside the public repo.
 
 ## License
 
