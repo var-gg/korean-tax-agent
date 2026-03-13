@@ -295,7 +295,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           currentDraftId: workspace.currentDraftId,
           unresolvedReviewCount: workspace.unresolvedReviewCount,
           openCoverageGapCount: workspace.openCoverageGapCount,
-          supportTier: workspace.runtime?.readiness.supportTier ?? workspace.supportTier,
+          supportTier: getRuntimeSupportTier(workspace),
           filingPathKind: workspace.filingPathKind,
           estimateReadiness: workspace.estimateReadiness,
           draftReadiness: workspace.draftReadiness,
@@ -304,7 +304,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           freshnessState: workspace.freshnessState,
           lastBlockingReason: workspace.lastBlockingReason,
           lastCollectionStatus: workspace.lastCollectionStatus,
-          majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns,
+          majorUnknowns: getRuntimeMajorUnknowns(workspace),
           updatedAt: workspace.updatedAt,
         },
         draft: draft
@@ -346,8 +346,8 @@ export class InMemoryKoreanTaxMCPRuntime {
       `workspace_status=${workspace.status}`,
       workspace.currentDraftId ? `current_draft=${workspace.currentDraftId}` : 'current_draft=none',
       `unresolved_reviews=${workspace.unresolvedReviewCount}`,
-      `submission_readiness=${workspace.runtime?.readiness.submissionReadiness ?? workspace.submissionReadiness ?? 'not_ready'}`,
-      `comparison=${workspace.comparisonSummaryState ?? 'not_started'}`,
+      `submission_readiness=${getRuntimeSubmissionReadiness(workspace)}`,
+      `comparison=${getRuntimeComparisonState(workspace)}`,
       `freshness=${workspace.freshnessState ?? 'stale_unknown'}`,
     ];
 
@@ -798,7 +798,7 @@ function buildOperatorUpdateLines(params: {
   detailLevel: 'short' | 'standard';
   headline: string;
 }): string[] {
-  const readinessLine = `READINESS: submission=${humanizeToken(params.workspace.submissionReadiness ?? 'not_ready')} | comparison=${humanizeToken(params.workspace.comparisonSummaryState ?? 'not_started')} | freshness=${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}`;
+  const readinessLine = `READINESS: submission=${humanizeToken(getRuntimeSubmissionReadiness(params.workspace))} | comparison=${humanizeToken(getRuntimeComparisonState(params.workspace))} | freshness=${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}`;
   const queueLine = `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | warnings=${params.draft?.warnings.length ?? 0} | draft=${params.workspace.currentDraftId ?? 'none'}`;
   const blockerLine = params.blockers.length > 0 ? `BLOCKER: ${describeBlockingReason(params.blockers[0])}` : undefined;
   const nextLine = params.nextAction ? `NEXT: ${describeRecommendedAction(params.nextAction)}` : undefined;
@@ -816,7 +816,7 @@ function buildOperatorUpdateLines(params: {
     ]);
   }
 
-  if (params.workspace.status === 'ready_for_hometax_assist' || params.workspace.submissionReadiness === 'submission_assist_ready') {
+  if (params.workspace.status === 'ready_for_hometax_assist' || isRuntimeSubmissionReady(params.workspace)) {
     return compactLines([
       '✅ READY FOR HOMETAX ASSIST',
       `STATUS: ${params.headline}`,
@@ -868,8 +868,32 @@ function compactLines(lines: Array<string | undefined>): string[] {
   return lines.filter((line): line is string => Boolean(line));
 }
 
+function getRuntimeSubmissionReadiness(workspace: FilingWorkspace): string {
+  return workspace.runtime?.readiness.submissionReadiness ?? workspace.submissionReadiness ?? 'not_ready';
+}
+
+function getRuntimeComparisonState(workspace: FilingWorkspace): string {
+  return workspace.runtime?.submissionComparison?.submissionComparisonState ?? workspace.comparisonSummaryState ?? 'not_started';
+}
+
+function getRuntimeMajorUnknowns(workspace: FilingWorkspace): string[] {
+  return workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [];
+}
+
+function getRuntimeSupportTier(workspace: FilingWorkspace): string {
+  return workspace.runtime?.readiness.supportTier ?? workspace.supportTier ?? 'undetermined';
+}
+
+function isRuntimeSubmissionReady(workspace: FilingWorkspace): boolean {
+  return getRuntimeSubmissionReadiness(workspace) === 'ready' || workspace.submissionReadiness === 'submission_assist_ready';
+}
+
+function isRuntimeSubmissionBlocked(workspace: FilingWorkspace): boolean {
+  return getRuntimeSubmissionReadiness(workspace) === 'blocked';
+}
+
 function buildFilingSummaryHeadline(workspace: FilingWorkspace): string {
-  if (workspace.submissionReadiness === 'submission_assist_ready') {
+  if (isRuntimeSubmissionReady(workspace)) {
     return 'The filing draft is ready for HomeTax preparation.';
   }
   if (workspace.unresolvedReviewCount > 0) {
@@ -898,7 +922,7 @@ function buildFilingSummaryText(params: {
     ? `${params.workspace.unresolvedReviewCount} review item(s) still need resolution.`
     : 'No review items are currently blocking the draft.';
 
-  const readinessSentence = `Submission readiness is ${humanizeToken(params.workspace.submissionReadiness ?? 'not_ready')}, with comparison ${humanizeToken(params.workspace.comparisonSummaryState ?? 'not_started')} and freshness ${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}.`;
+  const readinessSentence = `Submission readiness is ${humanizeToken(getRuntimeSubmissionReadiness(params.workspace))}, with comparison ${humanizeToken(getRuntimeComparisonState(params.workspace))} and freshness ${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}.`;
 
   const blockerSentence = params.blockers.length > 0
     ? `Main blocker: ${params.blockers.map((blocker) => describeBlockingReason(blocker)).join(' ')}.`
@@ -941,6 +965,9 @@ function isBlockingReason(value: string): value is BlockingReason {
 }
 
 function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {
+  const comparisonState = getRuntimeComparisonState(workspace);
+  const submissionReadiness = getRuntimeSubmissionReadiness(workspace);
+
   if (workspace.lastCollectionStatus === 'awaiting_user_action' || workspace.lastCollectionStatus === 'blocked') {
     return 'tax.sources.resume_sync';
   }
@@ -953,11 +980,14 @@ function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): strin
   if (workspace.freshnessState === 'refresh_required' || workspace.freshnessState === 'stale_unknown') {
     return 'tax.filing.refresh_official_data';
   }
-  if (workspace.comparisonSummaryState !== 'matched_enough' && workspace.comparisonSummaryState !== 'manual_only') {
+  if (comparisonState !== 'matched_enough' && comparisonState !== 'manual_only' && comparisonState !== 'strong') {
     return 'tax.filing.compare_with_hometax';
   }
-  if (workspace.submissionReadiness === 'submission_assist_ready') {
+  if (submissionReadiness === 'ready' || workspace.submissionReadiness === 'submission_assist_ready') {
     return 'tax.filing.prepare_hometax';
+  }
+  if (submissionReadiness === 'blocked') {
+    return 'tax.classify.list_review_items';
   }
   return undefined;
 }
