@@ -14,7 +14,18 @@ import {
   derivePendingUserAction,
   transitionSourceState,
 } from '../../core/src/state.js';
-import type { ClassificationDecision, ConsentRecord, LedgerTransaction, ReviewItem, SourceConnection, TaxpayerFact, WithholdingRecord } from '../../core/src/types.js';
+import type {
+  ClassificationDecision,
+  ConsentRecord,
+  CoverageByDomain,
+  FilingCoverageDomain,
+  LedgerTransaction,
+  MappedReadinessState,
+  ReviewItem,
+  SourceConnection,
+  TaxpayerFact,
+  WithholdingRecord,
+} from '../../core/src/types.js';
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
@@ -40,6 +51,69 @@ import type {
   SyncSourceData,
   SyncSourceInput,
 } from './contracts.js';
+
+function deriveCoverageByDomainFromLegacyReadiness(readiness: {
+  blockerCodes: string[];
+  comparisonSummaryState: string;
+}): Partial<CoverageByDomain> {
+  const coverage: Partial<CoverageByDomain> = {};
+
+  coverage.filingPath = readiness.blockerCodes.includes('unsupported_filing_path') ? 'weak' : 'partial';
+  coverage.incomeInventory = 'partial';
+  coverage.withholdingPrepaidTax = readiness.blockerCodes.includes('missing_material_coverage') ? 'weak' : 'partial';
+  coverage.expenseEvidence = 'partial';
+  coverage.deductionFacts = readiness.blockerCodes.includes('awaiting_review_decision') ? 'weak' : 'partial';
+  coverage.submissionComparison =
+    readiness.comparisonSummaryState === 'matched_enough'
+      ? 'strong'
+      : readiness.comparisonSummaryState === 'partial'
+        ? 'partial'
+        : 'weak';
+
+  return coverage;
+}
+
+function summarizeCoverage(coverage: Partial<CoverageByDomain>) {
+  const entries = Object.entries(coverage) as Array<[FilingCoverageDomain, CoverageByDomain[FilingCoverageDomain]]>;
+  return {
+    strongDomains: entries.filter(([, value]) => value === 'strong').map(([key]) => key),
+    partialDomains: entries.filter(([, value]) => value === 'partial').map(([key]) => key),
+    weakDomains: entries.filter(([, value]) => value === 'weak' || value === 'none').map(([key]) => key),
+  };
+}
+
+function mapLegacyReadinessState(readiness: {
+  supportTier: import('../../core/src/types.js').FilingSupportTier;
+  estimateReadiness: import('../../core/src/types.js').ReadinessLevel;
+  draftReadiness: import('../../core/src/types.js').ReadinessLevel;
+  submissionReadiness: import('../../core/src/types.js').ReadinessLevel;
+  comparisonSummaryState: import('../../core/src/types.js').FilingComparisonSummaryState;
+  majorUnknowns: string[];
+  blockerCodes: import('../../core/src/types.js').BlockingReason[];
+}): MappedReadinessState {
+  const coverageByDomain = deriveCoverageByDomainFromLegacyReadiness(readiness);
+  return {
+    readiness: {
+      estimateReadiness: readiness.estimateReadiness === 'not_ready' ? 'not_ready' : readiness.estimateReadiness === 'estimate_ready' ? 'ready' : 'ready',
+      draftReadiness: readiness.draftReadiness === 'draft_ready' ? 'ready' : readiness.draftReadiness === 'estimate_ready' ? 'limited' : 'not_ready',
+      submissionReadiness:
+        readiness.submissionReadiness === 'submission_assist_ready'
+          ? 'ready'
+          : readiness.blockerCodes.includes('unsupported_filing_path')
+            ? 'unsupported'
+            : readiness.submissionReadiness === 'draft_ready'
+              ? 'blocked'
+              : 'not_ready',
+      confidenceBand: 'medium',
+      supportTier: readiness.supportTier,
+      majorUnknowns: readiness.majorUnknowns,
+    },
+    coverageByDomain,
+    materialCoverageSummary: summarizeCoverage(coverageByDomain),
+    majorUnknowns: readiness.majorUnknowns,
+    supportTier: readiness.supportTier,
+  };
+}
 
 export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPResponseEnvelope<{
   recommendedSources: Array<{
@@ -376,6 +450,7 @@ export function taxProfileDetectFilingPath(
       escalationFlags: detection.escalationFlags,
     },
     readiness: readiness,
+    readinessState: mapLegacyReadinessState(readiness),
     nextRecommendedAction: 'tax.filing.compute_draft',
   };
 }
@@ -571,6 +646,7 @@ export function taxFilingComputeDraft(
       majorUnknowns: readinessSummary.majorUnknowns,
     },
     readiness: readinessSummary,
+    readinessState: mapLegacyReadinessState(readinessSummary),
     checkpointType: computeBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
     blockingReason: computeBlockingReason,
     pendingUserAction: computeBlockingReason
@@ -623,6 +699,7 @@ export function taxFilingCompareWithHomeTax(
       fieldValues: comparison.fieldValues,
     },
     readiness: readinessSummary,
+    readinessState: mapLegacyReadinessState(readinessSummary),
     blockingReason,
     checkpointType: blockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
     pendingUserAction: blockingReason
@@ -677,6 +754,7 @@ export function taxFilingRefreshOfficialData(
       downgradeReasons: [],
     },
     readiness: readinessSummary,
+    readinessState: mapLegacyReadinessState(readinessSummary),
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_refreshed',

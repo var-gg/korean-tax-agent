@@ -2,11 +2,14 @@ import type {
   BlockingReason,
   CheckpointType,
   ClassificationDecision,
+  CoverageByDomain,
   DataFreshnessState,
   FilingComparisonSummaryState,
   FilingFieldValue,
   FilingPathKind,
   FilingSupportTier,
+  MappedReadinessState,
+  MaterialCoverageSummary,
   ReadinessLevel,
   ReviewItem,
   SourceState,
@@ -54,10 +57,15 @@ export type MCPReadiness = {
   blockerCodes: BlockingReason[];
 };
 
+export type MCPCoverageByDomain = Partial<CoverageByDomain>;
+
+export type MCPMaterialCoverageSummary = Partial<MaterialCoverageSummary>;
+
 export type MCPResponseEnvelope<TData = Record<string, unknown>> = {
   ok: boolean;
   data: TData;
   readiness?: MCPReadiness;
+  readinessState?: MappedReadinessState;
   warnings?: MCPWarning[];
   requiresConsent?: boolean;
   requiresAuth?: boolean;
