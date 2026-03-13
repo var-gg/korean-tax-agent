@@ -55,25 +55,25 @@ import type {
 function deriveCoverageByDomainFromLegacyReadiness(readiness: {
   blockerCodes: string[];
   comparisonSummaryState: string;
-}): Partial<CoverageByDomain> {
-  const coverage: Partial<CoverageByDomain> = {};
-
-  coverage.filingPath = readiness.blockerCodes.includes('unsupported_filing_path') ? 'weak' : 'partial';
-  coverage.incomeInventory = 'partial';
-  coverage.withholdingPrepaidTax = readiness.blockerCodes.includes('missing_material_coverage') ? 'weak' : 'partial';
-  coverage.expenseEvidence = 'partial';
-  coverage.deductionFacts = readiness.blockerCodes.includes('awaiting_review_decision') ? 'weak' : 'partial';
-  coverage.submissionComparison =
-    readiness.comparisonSummaryState === 'matched_enough'
-      ? 'strong'
-      : readiness.comparisonSummaryState === 'partial'
-        ? 'partial'
-        : 'weak';
+}): CoverageByDomain {
+  const coverage: CoverageByDomain = {
+    filingPath: readiness.blockerCodes.includes('unsupported_filing_path') ? 'weak' : 'partial',
+    incomeInventory: 'partial',
+    withholdingPrepaidTax: readiness.blockerCodes.includes('missing_material_coverage') ? 'weak' : 'partial',
+    expenseEvidence: 'partial',
+    deductionFacts: readiness.blockerCodes.includes('awaiting_review_decision') ? 'weak' : 'partial',
+    submissionComparison:
+      readiness.comparisonSummaryState === 'matched_enough'
+        ? 'strong'
+        : readiness.comparisonSummaryState === 'partial'
+          ? 'partial'
+          : 'weak',
+  };
 
   return coverage;
 }
 
-function summarizeCoverage(coverage: Partial<CoverageByDomain>) {
+function summarizeCoverage(coverage: CoverageByDomain) {
   const entries = Object.entries(coverage) as Array<[FilingCoverageDomain, CoverageByDomain[FilingCoverageDomain]]>;
   return {
     strongDomains: entries.filter(([, value]) => value === 'strong').map(([key]) => key),
