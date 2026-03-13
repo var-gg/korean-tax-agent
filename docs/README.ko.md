@@ -118,6 +118,7 @@ Korean Tax Agent는:
 - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md) (EN) — 영문 원문
 - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) (EN) — 영문 원문
 - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) (EN) — 영문 원문
+- [28-three-party-happy-path.md](./28-three-party-happy-path.md) (EN) — 사용자 / 에이전트 / MCP 3자 happy path와 단계별 노티 및 설계 공백 점검
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) (EN) — 구현 로드맵

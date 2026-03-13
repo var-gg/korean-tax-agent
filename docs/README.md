@@ -132,6 +132,7 @@ Read:
 - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md) — first-pass domain map for real filing inputs
 - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) — code/model gaps revealed by the filing-input research
 - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) — explicit V1 support boundaries, readiness levels, and stop conditions
+- [28-three-party-happy-path.md](./28-three-party-happy-path.md) — user/agent/MCP happy-path conversation with stage-by-stage notification and design-gap analysis
 
 ## Korean companion docs
 Current Korean companions:
