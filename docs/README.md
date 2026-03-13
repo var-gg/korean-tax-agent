@@ -137,6 +137,7 @@ Read:
 - [30-source-planning-conversation.md](./30-source-planning-conversation.md) — concrete user/agent/MCP source-planning dialogue patterns, including HomeTax-first, local-first, and export-first cases
 - [31-source-collection-blocked-path.md](./31-source-collection-blocked-path.md) — realistic blocked-path handling for UI drift, export-required branches, provider blocks, and honest readiness downgrades
 - [32-readiness-calibration-by-input-coverage.md](./32-readiness-calibration-by-input-coverage.md) — how estimate, draft, and submission-assist readiness should be calibrated from domain coverage rather than file volume
+- [33-runtime-and-mcp-fields-for-readiness-and-coverage.md](./33-runtime-and-mcp-fields-for-readiness-and-coverage.md) — concrete runtime fields and MCP response shapes for readiness, coverage, blockers, and major unknowns
 
 ## Korean companion docs
 Current Korean companions:
