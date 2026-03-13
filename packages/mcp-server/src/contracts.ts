@@ -4,6 +4,7 @@ import type {
   ClassificationDecision,
   CoverageByDomain,
   DataFreshnessState,
+  DraftCalibrationSnapshot,
   FilingComparisonSummaryState,
   FilingFieldValue,
   FilingPathKind,
@@ -298,6 +299,7 @@ export type ComputeDraftData = {
   comparisonSummaryState?: FilingComparisonSummaryState;
   freshnessState?: DataFreshnessState;
   majorUnknowns?: string[];
+  calibration?: DraftCalibrationSnapshot;
 };
 
 export type CompareWithHomeTaxInput = {
