@@ -135,6 +135,7 @@ Read:
 - [28-three-party-happy-path.md](./28-three-party-happy-path.md) — user/agent/MCP happy-path conversation with stage-by-stage notification and design-gap analysis
 - [29-source-strategy-for-real-tax-work.md](./29-source-strategy-for-real-tax-work.md) — what data really matters first in tax work, what counts as anchor vs enrichment, and how source planning should work
 - [30-source-planning-conversation.md](./30-source-planning-conversation.md) — concrete user/agent/MCP source-planning dialogue patterns, including HomeTax-first, local-first, and export-first cases
+- [31-source-collection-blocked-path.md](./31-source-collection-blocked-path.md) — realistic blocked-path handling for UI drift, export-required branches, provider blocks, and honest readiness downgrades
 
 ## Korean companion docs
 Current Korean companions:
