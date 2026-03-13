@@ -119,6 +119,7 @@ Korean Tax Agent는:
 - [26-domain-model-gap-analysis.md](./26-domain-model-gap-analysis.md) (EN) — 영문 원문
 - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md) (EN) — 영문 원문
 - [28-three-party-happy-path.md](./28-three-party-happy-path.md) (EN) — 사용자 / 에이전트 / MCP 3자 happy path와 단계별 노티 및 설계 공백 점검
+- [29-source-strategy-for-real-tax-work.md](./29-source-strategy-for-real-tax-work.md) (EN) — 실제 종소세 업무에서 무엇이 anchor 자료이고 무엇이 enrichment 자료인지, source planning을 어떻게 봐야 하는지 정리
 
 ### 6) 운영 / 로드맵 / 프로젝트 관리
 - [13-implementation-roadmap.md](./13-implementation-roadmap.md) (EN) — 구현 로드맵
