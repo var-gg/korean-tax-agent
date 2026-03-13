@@ -1,5 +1,18 @@
 # Overview
 
+- Status: active
+- Doc role: canonical
+- Locale: en
+- Korean companion: [00-overview.ko.md](./00-overview.ko.md)
+- Parent: [README.md](./README.md)
+- Related:
+  - [16-v1-prd.md](./16-v1-prd.md)
+  - [17-data-collection-strategy.md](./17-data-collection-strategy.md)
+  - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
+- Next recommended reading:
+  - [16-v1-prd.md](./16-v1-prd.md)
+  - [17-data-collection-strategy.md](./17-data-collection-strategy.md)
+
 ## Product definition
 
 Korean Tax Agent is an open-source, agent-native workflow for people subject to Korean comprehensive income tax preparation who can operate AGENT AI tooling.

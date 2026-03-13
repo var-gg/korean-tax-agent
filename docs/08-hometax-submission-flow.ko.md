@@ -1,7 +1,9 @@
 # HomeTax 제출 보조 흐름
 
 - 상태: companion
-- 기준 원문: [08-hometax-submission-flow.md](./08-hometax-submission-flow.md)
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [08-hometax-submission-flow.md](./08-hometax-submission-flow.md) (EN)
 - 상위 문서: [README.ko.md](./README.ko.md)
 - 관련 문서:
   - [19-agentic-auth-and-consent-flow.ko.md](./19-agentic-auth-and-consent-flow.ko.md)

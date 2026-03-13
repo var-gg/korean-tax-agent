@@ -1,13 +1,18 @@
 # Agentic Auth and Consent Flow (Korean Companion)
 
-> 참고:
-> - 이 문서는 `19-agentic-auth-and-consent-flow.md`의 한국어 companion 문서입니다.
-> - 기술 정본은 영문 문서입니다.
-> - 차이가 있을 경우 영문 문서가 우선합니다.
->
-> See also:
-> - `19-agentic-auth-and-consent-flow.md`
-> - `23-documentation-language-policy.md`
+- 상태: companion
+- Doc role: companion
+- Locale: ko
+- 기준 원문: [19-agentic-auth-and-consent-flow.md](./19-agentic-auth-and-consent-flow.md) (EN)
+- 상위 문서: [README.ko.md](./README.ko.md)
+- 관련 문서:
+  - [17-data-collection-strategy.ko.md](./17-data-collection-strategy.ko.md)
+  - [18-source-feasibility-matrix.ko.md](./18-source-feasibility-matrix.ko.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
+  - [24-workflow-state-machine.ko.md](./24-workflow-state-machine.ko.md)
+- 다음 읽기:
+  - [08-hometax-submission-flow.ko.md](./08-hometax-submission-flow.ko.md)
+  - [20-workspace-state-model.ko.md](./20-workspace-state-model.ko.md)
 
 ## 목적
 source 연결, 인증, 데이터 수집, 민감한 workflow 전환 과정에서,

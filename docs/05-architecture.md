@@ -1,5 +1,18 @@
 # Architecture
 
+- Status: active
+- Doc role: canonical
+- Locale: en
+- Korean companion: [05-architecture.ko.md](./05-architecture.ko.md)
+- Parent: [README.md](./README.md)
+- Related:
+  - [06-data-model.md](./06-data-model.md)
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [21-first-agentic-scenario.md](./21-first-agentic-scenario.md)
+- Next recommended reading:
+  - [06-data-model.md](./06-data-model.md)
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+
 ## Top-level components
 
 ### 1. Core domain package
