@@ -55,6 +55,56 @@ export type CalibratedReadinessResult = {
   majorUnknowns: string[];
 };
 
+export function sortActiveBlockers(blockers: ActiveBlocker[]): ActiveBlocker[] {
+  const severityRank: Record<ActiveBlocker['severity'], number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+  const blockingReasonRank: Partial<Record<BlockingReason, number>> = {
+    unsupported_filing_path: 0,
+    missing_auth: 1,
+    missing_consent: 2,
+    blocked_by_provider: 3,
+    comparison_incomplete: 4,
+    official_data_refresh_required: 5,
+    missing_material_coverage: 6,
+    awaiting_review_decision: 7,
+    submission_not_ready: 8,
+    draft_not_ready: 9,
+    export_required: 10,
+    ui_changed: 11,
+    insufficient_metadata: 12,
+    unsupported_source: 13,
+    unsupported_hometax_state: 14,
+    awaiting_final_approval: 15,
+  };
+  const blockerTypeRank: Record<ActiveBlocker['blockerType'], number> = {
+    support_boundary: 0,
+    source_block: 1,
+    comparison_block: 2,
+    coverage_gap: 3,
+    review_block: 4,
+  };
+
+  return [...blockers].sort((a, b) => {
+    const severityDiff = (severityRank[a.severity] ?? 99) - (severityRank[b.severity] ?? 99);
+    if (severityDiff !== 0) return severityDiff;
+
+    const readinessBreadthDiff = b.affectsReadiness.length - a.affectsReadiness.length;
+    if (readinessBreadthDiff !== 0) return readinessBreadthDiff;
+
+    const reasonDiff = (blockingReasonRank[a.blockingReason] ?? 99) - (blockingReasonRank[b.blockingReason] ?? 99);
+    if (reasonDiff !== 0) return reasonDiff;
+
+    const typeDiff = (blockerTypeRank[a.blockerType] ?? 99) - (blockerTypeRank[b.blockerType] ?? 99);
+    if (typeDiff !== 0) return typeDiff;
+
+    return a.message.localeCompare(b.message);
+  });
+}
+
 export function deriveCalibratedReadiness(input: DeriveReadinessSummaryInput): CalibratedReadinessResult {
   const supportTier = input.supportTier ?? 'undetermined';
   const filingPathKind = input.filingPathKind ?? 'unknown';
@@ -209,7 +259,7 @@ export function deriveCalibratedReadiness(input: DeriveReadinessSummaryInput): C
     workspaceReadiness,
     coverageByDomain,
     materialCoverageSummary: summarizeCoverageByDomain(coverageByDomain),
-    activeBlockers,
+    activeBlockers: sortActiveBlockers(activeBlockers),
     comparisonSummaryState,
     submissionComparisonState,
     freshnessState,
