@@ -936,15 +936,15 @@ function getPrimaryActiveBlocker(workspace: FilingWorkspace) {
   return (workspace.runtime?.activeBlockers ?? [])[0];
 }
 
-function dedupeBlockingReasons(reasons: Array<string | undefined>): string[] {
-  return [...new Set(reasons.filter((reason): reason is string => Boolean(reason)))];
+function dedupeBlockingReasons<T extends string>(reasons: Array<T | undefined>): T[] {
+  return [...new Set(reasons.filter((reason): reason is T => Boolean(reason)))];
 }
 
-function getRuntimeBlockerCodes(workspace: FilingWorkspace): string[] {
+function getRuntimeBlockerCodes(workspace: FilingWorkspace): BlockingReason[] {
   return dedupeBlockingReasons([
     ...(workspace.runtime?.activeBlockers?.map((blocker) => blocker.blockingReason) ?? []),
     workspace.lastBlockingReason,
-  ]);
+  ]).filter(isBlockingReason);
 }
 
 function getPrimaryBlockingReason(workspace: FilingWorkspace): string | undefined {
