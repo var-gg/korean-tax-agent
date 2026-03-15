@@ -1,5 +1,5 @@
 import { deriveCalibratedReadiness, deriveReadinessSummary } from '../../core/src/readiness.js';
-import type { BlockingReason, ClassificationDecision, ConsentRecord, CoverageGap, FilingWorkspace, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
+import type { ActiveBlocker, BlockingReason, ClassificationDecision, ConsentRecord, CoverageGap, FilingWorkspace, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
@@ -240,6 +240,8 @@ export class InMemoryKoreanTaxMCPRuntime {
       freshnessState: draft?.freshnessState ?? workspace.freshnessState,
     });
 
+    const sortedActiveBlockers = sortActiveBlockers(calibratedRuntime.activeBlockers);
+
     this.store.workspaces.set(workspaceId, {
       ...workspace,
       status: hints.status
@@ -264,10 +266,10 @@ export class InMemoryKoreanTaxMCPRuntime {
         readiness: calibratedRuntime.workspaceReadiness,
         coverageByDomain: calibratedRuntime.coverageByDomain,
         materialCoverageSummary: calibratedRuntime.materialCoverageSummary,
-        activeBlockers: calibratedRuntime.activeBlockers,
+        activeBlockers: sortedActiveBlockers,
         submissionComparison: {
           submissionComparisonState: calibratedRuntime.submissionComparisonState,
-          mismatchSummary: calibratedRuntime.activeBlockers
+          mismatchSummary: sortedActiveBlockers
             .filter((blocker) => blocker.blockerType === 'comparison_block')
             .map((blocker) => ({
               sectionKey: blocker.affectedDomains.join('+'),
@@ -931,7 +933,7 @@ function compactLines(lines: Array<string | undefined>): string[] {
 }
 
 function getPrimaryActiveBlocker(workspace: FilingWorkspace) {
-  return workspace.runtime?.activeBlockers?.[0];
+  return sortActiveBlockers(workspace.runtime?.activeBlockers ?? [])[0];
 }
 
 function getPrimaryBlockingReason(workspace: FilingWorkspace): string | undefined {
@@ -975,6 +977,56 @@ function isRuntimeSubmissionReady(workspace: FilingWorkspace): boolean {
 
 function isRuntimeSubmissionBlocked(workspace: FilingWorkspace): boolean {
   return getRuntimeSubmissionReadiness(workspace) === 'blocked';
+}
+
+function sortActiveBlockers(blockers: ActiveBlocker[]): ActiveBlocker[] {
+  const severityRank: Record<ActiveBlocker['severity'], number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+  const blockingReasonRank: Partial<Record<BlockingReason, number>> = {
+    unsupported_filing_path: 0,
+    missing_auth: 1,
+    missing_consent: 2,
+    blocked_by_provider: 3,
+    comparison_incomplete: 4,
+    official_data_refresh_required: 5,
+    missing_material_coverage: 6,
+    awaiting_review_decision: 7,
+    submission_not_ready: 8,
+    draft_not_ready: 9,
+    export_required: 10,
+    ui_changed: 11,
+    insufficient_metadata: 12,
+    unsupported_source: 13,
+    unsupported_hometax_state: 14,
+    awaiting_final_approval: 15,
+  };
+  const blockerTypeRank: Record<ActiveBlocker['blockerType'], number> = {
+    support_boundary: 0,
+    source_block: 1,
+    comparison_block: 2,
+    coverage_gap: 3,
+    review_block: 4,
+  };
+
+  return [...blockers].sort((a, b) => {
+    const severityDiff = (severityRank[a.severity] ?? 99) - (severityRank[b.severity] ?? 99);
+    if (severityDiff !== 0) return severityDiff;
+
+    const readinessBreadthDiff = b.affectsReadiness.length - a.affectsReadiness.length;
+    if (readinessBreadthDiff !== 0) return readinessBreadthDiff;
+
+    const reasonDiff = (blockingReasonRank[a.blockingReason] ?? 99) - (blockingReasonRank[b.blockingReason] ?? 99);
+    if (reasonDiff !== 0) return reasonDiff;
+
+    const typeDiff = (blockerTypeRank[a.blockerType] ?? 99) - (blockerTypeRank[b.blockerType] ?? 99);
+    if (typeDiff !== 0) return typeDiff;
+
+    return a.message.localeCompare(b.message);
+  });
 }
 
 function buildFilingSummaryHeadline(workspace: FilingWorkspace): string {
