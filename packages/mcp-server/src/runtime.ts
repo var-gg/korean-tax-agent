@@ -294,7 +294,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     return taxSourcesGetCollectionStatus(
       input,
       this.listSources(input.workspaceId),
-      this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
+      (this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).map((gap) => gap.description),
     );
   }
 
