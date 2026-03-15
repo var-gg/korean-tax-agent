@@ -858,7 +858,11 @@ function buildOperatorUpdateLines(params: {
 }): string[] {
   const readinessLine = `READINESS: submission=${humanizeToken(getRuntimeSubmissionReadiness(params.workspace))} | comparison=${humanizeToken(getRuntimeComparisonState(params.workspace))} | freshness=${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}`;
   const queueLine = `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | warnings=${params.draft?.warnings.length ?? 0} | draft=${params.workspace.currentDraftId ?? 'none'}`;
-  const blockerLine = params.blockers.length > 0 ? `BLOCKER: ${describeBlockingReason(params.blockers[0])}` : undefined;
+  const blockerLine = describePrimaryBlocker(params.workspace)
+    ? `BLOCKER: ${describePrimaryBlocker(params.workspace)}`
+    : params.blockers.length > 0
+      ? `BLOCKER: ${describeBlockingReason(params.blockers[0])}`
+      : undefined;
   const nextLine = params.nextAction ? `NEXT: ${describeRecommendedAction(params.nextAction)}` : undefined;
   const draftLine = params.detailLevel === 'standard' && (params.draft?.fieldValues?.length ?? 0) > 0
     ? `DRAFT: fields=${params.draft?.fieldValues?.length ?? 0}`
@@ -899,8 +903,8 @@ function buildOperatorUpdateLines(params: {
   if (
     params.workspace.lastCollectionStatus === 'awaiting_user_action'
     || params.workspace.lastCollectionStatus === 'blocked'
-    || params.workspace.lastBlockingReason === 'missing_auth'
-    || params.workspace.lastBlockingReason === 'missing_consent'
+    || getPrimaryBlockingReason(params.workspace) === 'missing_auth'
+    || getPrimaryBlockingReason(params.workspace) === 'missing_consent'
   ) {
     return compactLines([
       '⏸️ COLLECTION BLOCKED',
@@ -924,6 +928,21 @@ function buildOperatorUpdateLines(params: {
 
 function compactLines(lines: Array<string | undefined>): string[] {
   return lines.filter((line): line is string => Boolean(line));
+}
+
+function getPrimaryActiveBlocker(workspace: FilingWorkspace) {
+  return workspace.runtime?.activeBlockers?.[0];
+}
+
+function getPrimaryBlockingReason(workspace: FilingWorkspace): string | undefined {
+  return getPrimaryActiveBlocker(workspace)?.blockingReason ?? workspace.lastBlockingReason;
+}
+
+function describePrimaryBlocker(workspace: FilingWorkspace): string | undefined {
+  const blocker = getPrimaryActiveBlocker(workspace);
+  if (blocker?.message) return blocker.message;
+  const reason = getPrimaryBlockingReason(workspace);
+  return reason ? describeBlockingReason(reason) : undefined;
 }
 
 function getRuntimeSubmissionReadiness(workspace: FilingWorkspace): string {
@@ -965,10 +984,10 @@ function buildFilingSummaryHeadline(workspace: FilingWorkspace): string {
   if (workspace.unresolvedReviewCount > 0) {
     return 'The filing workflow is waiting on review decisions.';
   }
-  if (workspace.lastBlockingReason === 'comparison_incomplete') {
+  if (getPrimaryBlockingReason(workspace) === 'comparison_incomplete') {
     return 'The draft still needs HomeTax comparison before preparation.';
   }
-  if (workspace.lastBlockingReason === 'official_data_refresh_required') {
+  if (getPrimaryBlockingReason(workspace) === 'official_data_refresh_required') {
     return 'Official data should be refreshed before moving forward.';
   }
   if (workspace.lastCollectionStatus === 'awaiting_user_action' || workspace.lastCollectionStatus === 'blocked') {
@@ -990,9 +1009,11 @@ function buildFilingSummaryText(params: {
 
   const readinessSentence = `Submission readiness is ${humanizeToken(getRuntimeSubmissionReadiness(params.workspace))}, with comparison ${humanizeToken(getRuntimeComparisonState(params.workspace))} and freshness ${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}.`;
 
-  const blockerSentence = params.blockers.length > 0
-    ? `Main blocker: ${params.blockers.map((blocker) => describeBlockingReason(blocker)).join(' ')}.`
-    : 'No blocking reason is currently recorded.';
+  const blockerSentence = describePrimaryBlocker(params.workspace)
+    ? `Main blocker: ${describePrimaryBlocker(params.workspace)}.`
+    : params.blockers.length > 0
+      ? `Main blocker: ${params.blockers.map((blocker) => describeBlockingReason(blocker)).join(' ')}.`
+      : 'No blocking reason is currently recorded.';
 
   const nextSentence = params.nextAction
     ? `Recommended next action: ${describeRecommendedAction(params.nextAction)}.`
@@ -1033,9 +1054,19 @@ function isBlockingReason(value: string): value is BlockingReason {
 function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {
   const comparisonState = getRuntimeComparisonState(workspace);
   const submissionReadiness = getRuntimeSubmissionReadiness(workspace);
+  const primaryBlockingReason = getPrimaryBlockingReason(workspace);
 
   if (workspace.lastCollectionStatus === 'awaiting_user_action' || workspace.lastCollectionStatus === 'blocked') {
     return 'tax.sources.resume_sync';
+  }
+  if (primaryBlockingReason === 'official_data_refresh_required') {
+    return 'tax.filing.refresh_official_data';
+  }
+  if (primaryBlockingReason === 'comparison_incomplete') {
+    return 'tax.filing.compare_with_hometax';
+  }
+  if (primaryBlockingReason === 'missing_material_coverage' || primaryBlockingReason === 'awaiting_review_decision') {
+    return 'tax.classify.list_review_items';
   }
   if (workspace.unresolvedReviewCount > 0) {
     return 'tax.classify.list_review_items';
