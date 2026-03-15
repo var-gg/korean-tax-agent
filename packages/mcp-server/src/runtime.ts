@@ -1,5 +1,5 @@
 import { deriveCalibratedReadiness, deriveReadinessSummary } from '../../core/src/readiness.js';
-import type { BlockingReason, ClassificationDecision, ConsentRecord, FilingWorkspace, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
+import type { BlockingReason, ClassificationDecision, ConsentRecord, CoverageGap, FilingWorkspace, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
@@ -70,7 +70,7 @@ export type RuntimeStore = {
   workspaces: Map<string, FilingWorkspace>;
   sources: Map<string, SourceConnection>;
   syncAttempts: Map<string, SyncAttempt>;
-  coverageGapsByWorkspace: Map<string, string[]>;
+  coverageGapsByWorkspace: Map<string, CoverageGap[]>;
   transactions: Map<string, LedgerTransaction>;
   decisions: Map<string, ClassificationDecision>;
   reviewItems: Map<string, ReviewItem>;
@@ -83,7 +83,7 @@ export type CreateRuntimeOptions = {
   workspaces?: FilingWorkspace[];
   sources?: SourceConnection[];
   syncAttempts?: SyncAttempt[];
-  coverageGapsByWorkspace?: Record<string, string[]>;
+  coverageGapsByWorkspace?: Record<string, Array<CoverageGap | string>>;
   transactions?: LedgerTransaction[];
   decisions?: ClassificationDecision[];
   reviewItems?: ReviewItem[];
@@ -95,7 +95,7 @@ export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeS
     workspaces: new Map((options.workspaces ?? []).map((workspace) => [workspace.workspaceId, workspace])),
     sources: new Map((options.sources ?? []).map((source) => [source.sourceId, source])),
     syncAttempts: new Map((options.syncAttempts ?? []).map((attempt) => [attempt.syncAttemptId, attempt])),
-    coverageGapsByWorkspace: new Map(Object.entries(options.coverageGapsByWorkspace ?? {})),
+    coverageGapsByWorkspace: new Map(Object.entries(options.coverageGapsByWorkspace ?? {}).map(([workspaceId, gaps]) => [workspaceId, normalizeCoverageGaps(workspaceId, gaps)])),
     transactions: new Map((options.transactions ?? []).map((tx) => [tx.transactionId, tx])),
     decisions: new Map((options.decisions ?? []).map((decision) => [decision.decisionId, decision])),
     reviewItems: new Map((options.reviewItems ?? []).map((item) => [item.reviewItemId, item])),
@@ -209,7 +209,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       unresolvedReviewCount: 0,
-      openCoverageGapCount: (this.store.coverageGapsByWorkspace.get(workspaceId) ?? []).length,
+      openCoverageGapCount: (this.store.coverageGapsByWorkspace.get(workspaceId) ?? []).filter((gap) => gap.state === 'open').length,
     };
 
     this.store.workspaces.set(workspaceId, created);
@@ -221,14 +221,15 @@ export class InMemoryKoreanTaxMCPRuntime {
     const draft = this.getDraft(workspaceId);
     const unresolvedReviewItems = this.listReviewItems(workspaceId).filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed');
     const unresolvedReviewCount = unresolvedReviewItems.length;
-    const openCoverageGapCount = (this.store.coverageGapsByWorkspace.get(workspaceId) ?? []).length;
+    const coverageGaps = this.store.coverageGapsByWorkspace.get(workspaceId) ?? [];
+    const openCoverageGapCount = coverageGaps.filter((gap) => gap.state === 'open').length;
     const latestSyncAttempt = this.listSyncAttempts().filter((attempt) => attempt.workspaceId === workspaceId).sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0];
 
     const calibratedRuntime = deriveCalibratedReadiness({
       supportTier: draft?.supportTier ?? workspace.supportTier,
       filingPathKind: draft?.filingPathKind ?? workspace.filingPathKind,
       reviewItems: unresolvedReviewItems,
-      coverageGaps: [],
+      coverageGaps,
       draft: draft
         ? {
             draftId: draft.draftId,
@@ -1108,6 +1109,49 @@ function buildComparisonReviewItems(
     resolutionState: 'open',
     resolutionNote: 'Generated from HomeTax comparison mismatch.',
   }));
+}
+
+function normalizeCoverageGaps(workspaceId: string, gaps: Array<CoverageGap | string>): CoverageGap[] {
+  return gaps.map((gap, index) => {
+    if (typeof gap !== 'string') return gap;
+
+    const gapType = mapLegacyGapStringToType(gap);
+    return {
+      gapId: `gap_${workspaceId}_${gapType}_${index + 1}`,
+      workspaceId,
+      gapType,
+      severity: inferGapSeverity(gapType),
+      description: gap,
+      affectedArea: gapType,
+      relatedSourceIds: [],
+      state: 'open',
+      blocksEstimate: gapType === 'missing_filing_path_determination',
+      blocksDraft: gapType !== 'stale_official_data',
+      blocksSubmission: true,
+    };
+  });
+}
+
+function mapLegacyGapStringToType(value: string): CoverageGap['gapType'] {
+  if (value.includes('withholding')) return 'missing_withholding_record';
+  if (value.includes('expense')) return 'missing_expense_evidence';
+  if (value.includes('deduction')) return 'missing_deduction_fact';
+  if (value.includes('comparison') || value.includes('hometax')) return 'missing_hometax_comparison';
+  if (value.includes('stale') || value.includes('refresh')) return 'stale_official_data';
+  if (value.includes('path')) return 'missing_filing_path_determination';
+  return 'missing_income_source';
+}
+
+function inferGapSeverity(gapType: CoverageGap['gapType']): CoverageGap['severity'] {
+  switch (gapType) {
+    case 'missing_filing_path_determination':
+    case 'missing_hometax_comparison':
+      return 'high';
+    case 'stale_official_data':
+      return 'medium';
+    default:
+      return 'medium';
+  }
 }
 
 function extractWorkspaceIdFromSourceId(sourceId?: string): string {
