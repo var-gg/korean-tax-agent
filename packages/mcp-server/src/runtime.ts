@@ -322,7 +322,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           submissionReadiness: workspace.submissionReadiness,
           comparisonSummaryState: workspace.comparisonSummaryState,
           freshnessState: workspace.freshnessState,
-          lastBlockingReason: workspace.lastBlockingReason,
+          lastBlockingReason: getPrimaryBlockingReason(workspace) as FilingWorkspace['lastBlockingReason'] | undefined,
           lastCollectionStatus: workspace.lastCollectionStatus,
           majorUnknowns: getRuntimeMajorUnknowns(workspace),
           updatedAt: workspace.updatedAt,
@@ -346,7 +346,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
         freshnessState: workspace.freshnessState ?? 'stale_unknown',
         majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [],
-        blockerCodes: workspace.lastBlockingReason ? [workspace.lastBlockingReason] : [],
+        blockerCodes: getRuntimeBlockerCodes(workspace),
       },
       nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
     };
@@ -357,10 +357,10 @@ export class InMemoryKoreanTaxMCPRuntime {
     const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
     const draft = this.getDraft(input.workspaceId);
     const nextAction = deriveWorkspaceNextRecommendedAction(workspace);
-    const blockers = [
-      workspace.lastBlockingReason,
-      ...(draft?.blockerCodes ?? []).filter((code) => code !== workspace.lastBlockingReason),
-    ].filter((code): code is string => Boolean(code));
+    const blockers = dedupeBlockingReasons([
+      ...getRuntimeBlockerCodes(workspace),
+      ...(draft?.blockerCodes ?? []),
+    ]);
 
     const keyPoints = [
       `workspace_status=${workspace.status}`,
@@ -936,8 +936,19 @@ function getPrimaryActiveBlocker(workspace: FilingWorkspace) {
   return (workspace.runtime?.activeBlockers ?? [])[0];
 }
 
+function dedupeBlockingReasons(reasons: Array<string | undefined>): string[] {
+  return [...new Set(reasons.filter((reason): reason is string => Boolean(reason)))];
+}
+
+function getRuntimeBlockerCodes(workspace: FilingWorkspace): string[] {
+  return dedupeBlockingReasons([
+    ...(workspace.runtime?.activeBlockers?.map((blocker) => blocker.blockingReason) ?? []),
+    workspace.lastBlockingReason,
+  ]);
+}
+
 function getPrimaryBlockingReason(workspace: FilingWorkspace): string | undefined {
-  return getPrimaryActiveBlocker(workspace)?.blockingReason ?? workspace.lastBlockingReason;
+  return getRuntimeBlockerCodes(workspace)[0];
 }
 
 function describePrimaryBlocker(workspace: FilingWorkspace): string | undefined {
@@ -1092,31 +1103,8 @@ function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): strin
 }
 
 function prioritizeBlockingReason(blockerCodes?: string[]): FilingWorkspace['lastBlockingReason'] | undefined {
-  if (!blockerCodes?.length) return undefined;
-  const priority: BlockingReason[] = [
-    'awaiting_review_decision',
-    'comparison_incomplete',
-    'official_data_refresh_required',
-    'missing_material_coverage',
-    'unsupported_filing_path',
-    'submission_not_ready',
-    'draft_not_ready',
-    'awaiting_final_approval',
-    'missing_auth',
-    'missing_consent',
-    'export_required',
-    'blocked_by_provider',
-    'ui_changed',
-    'insufficient_metadata',
-    'unsupported_source',
-    'unsupported_hometax_state',
-  ];
-
-  for (const code of priority) {
-    if (blockerCodes.includes(code)) return code;
-  }
-
-  return undefined;
+  const prioritized = dedupeBlockingReasons(blockerCodes ?? []).find(isBlockingReason);
+  return prioritized as FilingWorkspace['lastBlockingReason'] | undefined;
 }
 
 function buildComparisonReviewItems(
