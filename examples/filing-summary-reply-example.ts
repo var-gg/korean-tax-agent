@@ -42,3 +42,11 @@ console.log('\n--- Discord/operator reply ---\n');
 console.log(discordReply.message);
 console.log('\n--- Generic chat reply ---\n');
 console.log(genericReply.message);
+console.log('\n--- Canonical runtime snapshot ---\n');
+console.log({
+  blockerCodes: genericReply.response.data.runtimeSnapshot?.blockerCodes ?? [],
+  activeBlockers: genericReply.response.data.runtimeSnapshot?.activeBlockers ?? [],
+  submissionComparison: genericReply.response.data.runtimeSnapshot?.submissionComparison,
+});
+console.log('\n--- Canonical readiness state ---\n');
+console.log(genericReply.response.readinessState ?? null);

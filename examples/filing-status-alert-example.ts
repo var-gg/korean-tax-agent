@@ -39,6 +39,7 @@ const routing = routeFilingAlert(decision);
 
 console.log('\n--- Before snapshot ---\n');
 console.log(beforeSnapshot.operatorUpdate);
+console.log({ blockerCodes: beforeSnapshot.blockers, activeBlockers: beforeSnapshot.activeBlockers });
 console.log('\n--- Alert decision ---\n');
 console.log(`reason=${decision.reason} severity=${decision.severity}`);
 console.log('\n--- Routing ---\n');
@@ -52,6 +53,7 @@ function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): Filing
     ...previous,
     status: 'ready_for_hometax_assist',
     blockers: [],
+    activeBlockers: [],
     nextRecommendedAction: 'tax.filing.prepare_hometax',
     operatorUpdate: [
       '✅ READY FOR HOMETAX ASSIST',

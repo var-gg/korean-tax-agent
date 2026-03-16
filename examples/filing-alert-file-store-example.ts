@@ -90,6 +90,7 @@ function simulateReadyForAssistTransition(previous: FilingAlertSnapshot): Filing
     ...previous,
     status: 'ready_for_hometax_assist',
     blockers: [],
+    activeBlockers: [],
     nextRecommendedAction: 'tax.filing.prepare_hometax',
     operatorUpdate: [
       '✅ READY FOR HOMETAX ASSIST',
