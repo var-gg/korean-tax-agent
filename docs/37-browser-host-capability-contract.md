@@ -135,8 +135,8 @@ These are useful but should remain optional until a host proves them stable:
   - controlled browser actions such as click/type/select with audit-friendly wrapping
 - `navigate`
   - explicit post-open navigation or redirect-following control
-- `resolveTarget`
-  - attach to an existing browser tab/window based on host-specific lookup rules
+- `targetResolution`
+  - re-resolve an existing browser tab/window from stale bindings using inspectable evidence such as same-session, URL-flow, or active-target matches
 
 Why these stay out of the minimum contract:
 

@@ -162,9 +162,14 @@ export class OpenClawBrowserControlServerClient {
       title,
       attached: true,
       available: true,
-      inspectionSource: 'snapshot',
-      snapshotText: text ?? undefined,
-      snapshotTakenAt: new Date().toISOString(),
+      inspection: {
+        source: 'snapshot',
+        title: title ?? undefined,
+        url: url ?? undefined,
+        normalizedUrl: url ?? undefined,
+        textSnippet: text ?? undefined,
+        capturedAt: new Date().toISOString(),
+      },
     } satisfies OpenClawBrowserToolClientTarget;
   }
 

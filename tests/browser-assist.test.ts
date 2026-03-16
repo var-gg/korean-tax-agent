@@ -745,7 +745,7 @@ if (input.operation === 'listTargets') {
               return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', attached: true, available: true };
             },
             async snapshotTarget(input) {
-              return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', title: 'Snapshot Ready', snapshotText: '납세 신고서 제출 화면', snapshotTakenAt: '2026-03-16T00:00:05.000Z', attached: true, available: true, inspectionSource: 'snapshot' };
+              return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', title: 'Snapshot Ready', attached: true, available: true, inspection: { source: 'snapshot', title: 'Snapshot Ready', url: 'https://hometax.go.kr/openclaw/snapshot/ready', normalizedUrl: 'https://hometax.go.kr/openclaw/snapshot/ready', textSnippet: '납세 신고서 제출 화면', capturedAt: '2026-03-16T00:00:05.000Z' } };
             },
             async handoffCheckpoint(input) {
               return { targetId: input.targetId, sessionId: input.sessionId, url: input.targetUrl, attached: true, available: true };
@@ -765,9 +765,9 @@ if (input.operation === 'listTargets') {
       requestedBy: 'openclaw-runtime-test',
     });
     const status = await service.getHomeTaxAssistStatus(started.session.id);
-    expect(status.session.runtimeState.currentTargetTitle).toBe('Snapshot Ready');
-    expect(status.session.runtimeState.inspectionSource).toBe('snapshot');
-    expect(status.session.runtimeState.snapshotText).toContain('납세 신고서 제출');
+    expect(status.session.runtimeState.inspection?.title).toBe('Snapshot Ready');
+    expect(status.session.runtimeState.inspection?.source).toBe('snapshot');
+    expect(status.session.runtimeState.inspection?.textSnippet).toContain('납세 신고서 제출');
   });
 
   it('surfaces unsupported OpenClaw runtime inspection explicitly', async () => {

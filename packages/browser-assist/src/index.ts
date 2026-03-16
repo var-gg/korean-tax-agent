@@ -42,16 +42,62 @@ export interface BrowserAssistEvent {
   checkpointId?: string;
 }
 
+export interface BrowserHostInspectionMetadata {
+  source: 'target' | 'snapshot' | 'runtime';
+  title?: string;
+  url?: string;
+  normalizedUrl?: string;
+  textSnippet?: string;
+  capturedAt?: string;
+}
+
+export type BrowserHostTargetResolutionReason =
+  | 'boundTarget'
+  | 'sameSession'
+  | 'urlFlow'
+  | 'activeTarget';
+
+export interface BrowserHostTargetResolutionEvidence {
+  kind: BrowserHostTargetResolutionReason;
+  detail: string;
+  sessionId?: string;
+  targetId?: string;
+  url?: string;
+  matchesBoundTarget?: boolean;
+  matchesSession?: boolean;
+  matchesUrlFlow?: boolean;
+  active?: boolean;
+}
+
+export interface BrowserHostResolvedTarget<TTarget = unknown> {
+  outcome: 'resolved';
+  target: TTarget;
+  evidences: BrowserHostTargetResolutionEvidence[];
+}
+
+export interface BrowserHostMissingTargetResolution {
+  outcome: 'missing';
+  evidences: BrowserHostTargetResolutionEvidence[];
+}
+
+export interface BrowserHostAmbiguousTargetResolution<TTarget = unknown> {
+  outcome: 'ambiguous';
+  candidates: TTarget[];
+  evidences: BrowserHostTargetResolutionEvidence[];
+}
+
+export type BrowserHostTargetResolutionResult<TTarget = unknown> =
+  | BrowserHostResolvedTarget<TTarget>
+  | BrowserHostMissingTargetResolution
+  | BrowserHostAmbiguousTargetResolution<TTarget>;
+
 export interface BrowserAssistRuntimeState {
   sessionId: string;
   transport: string;
   runtimeTargetId?: string;
   currentTargetUrl: string;
   lastOpenedUrl: string;
-  currentTargetTitle?: string;
-  inspectionSource?: 'target' | 'snapshot';
-  snapshotText?: string;
-  snapshotTakenAt?: string;
+  inspection?: BrowserHostInspectionMetadata;
   activeCheckpointId: string | null;
   updatedAt: string;
 }
@@ -181,6 +227,7 @@ export interface BrowserHostCapabilities {
   activeTarget: boolean | null;
   runtimeInspection: boolean;
   snapshotInspection: boolean;
+  targetResolution: boolean;
   checkpointHandoff: boolean;
 }
 
@@ -565,10 +612,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
       targetUrl: clientReceipt.targetUrl ?? request.target.entryUrl,
       currentTargetUrl: clientReceipt.currentTargetUrl ?? request.target.entryUrl,
       lastOpenedUrl: clientReceipt.lastOpenedUrl ?? request.target.entryUrl,
-      currentTargetTitle: clientReceipt.currentTargetTitle,
-      inspectionSource: clientReceipt.inspectionSource,
-      snapshotText: clientReceipt.snapshotText,
-      snapshotTakenAt: clientReceipt.snapshotTakenAt,
+      inspection: clientReceipt.inspection,
       activeCheckpointId: clientReceipt.activeCheckpointId ?? request.activeCheckpoint.id,
     });
 
@@ -591,10 +635,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
         runtimeTargetId: clientState?.runtimeTargetId ?? previousState?.runtimeTargetId,
         currentTargetUrl: clientState?.currentTargetUrl ?? request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
         lastOpenedUrl: clientState?.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? request.target.entryUrl,
-        currentTargetTitle: clientState?.currentTargetTitle ?? previousState?.currentTargetTitle,
-        inspectionSource: clientState?.inspectionSource ?? previousState?.inspectionSource,
-        snapshotText: clientState?.snapshotText ?? previousState?.snapshotText,
-        snapshotTakenAt: clientState?.snapshotTakenAt ?? previousState?.snapshotTakenAt,
+        inspection: clientState?.inspection ?? previousState?.inspection,
         activeCheckpointId: clientState?.activeCheckpointId ?? (request.nextCheckpoint ? request.nextCheckpoint.id : null),
         updatedAt: clientState?.updatedAt ?? request.handedOffAt ?? this.now(),
       });
@@ -609,10 +650,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
       runtimeTargetId: previousState?.runtimeTargetId,
       currentTargetUrl: request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
       lastOpenedUrl: previousState?.lastOpenedUrl ?? request.target.entryUrl,
-      currentTargetTitle: previousState?.currentTargetTitle,
-      inspectionSource: previousState?.inspectionSource,
-      snapshotText: previousState?.snapshotText,
-      snapshotTakenAt: previousState?.snapshotTakenAt,
+      inspection: previousState?.inspection,
       activeCheckpointId: request.nextCheckpoint ? request.nextCheckpoint.id : null,
       updatedAt: request.handedOffAt ?? this.now(),
     });
@@ -638,10 +676,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
           runtimeTargetId: clientState.runtimeTargetId ?? previousState?.runtimeTargetId,
           currentTargetUrl: clientState.currentTargetUrl ?? previousState?.currentTargetUrl ?? input.target.entryUrl,
           lastOpenedUrl: clientState.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? input.target.entryUrl,
-          currentTargetTitle: clientState.currentTargetTitle ?? previousState?.currentTargetTitle,
-          inspectionSource: clientState.inspectionSource ?? previousState?.inspectionSource,
-          snapshotText: clientState.snapshotText ?? previousState?.snapshotText,
-          snapshotTakenAt: clientState.snapshotTakenAt ?? previousState?.snapshotTakenAt,
+          inspection: clientState.inspection ?? previousState?.inspection,
           activeCheckpointId: clientState.activeCheckpointId ?? previousState?.activeCheckpointId ?? null,
           updatedAt: clientState.updatedAt ?? previousState?.updatedAt ?? this.now(),
         });
@@ -984,10 +1019,7 @@ function normalizeRuntimeReceipt(
     targetUrl,
     currentTargetUrl: receipt?.currentTargetUrl || context.target.entryUrl,
     lastOpenedUrl: receipt?.lastOpenedUrl || targetUrl,
-    currentTargetTitle: receipt?.currentTargetTitle,
-    inspectionSource: receipt?.inspectionSource,
-    snapshotText: receipt?.snapshotText,
-    snapshotTakenAt: receipt?.snapshotTakenAt,
+    inspection: receipt?.inspection,
     activeCheckpointId: receipt?.activeCheckpointId || context.activeCheckpoint.id,
   });
 }
@@ -1003,10 +1035,7 @@ function normalizeRuntimeState(
     runtimeTargetId: runtimeState?.runtimeTargetId,
     currentTargetUrl: runtimeState?.currentTargetUrl || context.session.target.entryUrl,
     lastOpenedUrl: runtimeState?.lastOpenedUrl || runtimeState?.currentTargetUrl || context.session.target.entryUrl,
-    currentTargetTitle: runtimeState?.currentTargetTitle,
-    inspectionSource: runtimeState?.inspectionSource,
-    snapshotText: runtimeState?.snapshotText,
-    snapshotTakenAt: runtimeState?.snapshotTakenAt,
+    inspection: runtimeState?.inspection,
     activeCheckpointId: activeCheckpoint ? activeCheckpoint.id : null,
     updatedAt: runtimeState?.updatedAt || context.handedOffAt || context.session.updatedAt,
   });
@@ -1021,10 +1050,7 @@ function createRuntimeReceipt(input: BrowserAssistOpenReceipt): BrowserAssistOpe
     runtimeTargetId: input.runtimeTargetId,
     currentTargetUrl: input.currentTargetUrl,
     lastOpenedUrl: input.lastOpenedUrl,
-    currentTargetTitle: input.currentTargetTitle,
-    inspectionSource: input.inspectionSource,
-    snapshotText: input.snapshotText,
-    snapshotTakenAt: input.snapshotTakenAt,
+    inspection: input.inspection,
     activeCheckpointId: input.activeCheckpointId,
     updatedAt: input.updatedAt,
   };
@@ -1037,10 +1063,7 @@ function createRuntimeState(input: BrowserAssistRuntimeState): BrowserAssistRunt
     runtimeTargetId: input.runtimeTargetId,
     currentTargetUrl: input.currentTargetUrl,
     lastOpenedUrl: input.lastOpenedUrl,
-    currentTargetTitle: input.currentTargetTitle,
-    inspectionSource: input.inspectionSource,
-    snapshotText: input.snapshotText,
-    snapshotTakenAt: input.snapshotTakenAt,
+    inspection: input.inspection,
     activeCheckpointId: input.activeCheckpointId ?? null,
     updatedAt: input.updatedAt,
   };
@@ -1052,6 +1075,7 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     activeTarget: null,
     runtimeInspection: false,
     snapshotInspection: false,
+    targetResolution: false,
     checkpointHandoff: false,
     ...cloneValue(overrides),
   };
@@ -1063,6 +1087,7 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     activeTarget: input?.activeTarget ?? null,
     runtimeInspection: input?.runtimeInspection ?? false,
     snapshotInspection: input?.snapshotInspection ?? false,
+    targetResolution: input?.targetResolution ?? false,
     checkpointHandoff: input?.checkpointHandoff ?? false,
   };
 }

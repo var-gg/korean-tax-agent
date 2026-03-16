@@ -88,7 +88,8 @@ Thin real bridge/runtime path for T6.
 - `OpenClawBrowserRuntimeCommandClient` already spoke the T5 stdin/stdout command protocol seam.
 - `scripts/openclaw-browser-runtime.ts` is the concrete adapter entrypoint that reads that protocol and calls a live OpenClaw browser control server client.
 - `OpenClawBrowserControlServerClient` currently maps the stable slice onto OpenClaw browser server actions: `status`, `tabs`, `open`, and narrow `snapshot` reads.
-- `getRuntimeState()` and `handoffCheckpoint()` can now enrich runtime state with snapshot-backed inspection data when the transport advertises that capability.
+- `getRuntimeState()` and `handoffCheckpoint()` can now enrich runtime state with normalized inspection metadata (`inspection.source/title/url/normalizedUrl/textSnippet/capturedAt`) when the transport advertises inspection support.
+- Reconnect and rebind now flow through a generic evidence-based target-resolution contract instead of OpenClaw-only heuristics; OpenClaw is just the first adapter implementing it.
 - `handoffCheckpoint()` remains state-preserving: it re-resolves/re-binds the bound target instead of inventing DOM automation.
 - Live use is environment-dependent: it requires `OPENCLAW_BROWSER_SERVER_URL` and usually a relay-attached Chrome target/profile if you want attach semantics.
 

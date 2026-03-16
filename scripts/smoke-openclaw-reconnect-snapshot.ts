@@ -59,9 +59,14 @@ async function main() {
               sessionId: 'session-reconnect',
               url: 'https://hometax.go.kr/reconnect/ready',
               title: 'HomeTax ready',
-              snapshotText: '신고서 제출 화면',
-              snapshotTakenAt: '2026-03-16T00:00:05.000Z',
-              inspectionSource: 'snapshot',
+              inspection: {
+                source: 'snapshot',
+                title: 'HomeTax ready',
+                url: 'https://hometax.go.kr/reconnect/ready',
+                normalizedUrl: 'https://hometax.go.kr/reconnect/ready',
+                textSnippet: '신고서 제출 화면',
+                capturedAt: '2026-03-16T00:00:05.000Z',
+              },
               attached: true,
               available: true,
             };
@@ -98,16 +103,16 @@ async function main() {
 
   assert.equal(started.session.runtimeState.runtimeTargetId, 'openclaw-tab:session-reconnect:2');
   assert.equal(status.session.runtimeState.runtimeTargetId, 'openclaw-tab:session-reconnect:2');
-  assert.equal(status.session.runtimeState.currentTargetTitle, 'HomeTax ready');
-  assert.equal(status.session.runtimeState.inspectionSource, 'snapshot');
-  assert.equal(status.session.runtimeState.snapshotText, '신고서 제출 화면');
+  assert.equal(status.session.runtimeState.inspection?.title, 'HomeTax ready');
+  assert.equal(status.session.runtimeState.inspection?.source, 'snapshot');
+  assert.equal(status.session.runtimeState.inspection?.textSnippet, '신고서 제출 화면');
 
   console.log(JSON.stringify({
     ok: true,
     sessionId: status.session.id,
     reboundTargetId: status.session.runtimeState.runtimeTargetId,
-    title: status.session.runtimeState.currentTargetTitle,
-    inspectionSource: status.session.runtimeState.inspectionSource,
+    title: status.session.runtimeState.inspection?.title,
+    inspectionSource: status.session.runtimeState.inspection?.source,
   }, null, 2));
 }
 
