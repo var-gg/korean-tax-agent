@@ -58,8 +58,8 @@
 - mismatch 해결 결과를 draft에 반영
 - HomeTax 준비 및 browser assist handoff
 
-최소 real-browser bridge는 `SystemBrowserRuntimeAdapter`로 제공되고, 그 위에 host-agnostic browser-host runtime seam과 executor-backed 테스트 경로가 추가되었습니다.
-OpenClaw는 이 generic seam 위에 올라갈 첫 번째 concrete host adapter 후보로 남겨두고, DOM 자동화나 HomeTax field-level interaction은 아직 범위 밖입니다.
+최소 real-browser bridge는 `SystemBrowserRuntimeAdapter`로 제공되고, 그 위에 host-agnostic browser-host runtime seam과 첫 concrete `OpenClawBrowserHostExecutor` adapter가 추가되었습니다.
+현재 범위는 stable한 open/status/checkpoint handoff까지만이며, DOM 자동화나 HomeTax field-level interaction은 아직 범위 밖입니다.
 
 ## 시작 경로
 

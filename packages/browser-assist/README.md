@@ -60,9 +60,25 @@ Adapter for a host-backed browser runtime boundary.
 Concrete in-repo stub executor for the generic browser-host seam.
 
 - Keeps per-session runtime state keyed by session id.
-- Records executor calls for tests, smoke workflows, and examples.
-- Provides the minimum transport boundary until a real host/browser-tool bridge is attached.
-- Can emulate the current OpenClaw-shaped path by passing OpenClaw-specific transport strings and target prefixes.
+- Records executor calls for tests, smoke workflows, and generic examples.
+- Provides the minimum transport boundary for host-agnostic runtime tests.
+
+### `OpenClawBrowserHostExecutor`
+
+First concrete host adapter implementation behind the generic browser-host seam.
+
+- Encapsulates OpenClaw-specific open/attach/inspect behavior without changing the core contract.
+- Implements the minimum stable surface for `openTarget()`, `getRuntimeState()`, and `handoffCheckpoint()`.
+- Surfaces explicit failure codes for relay unavailability, missing/unavailable targets, session mismatch, and unsupported runtime inspection.
+- Works with `InMemoryOpenClawBrowserRelay` for tests, smoke paths, and examples while keeping DOM automation out of scope.
+
+### `InMemoryOpenClawBrowserRelay`
+
+In-repo relay stub for the OpenClaw executor path.
+
+- Simulates OpenClaw `open`, `attach`, and `getTarget` behavior.
+- Lets tests/examples update or drop target state to exercise redirects and failure modes.
+- Keeps OpenClaw-specific behavior isolated to the adapter layer.
 
 ## Example
 
@@ -94,12 +110,17 @@ console.log(started.session.runtimeState);
 import {
   BrowserHostRuntimeAdapter,
   InMemoryBrowserAssistSessionStore,
-  InMemoryBrowserHostExecutor,
+  InMemoryOpenClawBrowserRelay,
+  OpenClawBrowserHostExecutor,
   createBrowserAssistService,
 } from '@korean-tax-agent/browser-assist';
 
-const executor = new InMemoryBrowserHostExecutor({
-  runtimeTargetPrefix: 'openclaw-tab',
+const relay = new InMemoryOpenClawBrowserRelay({
+  targetPrefix: 'openclaw-tab',
+});
+
+const executor = new OpenClawBrowserHostExecutor({
+  relay,
   transport: 'openclaw-browser-tool',
 });
 
@@ -117,9 +138,10 @@ See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
 
 ## Future wiring points
 
-- `BrowserHostExecutor.openTarget()` is the minimum host seam to map a browser-assist session into a real host/browser open or attach call.
-- `BrowserHostExecutor.getRuntimeState()` is the host seam to read tab or session state back into `getHomeTaxAssistStatus()`.
-- `BrowserHostExecutor.handoffCheckpoint()` is the host seam to carry consent-checkpoint context across login/page-ready transitions.
+- `OpenClawBrowserHostExecutor` is the first concrete host adapter wired into the generic `BrowserHostExecutor` seam.
+- `BrowserHostExecutor.openTarget()` remains the minimum host seam to map a browser-assist session into a real host/browser open or attach call.
+- `BrowserHostExecutor.getRuntimeState()` remains the host seam to read tab or session state back into `getHomeTaxAssistStatus()`.
+- `BrowserHostExecutor.handoffCheckpoint()` remains the host seam to carry consent-checkpoint context across login/page-ready transitions.
 - `packages/mcp-server/src/index.ts` now includes a `StubBrowserHostExecutor` for the future host package boundary.
 - `../../docs/37-browser-host-capability-contract.md` describes the contract and responsibility split in more detail.
 
@@ -128,7 +150,8 @@ See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
 - Session state carries explicit checkpoints because HomeTax login and final approval must remain visible user actions.
 - The runtime adapter shape stays stable while the transport is split into a browser-assist client layer and a host executor seam.
 - Remaining gaps:
-  - no actual OpenClaw host adapter yet; the in-repo executor is still an in-memory stub
-  - no real browser tab attachment or current-page introspection
+  - OpenClaw coverage is intentionally limited to open/status/handoff state, not DOM automation
+  - the in-repo `InMemoryOpenClawBrowserRelay` is only a relay stub for tests/examples
+  - real browser tab attachment and current-page introspection still depend on a live OpenClaw relay implementation
   - no DOM automation or HomeTax field entry
   - persistence is still only in-memory until another store is provided

@@ -59,7 +59,7 @@ Implemented prototype coverage currently includes:
 - HomeTax preparation and browser-assist handoff,
 - minimum browser-assist session lifecycle and real-browser open bridge.
 
-A minimum real-browser bridge is included through `SystemBrowserRuntimeAdapter`. The repo now also has a generic browser-host runtime seam with an in-repo executor-backed path for tests, examples, and future host integration. OpenClaw remains the first planned concrete host adapter, while full browser automation and HomeTax field-level interaction are still pending.
+A minimum real-browser bridge is included through `SystemBrowserRuntimeAdapter`. The repo now also has a generic browser-host runtime seam plus a first concrete `OpenClawBrowserHostExecutor` adapter for the stable open/status/checkpoint-handoff slice. Full browser automation and HomeTax field-level interaction are still pending.
 ## Start here
 
 ### English reading path

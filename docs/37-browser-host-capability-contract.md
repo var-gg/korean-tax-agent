@@ -29,6 +29,11 @@ The generic core names are:
 - `BrowserHostRuntimeAdapter`
 - `ExecutorBackedBrowserHostClient`
 
+The first concrete host implementation now landed as:
+
+- `OpenClawBrowserHostExecutor`
+- backed by an adapter-local `OpenClawBrowserRelay`
+
 The adapter accepts either a client or an executor. The executor is the host/package seam. The client is the browser-assist-side wrapper that can call into that seam.
 
 ```ts
@@ -218,5 +223,10 @@ The safest first adapter slice is:
 2. map OpenClaw tab snapshot/state reads into `getRuntimeState()`
 3. keep `handoffCheckpoint()` state-oriented first, without DOM mutation
 4. defer `snapshot`, `act`, `navigate`, and `resolveTarget` expansion until the host behavior is stable
+
+Current implementation note:
+- the repo now includes `OpenClawBrowserHostExecutor` for exactly this slice,
+- `InMemoryOpenClawBrowserRelay` exists only for tests/examples/smoke coverage,
+- no DOM mutation or field-level automation is part of this tranche.
 
 That keeps the product direction host-agnostic while still letting OpenClaw be the first real implementation.

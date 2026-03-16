@@ -4,6 +4,8 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+export * from './openclaw.js';
+
 export type BrowserAssistFlowId = 'hometax-filing';
 export type BrowserAssistCheckpointCode = 'user-authentication' | 'target-page-review';
 export type BrowserAssistCheckpointStatus = 'pending' | 'completed';

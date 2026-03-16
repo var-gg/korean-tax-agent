@@ -4,6 +4,9 @@ import {
   BrowserHostRuntimeAdapter,
   InMemoryBrowserAssistSessionStore,
   InMemoryBrowserHostExecutor,
+  InMemoryOpenClawBrowserRelay,
+  OpenClawBrowserHostError,
+  OpenClawBrowserHostExecutor,
   RecordingBrowserRuntimeAdapter,
   SystemBrowserRuntimeAdapter,
   createBrowserAssistService,
@@ -282,5 +285,202 @@ describe('browser assist', () => {
       'getRuntimeState',
       'handoffCheckpoint',
     ]);
+  });
+
+  it('supports an OpenClaw executor behind the generic browser-host runtime adapter', async () => {
+    const relay = new InMemoryOpenClawBrowserRelay({
+      now: sequence([
+        '2026-03-16T06:00:00.250Z',
+        '2026-03-16T06:00:01.250Z',
+        '2026-03-16T06:00:02.250Z',
+      ]),
+      targetPrefix: 'openclaw-tab',
+    });
+    const executor = new OpenClawBrowserHostExecutor({
+      relay,
+      now: sequence([
+        '2026-03-16T06:00:00.500Z',
+        '2026-03-16T06:00:01.500Z',
+        '2026-03-16T06:00:02.500Z',
+      ]),
+      transport: 'openclaw-browser-tool',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({ executor });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      now: sequence(['2026-03-16T06:00:00.000Z', '2026-03-16T06:00:01.000Z']),
+      createId: sequence(['session-openclaw', 'checkpoint-auth-openclaw', 'checkpoint-review-openclaw']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    const runtimeTargetId = started.session.runtimeState.runtimeTargetId as string;
+    relay.setTargetState(runtimeTargetId, {
+      url: 'https://hometax.go.kr/openclaw/ready',
+    });
+
+    const current = await service.getHomeTaxAssistStatus(started.session.id);
+    const afterAuth = await service.resumeHomeTaxAssist({
+      sessionId: started.session.id,
+      checkpointId: 'checkpoint-auth-openclaw',
+    });
+
+    expect(started.session.openReceipt.transport).toBe('openclaw-browser-tool');
+    expect(started.session.openReceipt.runtimeTargetId).toBe('openclaw-tab:session-openclaw');
+    expect(current.session.runtimeState.currentTargetUrl).toBe('https://hometax.go.kr/openclaw/ready');
+    expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw');
+    expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-openclaw');
+    expect(executor.executions.map((execution) => execution.method)).toEqual([
+      'openTarget',
+      'getRuntimeState',
+      'handoffCheckpoint',
+    ]);
+    expect(relay.operations.map((operation) => operation.method)).toEqual([
+      'attach',
+      'open',
+      'getTarget',
+      'getTarget',
+    ]);
+  });
+
+  it('surfaces relay unavailability during OpenClaw openTarget', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        relay: {
+          async open() {
+            throw new Error('relay offline');
+          },
+        },
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-relay-error', 'checkpoint-auth-openclaw-relay-error', 'checkpoint-review-openclaw-relay-error']),
+    });
+
+    await expect(service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/error',
+      requestedBy: 'openclaw-runtime-test',
+    })).rejects.toMatchObject<Partial<OpenClawBrowserHostError>>({
+      code: 'OPENCLAW_RELAY_UNAVAILABLE',
+      operation: 'openTarget',
+    });
+  });
+
+  it('surfaces unavailable OpenClaw targets during checkpoint handoff', async () => {
+    const relay = new InMemoryOpenClawBrowserRelay({
+      targetPrefix: 'openclaw-tab',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({ relay }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-unavailable', 'checkpoint-auth-openclaw-unavailable', 'checkpoint-review-openclaw-unavailable']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/unavailable',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    relay.setTargetState(started.session.runtimeState.runtimeTargetId as string, {
+      attached: false,
+    });
+
+    await expect(service.resumeHomeTaxAssist({
+      sessionId: started.session.id,
+      checkpointId: 'checkpoint-auth-openclaw-unavailable',
+    })).rejects.toMatchObject<Partial<OpenClawBrowserHostError>>({
+      code: 'OPENCLAW_TARGET_UNAVAILABLE',
+      operation: 'handoffCheckpoint',
+    });
+  });
+
+  it('surfaces missing OpenClaw targets during runtime state refresh', async () => {
+    const relay = new InMemoryOpenClawBrowserRelay({
+      targetPrefix: 'openclaw-tab',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({ relay }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-missing', 'checkpoint-auth-openclaw-missing', 'checkpoint-review-openclaw-missing']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/missing',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    relay.dropTarget(started.session.runtimeState.runtimeTargetId as string);
+
+    await expect(service.getHomeTaxAssistStatus(started.session.id)).rejects.toMatchObject<Partial<OpenClawBrowserHostError>>({
+      code: 'OPENCLAW_TARGET_NOT_FOUND',
+      operation: 'getRuntimeState',
+    });
+  });
+
+  it('surfaces OpenClaw session mismatches during runtime state refresh', async () => {
+    const relay = new InMemoryOpenClawBrowserRelay({
+      targetPrefix: 'openclaw-tab',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({ relay }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-mismatch', 'checkpoint-auth-openclaw-mismatch', 'checkpoint-review-openclaw-mismatch']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/mismatch',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    relay.setTargetState(started.session.runtimeState.runtimeTargetId as string, {
+      sessionId: 'other-session',
+    });
+
+    await expect(service.getHomeTaxAssistStatus(started.session.id)).rejects.toMatchObject<Partial<OpenClawBrowserHostError>>({
+      code: 'OPENCLAW_SESSION_MISMATCH',
+      operation: 'getRuntimeState',
+    });
+  });
+
+  it('surfaces unsupported OpenClaw runtime inspection explicitly', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        relay: {
+          async open(input) {
+            return {
+              targetId: `openclaw-tab:${input.sessionId}`,
+              sessionId: input.sessionId,
+              url: input.url,
+            };
+          },
+        },
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-unsupported', 'checkpoint-auth-openclaw-unsupported', 'checkpoint-review-openclaw-unsupported']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/unsupported',
+      requestedBy: 'openclaw-runtime-test',
+    });
+
+    await expect(service.getHomeTaxAssistStatus(started.session.id)).rejects.toMatchObject<Partial<OpenClawBrowserHostError>>({
+      code: 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED',
+      operation: 'getRuntimeState',
+    });
   });
 });

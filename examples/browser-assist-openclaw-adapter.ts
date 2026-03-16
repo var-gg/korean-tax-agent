@@ -1,14 +1,18 @@
 import {
   BrowserHostRuntimeAdapter,
   InMemoryBrowserAssistSessionStore,
-  InMemoryBrowserHostExecutor,
+  InMemoryOpenClawBrowserRelay,
+  OpenClawBrowserHostExecutor,
   createBrowserAssistService,
 } from '../packages/browser-assist/src/index.js';
 
 async function main() {
-  const executor = new InMemoryBrowserHostExecutor({
+  const relay = new InMemoryOpenClawBrowserRelay({
+    targetPrefix: 'openclaw-tab',
+  });
+  const executor = new OpenClawBrowserHostExecutor({
+    relay,
     transport: 'openclaw-browser-tool',
-    runtimeTargetPrefix: 'openclaw-tab',
   });
   const runtime = new BrowserHostRuntimeAdapter({ executor });
 
@@ -20,6 +24,9 @@ async function main() {
   const started = await service.startHomeTaxAssist({
     targetUrl: 'https://hometax.go.kr/openclaw-smoke',
     requestedBy: 'openclaw-example',
+  });
+  relay.setTargetState(started.session.runtimeState.runtimeTargetId as string, {
+    url: 'https://hometax.go.kr/openclaw-smoke/ready',
   });
   const current = await service.getHomeTaxAssistStatus(started.session.id);
   const afterAuth = await service.resumeHomeTaxAssist({
@@ -35,6 +42,7 @@ async function main() {
         currentTargetUrl: current.session.runtimeState.currentTargetUrl,
         nextCheckpoint: afterAuth.activeCheckpoint?.code,
         executorMethods: executor.executions.map((execution) => execution.method),
+        relayMethods: relay.operations.map((operation) => operation.method),
       },
       null,
       2,
