@@ -46,6 +46,74 @@ Minimum real-browser bridge for today.
 
 This is intentionally shallow: it does not do DOM automation, tab inspection, or page mutation.
 
+### `OpenClawBrowserRuntimeAdapter`
+
+Initial adapter for a future OpenClaw browser-tool-backed runtime.
+
+- Delegates browser operations to an injected `OpenClawBrowserRuntimeClient`.
+- Supports `openTarget()`, `getRuntimeState()`, and `handoffCheckpoint()` today.
+- Caches per-session runtime state so the adapter is usable with a mock or partially implemented client.
+- Keeps the existing browser-assist service contract unchanged while the concrete browser transport is still undecided in-repo.
+
+## Example
+
+```ts
+import {
+  InMemoryBrowserAssistSessionStore,
+  SystemBrowserRuntimeAdapter,
+  createBrowserAssistService,
+} from '@korean-tax-agent/browser-assist';
+
+const service = createBrowserAssistService({
+  store: new InMemoryBrowserAssistSessionStore(),
+  runtime: new SystemBrowserRuntimeAdapter({
+    transport: 'system-browser',
+  }),
+});
+
+const started = await service.startHomeTaxAssist({
+  targetUrl: 'https://hometax.go.kr',
+  requestedBy: 'agent',
+});
+
+console.log(started.session.runtimeState);
+```
+
+## OpenClaw example
+
+```ts
+import {
+  InMemoryBrowserAssistSessionStore,
+  OpenClawBrowserRuntimeAdapter,
+  createBrowserAssistService,
+} from '@korean-tax-agent/browser-assist';
+
+const runtime = new OpenClawBrowserRuntimeAdapter({
+  client: {
+    async openTarget(input) {
+      return {
+        runtimeTargetId: `openclaw-tab:${input.sessionId}`,
+        currentTargetUrl: `${input.target.entryUrl}/login`,
+      };
+    },
+  },
+});
+
+const service = createBrowserAssistService({
+  store: new InMemoryBrowserAssistSessionStore(),
+  runtime,
+});
+```
+
+See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
+
+## Future wiring points
+
+- `OpenClawBrowserRuntimeClient.openTarget()` is the seam to map a browser-assist session into an OpenClaw browser open/attach call.
+- `OpenClawBrowserRuntimeClient.getRuntimeState()` is the seam to read tab or session state back into `getHomeTaxAssistStatus()`.
+- `OpenClawBrowserRuntimeClient.handoffCheckpoint()` is the seam to carry consent-checkpoint context across login/page-ready transitions.
+- When the MCP server grows a real browser runtime bridge, the client implementation can live there without changing the browser-assist start/resume/status/stop API.
+
 ## Next bridge
 
 See `docs/rfcs/04-openclaw-browser-bridge.md` for the proposed direct bridge from this package into an OpenClaw browser-controlled tab lifecycle.

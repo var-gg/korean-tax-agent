@@ -169,6 +169,24 @@ export interface SystemBrowserRuntimeAdapterOptions {
   ) => Promise<void> | void;
 }
 
+export interface OpenClawBrowserRuntimeClient {
+  openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> | Partial<BrowserAssistOpenReceipt>;
+  getRuntimeState?(input: {
+    sessionId: string;
+    target: BrowserAssistTarget;
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
+  handoffCheckpoint?(input: BrowserRuntimeCheckpointHandoffRequest & {
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
+}
+
+export interface OpenClawBrowserRuntimeAdapterOptions {
+  client: OpenClawBrowserRuntimeClient;
+  now?: () => string;
+  transport?: string;
+}
+
 export interface BrowserRuntimeOpenRecord {
   request: BrowserRuntimeOpenRequest;
   receipt: BrowserAssistOpenReceipt;
@@ -313,6 +331,108 @@ export class SystemBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter 
   async getRuntimeState(input: { sessionId: string }): Promise<BrowserAssistRuntimeState | null> {
     const state = this.stateBySessionId.get(input.sessionId);
     return state ? cloneValue(state) : null;
+  }
+}
+
+export class OpenClawBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter {
+  private readonly client: OpenClawBrowserRuntimeClient;
+  private readonly now: () => string;
+  private readonly transport: string;
+  private readonly stateBySessionId = new Map<string, BrowserAssistRuntimeState>();
+
+  constructor(options: OpenClawBrowserRuntimeAdapterOptions) {
+    if (!options?.client || typeof options.client.openTarget !== 'function') {
+      throw new TypeError('OpenClawBrowserRuntimeAdapter requires a client with openTarget().');
+    }
+
+    this.client = options.client;
+    this.now = options.now ?? (() => new Date().toISOString());
+    this.transport = options.transport ?? 'openclaw-browser-tool';
+  }
+
+  async openTarget(request: BrowserRuntimeOpenRequest): Promise<BrowserAssistOpenReceipt> {
+    const clientReceipt = await this.client.openTarget(cloneValue(request));
+    const openedAt = clientReceipt.openedAt ?? this.now();
+    const receipt = createRuntimeReceipt({
+      sessionId: request.sessionId,
+      openedAt,
+      updatedAt: clientReceipt.updatedAt ?? openedAt,
+      transport: clientReceipt.transport ?? this.transport,
+      runtimeTargetId: clientReceipt.runtimeTargetId,
+      targetUrl: clientReceipt.targetUrl ?? request.target.entryUrl,
+      currentTargetUrl: clientReceipt.currentTargetUrl ?? request.target.entryUrl,
+      lastOpenedUrl: clientReceipt.lastOpenedUrl ?? request.target.entryUrl,
+      activeCheckpointId: clientReceipt.activeCheckpointId ?? request.activeCheckpoint.id,
+    });
+
+    this.stateBySessionId.set(request.sessionId, cloneValue(receipt));
+    return cloneValue(receipt);
+  }
+
+  async handoffCheckpoint(request: BrowserRuntimeCheckpointHandoffRequest): Promise<BrowserAssistRuntimeState> {
+    const previousState = this.stateBySessionId.get(request.sessionId) ?? null;
+
+    if (typeof this.client.handoffCheckpoint === 'function') {
+      const clientState = await this.client.handoffCheckpoint({
+        ...cloneValue(request),
+        runtimeState: previousState ? cloneValue(previousState) : null,
+      });
+
+      const nextState = createRuntimeState({
+        sessionId: request.sessionId,
+        transport: clientState?.transport ?? previousState?.transport ?? this.transport,
+        runtimeTargetId: clientState?.runtimeTargetId ?? previousState?.runtimeTargetId,
+        currentTargetUrl: clientState?.currentTargetUrl ?? request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
+        lastOpenedUrl: clientState?.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? request.target.entryUrl,
+        activeCheckpointId: clientState?.activeCheckpointId ?? (request.nextCheckpoint ? request.nextCheckpoint.id : null),
+        updatedAt: clientState?.updatedAt ?? request.handedOffAt ?? this.now(),
+      });
+
+      this.stateBySessionId.set(request.sessionId, cloneValue(nextState));
+      return cloneValue(nextState);
+    }
+
+    const nextState = createRuntimeState({
+      sessionId: request.sessionId,
+      transport: previousState?.transport ?? this.transport,
+      runtimeTargetId: previousState?.runtimeTargetId,
+      currentTargetUrl: request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
+      lastOpenedUrl: previousState?.lastOpenedUrl ?? request.target.entryUrl,
+      activeCheckpointId: request.nextCheckpoint ? request.nextCheckpoint.id : null,
+      updatedAt: request.handedOffAt ?? this.now(),
+    });
+
+    this.stateBySessionId.set(request.sessionId, cloneValue(nextState));
+    return cloneValue(nextState);
+  }
+
+  async getRuntimeState(input: { sessionId: string; target: BrowserAssistTarget }): Promise<BrowserAssistRuntimeState | null> {
+    const previousState = this.stateBySessionId.get(input.sessionId) ?? null;
+
+    if (typeof this.client.getRuntimeState === 'function') {
+      const clientState = await this.client.getRuntimeState({
+        sessionId: input.sessionId,
+        target: cloneValue(input.target),
+        runtimeState: previousState ? cloneValue(previousState) : null,
+      });
+
+      if (clientState) {
+        const nextState = createRuntimeState({
+          sessionId: input.sessionId,
+          transport: clientState.transport ?? previousState?.transport ?? this.transport,
+          runtimeTargetId: clientState.runtimeTargetId ?? previousState?.runtimeTargetId,
+          currentTargetUrl: clientState.currentTargetUrl ?? previousState?.currentTargetUrl ?? input.target.entryUrl,
+          lastOpenedUrl: clientState.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? input.target.entryUrl,
+          activeCheckpointId: clientState.activeCheckpointId ?? previousState?.activeCheckpointId ?? null,
+          updatedAt: clientState.updatedAt ?? previousState?.updatedAt ?? this.now(),
+        });
+
+        this.stateBySessionId.set(input.sessionId, cloneValue(nextState));
+        return cloneValue(nextState);
+      }
+    }
+
+    return previousState ? cloneValue(previousState) : null;
   }
 }
 

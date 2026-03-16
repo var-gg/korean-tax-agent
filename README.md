@@ -95,7 +95,8 @@ The current prototype filing loop is:
 
 For runnable examples, use:
 - `npm run smoke:workflow`
-- `npx tsx examples/browser-assist-hometax.ts`
+- `npm run example:browser-assist`
+- `npm run example:openclaw-browser-assist`
 
 ## What this repo contains
 

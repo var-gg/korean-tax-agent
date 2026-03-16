@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BrowserAssistSessionError,
   InMemoryBrowserAssistSessionStore,
+  OpenClawBrowserRuntimeAdapter,
   RecordingBrowserRuntimeAdapter,
   SystemBrowserRuntimeAdapter,
   createBrowserAssistService,
@@ -145,5 +146,106 @@ describe('browser assist', () => {
 
     expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-system');
     expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-system');
+  });
+
+  it('supports an openclaw browser runtime adapter through an injected client', async () => {
+    const clientCalls: Array<{ method: string; sessionId: string; runtimeTargetId?: string | undefined }> = [];
+    const runtime = new OpenClawBrowserRuntimeAdapter({
+      now: sequence(['2026-03-16T03:00:00.500Z', '2026-03-16T03:00:01.500Z', '2026-03-16T03:00:02.500Z']),
+      client: {
+        async openTarget(input) {
+          clientCalls.push({ method: 'openTarget', sessionId: input.sessionId });
+          return {
+            runtimeTargetId: `openclaw-tab:${input.sessionId}`,
+            transport: 'openclaw-browser-tool',
+            currentTargetUrl: `${input.target.entryUrl}/login`,
+          };
+        },
+        async getRuntimeState(input) {
+          clientCalls.push({
+            method: 'getRuntimeState',
+            sessionId: input.sessionId,
+            runtimeTargetId: input.runtimeState?.runtimeTargetId,
+          });
+          return {
+            runtimeTargetId: input.runtimeState?.runtimeTargetId,
+            currentTargetUrl: `${input.target.entryUrl}/ready`,
+            lastOpenedUrl: input.runtimeState?.lastOpenedUrl ?? input.target.entryUrl,
+          };
+        },
+        async handoffCheckpoint(input) {
+          clientCalls.push({
+            method: 'handoffCheckpoint',
+            sessionId: input.sessionId,
+            runtimeTargetId: input.runtimeState?.runtimeTargetId,
+          });
+          return {
+            runtimeTargetId: input.runtimeState?.runtimeTargetId,
+            currentTargetUrl: input.targetUrl,
+            lastOpenedUrl: input.runtimeState?.lastOpenedUrl ?? input.target.entryUrl,
+            activeCheckpointId: input.nextCheckpoint ? input.nextCheckpoint.id : null,
+            updatedAt: input.handedOffAt,
+          };
+        },
+      },
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      now: sequence(['2026-03-16T03:00:00.000Z', '2026-03-16T03:00:01.000Z']),
+      createId: sequence(['session-openclaw', 'checkpoint-auth-openclaw', 'checkpoint-review-openclaw']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    expect(started.session.openReceipt.runtimeTargetId).toBe('openclaw-tab:session-openclaw');
+    expect(started.session.runtimeState.currentTargetUrl).toBe('https://hometax.go.kr/login');
+
+    const current = await service.getHomeTaxAssistStatus(started.session.id);
+    expect(current.session.runtimeState.currentTargetUrl).toBe('https://hometax.go.kr/ready');
+
+    const afterAuth = await service.resumeHomeTaxAssist({
+      sessionId: started.session.id,
+      checkpointId: 'checkpoint-auth-openclaw',
+    });
+    expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw');
+    expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-openclaw');
+    expect(clientCalls.map((call) => call.method)).toEqual(['openTarget', 'getRuntimeState', 'handoffCheckpoint']);
+  });
+
+  it('falls back to cached openclaw runtime state when the client only supports openTarget', async () => {
+    const runtime = new OpenClawBrowserRuntimeAdapter({
+      now: sequence(['2026-03-16T04:00:00.500Z', '2026-03-16T04:00:01.500Z']),
+      client: {
+        async openTarget(input) {
+          return {
+            runtimeTargetId: `openclaw-tab:${input.sessionId}`,
+            currentTargetUrl: input.target.entryUrl,
+          };
+        },
+      },
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      now: sequence(['2026-03-16T04:00:00.000Z', '2026-03-16T04:00:01.000Z']),
+      createId: sequence(['session-openclaw-fallback', 'checkpoint-auth-fallback', 'checkpoint-review-fallback']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr',
+      requestedBy: 'openclaw-runtime-fallback-test',
+    });
+    const current = await service.getHomeTaxAssistStatus(started.session.id);
+    const afterAuth = await service.resumeHomeTaxAssist({
+      sessionId: started.session.id,
+      checkpointId: 'checkpoint-auth-fallback',
+    });
+
+    expect(current.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw-fallback');
+    expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-fallback');
+    expect(afterAuth.session.runtimeState.transport).toBe('openclaw-browser-tool');
   });
 });

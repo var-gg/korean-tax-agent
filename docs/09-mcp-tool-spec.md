@@ -674,3 +674,12 @@ Practical prototype loop:
 - resolve mismatch reviews if needed
 - prepare HomeTax
 - hand off to browser assist
+
+## Browser runtime bridge
+
+The browser-assist package now exposes an `OpenClawBrowserRuntimeClient` and
+`OpenClawBrowserRuntimeAdapter` seam for future browser-tool wiring.
+
+- `openTarget()` should map a browser-assist session into the chosen OpenClaw browser open or attach call.
+- `getRuntimeState()` should map status reads to runtime-side tab or session inspection.
+- `handoffCheckpoint()` should carry checkpoint context forward after authentication and page-ready transitions.
