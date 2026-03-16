@@ -171,7 +171,18 @@ export interface SystemBrowserRuntimeAdapterOptions {
   ) => Promise<void> | void;
 }
 
+export interface BrowserHostCapabilities {
+  hostAvailable: boolean;
+  activeTarget: boolean | null;
+  runtimeInspection: boolean;
+  checkpointHandoff: boolean;
+}
+
 export interface BrowserHostRuntimeClient {
+  getCapabilities?(input: {
+    sessionId?: string;
+    runtimeState?: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserHostCapabilities>> | Partial<BrowserHostCapabilities>;
   openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> | Partial<BrowserAssistOpenReceipt>;
   getRuntimeState?(input: {
     sessionId: string;
@@ -184,6 +195,10 @@ export interface BrowserHostRuntimeClient {
 }
 
 export interface BrowserHostExecutor {
+  getCapabilities?(input: {
+    sessionId?: string;
+    runtimeState?: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserHostCapabilities>> | Partial<BrowserHostCapabilities>;
   openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> | Partial<BrowserAssistOpenReceipt>;
   getRuntimeState?(input: {
     sessionId: string;
@@ -379,6 +394,17 @@ export class ExecutorBackedBrowserHostClient implements BrowserHostRuntimeClient
     this.executor = options.executor;
   }
 
+  async getCapabilities(input: {
+    sessionId?: string;
+    runtimeState?: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserHostCapabilities>> {
+    if (typeof this.executor.getCapabilities !== 'function') {
+      return defaultBrowserHostCapabilities();
+    }
+
+    return cloneValue(await this.executor.getCapabilities(cloneValue(input)));
+  }
+
   async openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> {
     const receipt = await this.executor.openTarget(cloneValue(input));
     return cloneValue(receipt);
@@ -420,6 +446,15 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
     this.now = options.now ?? (() => new Date().toISOString());
     this.transport = options.transport ?? 'browser-host';
     this.runtimeTargetPrefix = options.runtimeTargetPrefix ?? 'browser-target';
+  }
+
+  async getCapabilities(): Promise<Partial<BrowserHostCapabilities>> {
+    return defaultBrowserHostCapabilities({
+      hostAvailable: true,
+      activeTarget: null,
+      runtimeInspection: true,
+      checkpointHandoff: true,
+    });
   }
 
   async openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> {
@@ -493,6 +528,22 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
     this.client = resolveBrowserHostRuntimeClient(options);
     this.now = options.now ?? (() => new Date().toISOString());
     this.transport = options.transport ?? 'browser-host';
+  }
+
+  async getCapabilities(input: {
+    sessionId?: string;
+    runtimeState?: BrowserAssistRuntimeState | null;
+  } = {}): Promise<BrowserHostCapabilities> {
+    if (typeof this.client.getCapabilities !== 'function') {
+      return defaultBrowserHostCapabilities({
+        hostAvailable: true,
+        activeTarget: input.runtimeState?.runtimeTargetId ? true : null,
+        runtimeInspection: typeof this.client.getRuntimeState === 'function',
+        checkpointHandoff: typeof this.client.handoffCheckpoint === 'function',
+      });
+    }
+
+    return normalizeBrowserHostCapabilities(await this.client.getCapabilities(cloneValue(input)));
   }
 
   async openTarget(request: BrowserRuntimeOpenRequest): Promise<BrowserAssistOpenReceipt> {
@@ -953,6 +1004,25 @@ function createRuntimeState(input: BrowserAssistRuntimeState): BrowserAssistRunt
     lastOpenedUrl: input.lastOpenedUrl,
     activeCheckpointId: input.activeCheckpointId ?? null,
     updatedAt: input.updatedAt,
+  };
+}
+
+function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabilities> = {}): BrowserHostCapabilities {
+  return {
+    hostAvailable: true,
+    activeTarget: null,
+    runtimeInspection: false,
+    checkpointHandoff: false,
+    ...cloneValue(overrides),
+  };
+}
+
+function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities> | null | undefined): BrowserHostCapabilities {
+  return {
+    hostAvailable: input?.hostAvailable ?? true,
+    activeTarget: input?.activeTarget ?? null,
+    runtimeInspection: input?.runtimeInspection ?? false,
+    checkpointHandoff: input?.checkpointHandoff ?? false,
   };
 }
 

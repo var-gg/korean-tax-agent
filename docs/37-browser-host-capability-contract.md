@@ -32,9 +32,10 @@ The generic core names are:
 The first concrete host implementation now landed as:
 
 - `OpenClawBrowserHostExecutor`
-- backed by an adapter-local `OpenClawBrowserRelay`
+- backed by an adapter-local transport/provider layer (`OpenClawBrowserTransport`)
+- with both `InMemoryOpenClawBrowserRelay` and `OpenClawBrowserToolTransport` implementations
 
-The adapter accepts either a client or an executor. The executor is the host/package seam. The client is the browser-assist-side wrapper that can call into that seam.
+The adapter accepts either a client or an executor. The executor is the host/package seam. The client is the browser-assist-side wrapper that can call into that seam. Capability reporting is additive: the generic boundary can expose host availability, whether a target is currently attached/open, and whether runtime inspection / checkpoint handoff are supported.
 
 ```ts
 interface BrowserHostRuntimeClient {
@@ -226,7 +227,8 @@ The safest first adapter slice is:
 
 Current implementation note:
 - the repo now includes `OpenClawBrowserHostExecutor` for exactly this slice,
-- `InMemoryOpenClawBrowserRelay` exists only for tests/examples/smoke coverage,
+- `OpenClawBrowserToolTransport` is the first live-style transport behind that executor,
+- `InMemoryOpenClawBrowserRelay` remains for tests/examples/smoke coverage,
 - no DOM mutation or field-level automation is part of this tranche.
 
 That keeps the product direction host-agnostic while still letting OpenClaw be the first real implementation.

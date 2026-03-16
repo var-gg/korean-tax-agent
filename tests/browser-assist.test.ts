@@ -7,6 +7,7 @@ import {
   InMemoryOpenClawBrowserRelay,
   OpenClawBrowserHostError,
   OpenClawBrowserHostExecutor,
+  OpenClawBrowserToolTransport,
   RecordingBrowserRuntimeAdapter,
   SystemBrowserRuntimeAdapter,
   createBrowserAssistService,
@@ -303,7 +304,7 @@ describe('browser assist', () => {
         '2026-03-16T06:00:01.500Z',
         '2026-03-16T06:00:02.500Z',
       ]),
-      transport: 'openclaw-browser-tool',
+      transportLabel: 'openclaw-browser-tool',
     });
     const runtime = new BrowserHostRuntimeAdapter({ executor });
     const service = createBrowserAssistService({
@@ -339,11 +340,74 @@ describe('browser assist', () => {
       'handoffCheckpoint',
     ]);
     expect(relay.operations.map((operation) => operation.method)).toEqual([
+      'getCapabilities',
       'attach',
       'open',
+      'getCapabilities',
       'getTarget',
+      'getCapabilities',
       'getTarget',
     ]);
+  });
+
+  it('supports a live-style OpenClaw browser-tool transport behind the executor', async () => {
+    const tabs = [
+      {
+        targetId: 'openclaw-tab:session-openclaw-live',
+        url: 'https://hometax.go.kr/openclaw/live/ready',
+        attached: true,
+        available: true,
+        sessionId: 'session-openclaw-live',
+      },
+    ];
+    const clientCalls: string[] = [];
+    const transport = new OpenClawBrowserToolTransport({
+      client: {
+        async status() {
+          clientCalls.push('status');
+          return { available: true, connected: true, attached: true };
+        },
+        async open(input) {
+          clientCalls.push(`open:${input.url}`);
+          return {
+            targetId: 'openclaw-tab:session-openclaw-live',
+            url: input.url,
+          };
+        },
+        async tabs() {
+          clientCalls.push('tabs');
+          return tabs;
+        },
+      },
+    });
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        transport,
+        transportLabel: 'openclaw-browser-tool-live',
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-live', 'checkpoint-auth-openclaw-live', 'checkpoint-review-openclaw-live']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/live',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    const status = await service.getHomeTaxAssistStatus(started.session.id);
+    const afterAuth = await service.resumeHomeTaxAssist({
+      sessionId: started.session.id,
+      checkpointId: 'checkpoint-auth-openclaw-live',
+    });
+
+    expect(started.session.openReceipt.transport).toBe('openclaw-browser-tool-live');
+    expect(status.session.runtimeState.currentTargetUrl).toBe('https://hometax.go.kr/openclaw/live/ready');
+    expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw-live');
+    expect(clientCalls.filter((call) => call === 'status')).toHaveLength(3);
+    expect(clientCalls.filter((call) => call === 'tabs')).toHaveLength(6);
+    expect(clientCalls.some((call) => call === 'open:https://hometax.go.kr/openclaw/live')).toBe(false);
   });
 
   it('surfaces relay unavailability during OpenClaw openTarget', async () => {

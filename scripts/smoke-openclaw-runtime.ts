@@ -13,7 +13,7 @@ async function main() {
   });
   const executor = new OpenClawBrowserHostExecutor({
     relay,
-    transport: 'openclaw-browser-tool',
+    transportLabel: 'openclaw-browser-tool',
   });
   const runtime = new BrowserHostRuntimeAdapter({ executor });
   const service = createBrowserAssistService({
@@ -45,9 +45,12 @@ async function main() {
     'handoffCheckpoint',
   ]);
   assert.deepEqual(relay.operations.map((operation) => operation.method), [
+    'getCapabilities',
     'attach',
     'open',
+    'getCapabilities',
     'getTarget',
+    'getCapabilities',
     'getTarget',
   ]);
 
