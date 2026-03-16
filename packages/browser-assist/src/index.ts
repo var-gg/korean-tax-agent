@@ -169,7 +169,7 @@ export interface SystemBrowserRuntimeAdapterOptions {
   ) => Promise<void> | void;
 }
 
-export interface OpenClawBrowserRuntimeClient {
+export interface BrowserHostRuntimeClient {
   openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> | Partial<BrowserAssistOpenReceipt>;
   getRuntimeState?(input: {
     sessionId: string;
@@ -181,7 +181,7 @@ export interface OpenClawBrowserRuntimeClient {
   }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
 }
 
-export interface OpenClawBrowserToolExecutor {
+export interface BrowserHostExecutor {
   openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> | Partial<BrowserAssistOpenReceipt>;
   getRuntimeState?(input: {
     sessionId: string;
@@ -193,17 +193,17 @@ export interface OpenClawBrowserToolExecutor {
   }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
 }
 
-export interface OpenClawBrowserToolRuntimeClientOptions {
-  executor: OpenClawBrowserToolExecutor;
+export interface ExecutorBackedBrowserHostClientOptions {
+  executor: BrowserHostExecutor;
 }
 
-export interface InMemoryOpenClawBrowserToolExecutorOptions {
+export interface InMemoryBrowserHostExecutorOptions {
   now?: () => string;
   transport?: string;
   runtimeTargetPrefix?: string;
 }
 
-export interface OpenClawBrowserToolExecutionRecord {
+export interface BrowserHostExecutionRecord {
   method: 'openTarget' | 'handoffCheckpoint' | 'getRuntimeState';
   input:
     | BrowserRuntimeOpenRequest
@@ -212,9 +212,9 @@ export interface OpenClawBrowserToolExecutionRecord {
   output: Partial<BrowserAssistOpenReceipt> | Partial<BrowserAssistRuntimeState> | null;
 }
 
-export interface OpenClawBrowserRuntimeAdapterOptions {
-  client?: OpenClawBrowserRuntimeClient;
-  executor?: OpenClawBrowserToolExecutor;
+export interface BrowserHostRuntimeAdapterOptions {
+  client?: BrowserHostRuntimeClient;
+  executor?: BrowserHostExecutor;
   now?: () => string;
   transport?: string;
 }
@@ -366,12 +366,12 @@ export class SystemBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter 
   }
 }
 
-export class OpenClawBrowserToolRuntimeClient implements OpenClawBrowserRuntimeClient {
-  private readonly executor: OpenClawBrowserToolExecutor;
+export class ExecutorBackedBrowserHostClient implements BrowserHostRuntimeClient {
+  private readonly executor: BrowserHostExecutor;
 
-  constructor(options: OpenClawBrowserToolRuntimeClientOptions) {
+  constructor(options: ExecutorBackedBrowserHostClientOptions) {
     if (!options?.executor || typeof options.executor.openTarget !== 'function') {
-      throw new TypeError('OpenClawBrowserToolRuntimeClient requires an executor with openTarget().');
+      throw new TypeError('ExecutorBackedBrowserHostClient requires an executor with openTarget().');
     }
 
     this.executor = options.executor;
@@ -407,17 +407,17 @@ export class OpenClawBrowserToolRuntimeClient implements OpenClawBrowserRuntimeC
   }
 }
 
-export class InMemoryOpenClawBrowserToolExecutor implements OpenClawBrowserToolExecutor {
-  readonly executions: OpenClawBrowserToolExecutionRecord[] = [];
+export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
+  readonly executions: BrowserHostExecutionRecord[] = [];
   private readonly now: () => string;
   private readonly transport: string;
   private readonly runtimeTargetPrefix: string;
   private readonly stateBySessionId = new Map<string, BrowserAssistRuntimeState>();
 
-  constructor(options: InMemoryOpenClawBrowserToolExecutorOptions = {}) {
+  constructor(options: InMemoryBrowserHostExecutorOptions = {}) {
     this.now = options.now ?? (() => new Date().toISOString());
-    this.transport = options.transport ?? 'openclaw-browser-tool';
-    this.runtimeTargetPrefix = options.runtimeTargetPrefix ?? 'openclaw-tab';
+    this.transport = options.transport ?? 'browser-host';
+    this.runtimeTargetPrefix = options.runtimeTargetPrefix ?? 'browser-target';
   }
 
   async openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> {
@@ -481,16 +481,16 @@ export class InMemoryOpenClawBrowserToolExecutor implements OpenClawBrowserToolE
   }
 }
 
-export class OpenClawBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter {
-  private readonly client: OpenClawBrowserRuntimeClient;
+export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
+  private readonly client: BrowserHostRuntimeClient;
   private readonly now: () => string;
   private readonly transport: string;
   private readonly stateBySessionId = new Map<string, BrowserAssistRuntimeState>();
 
-  constructor(options: OpenClawBrowserRuntimeAdapterOptions) {
-    this.client = resolveOpenClawBrowserRuntimeClient(options);
+  constructor(options: BrowserHostRuntimeAdapterOptions) {
+    this.client = resolveBrowserHostRuntimeClient(options);
     this.now = options.now ?? (() => new Date().toISOString());
-    this.transport = options.transport ?? 'openclaw-browser-tool';
+    this.transport = options.transport ?? 'browser-host';
   }
 
   async openTarget(request: BrowserRuntimeOpenRequest): Promise<BrowserAssistOpenReceipt> {
@@ -954,19 +954,19 @@ function createRuntimeState(input: BrowserAssistRuntimeState): BrowserAssistRunt
   };
 }
 
-function resolveOpenClawBrowserRuntimeClient(
-  options: OpenClawBrowserRuntimeAdapterOptions,
-): OpenClawBrowserRuntimeClient {
+function resolveBrowserHostRuntimeClient(
+  options: BrowserHostRuntimeAdapterOptions,
+): BrowserHostRuntimeClient {
   if (options?.client && typeof options.client.openTarget === 'function') {
     return options.client;
   }
 
   if (options?.executor && typeof options.executor.openTarget === 'function') {
-    return new OpenClawBrowserToolRuntimeClient({ executor: options.executor });
+    return new ExecutorBackedBrowserHostClient({ executor: options.executor });
   }
 
   throw new TypeError(
-    'OpenClawBrowserRuntimeAdapter requires either client.openTarget() or executor.openTarget().',
+    'BrowserHostRuntimeAdapter requires either client.openTarget() or executor.openTarget().',
   );
 }
 

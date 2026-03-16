@@ -1,7 +1,7 @@
 import type {
   BrowserAssistRuntimeState,
   BrowserAssistTarget,
-  OpenClawBrowserToolExecutor,
+  BrowserHostExecutor,
 } from '@korean-tax-agent/browser-assist';
 
 export * from './contracts.js';
@@ -9,13 +9,13 @@ export * from './tools.js';
 export * from './runtime.js';
 export * from './facade.js';
 
-export interface StubOpenClawBrowserToolExecutorOptions {
+export interface StubBrowserHostExecutorOptions {
   now?: () => string;
   transport?: string;
   runtimeTargetPrefix?: string;
 }
 
-export interface StubOpenClawBrowserToolExecutionRecord {
+export interface StubBrowserHostExecutionRecord {
   method: 'openTarget' | 'handoffCheckpoint' | 'getRuntimeState';
   sessionId: string;
   runtimeTargetId?: string;
@@ -23,17 +23,17 @@ export interface StubOpenClawBrowserToolExecutionRecord {
 
 interface StubRuntimeState extends BrowserAssistRuntimeState {}
 
-export class StubOpenClawBrowserToolExecutor implements OpenClawBrowserToolExecutor {
-  readonly executions: StubOpenClawBrowserToolExecutionRecord[] = [];
+export class StubBrowserHostExecutor implements BrowserHostExecutor {
+  readonly executions: StubBrowserHostExecutionRecord[] = [];
   private readonly now: () => string;
   private readonly transport: string;
   private readonly runtimeTargetPrefix: string;
   private readonly stateBySessionId = new Map<string, StubRuntimeState>();
 
-  constructor(options: StubOpenClawBrowserToolExecutorOptions = {}) {
+  constructor(options: StubBrowserHostExecutorOptions = {}) {
     this.now = options.now ?? (() => new Date().toISOString());
-    this.transport = options.transport ?? 'openclaw-browser-tool';
-    this.runtimeTargetPrefix = options.runtimeTargetPrefix ?? 'openclaw-tab';
+    this.transport = options.transport ?? 'browser-host';
+    this.runtimeTargetPrefix = options.runtimeTargetPrefix ?? 'browser-target';
   }
 
   async openTarget(input: {

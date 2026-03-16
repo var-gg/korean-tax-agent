@@ -59,7 +59,7 @@ Implemented prototype coverage currently includes:
 - HomeTax preparation and browser-assist handoff,
 - minimum browser-assist session lifecycle and real-browser open bridge.
 
-A minimum real-browser bridge is included through SystemBrowserRuntimeAdapter. The OpenClaw path now also has an in-repo executor-backed runtime boundary for tests, examples, and future host integration, while full browser automation and HomeTax field-level interaction are still pending.
+A minimum real-browser bridge is included through `SystemBrowserRuntimeAdapter`. The repo now also has a generic browser-host runtime seam with an in-repo executor-backed path for tests, examples, and future host integration. OpenClaw remains the first planned concrete host adapter, while full browser automation and HomeTax field-level interaction are still pending.
 ## Start here
 
 ### English reading path
@@ -96,6 +96,7 @@ The current prototype filing loop is:
 
 For runnable examples, use:
 - `npm run smoke:workflow`
+- `npm run smoke:openclaw-runtime`
 - `npm run example:browser-assist`
 - `npm run example:openclaw-browser-assist`
 
@@ -159,6 +160,7 @@ See also:
 - [docs/20-workspace-state-model.md](./docs/20-workspace-state-model.md)
 - [docs/22-core-type-gap-analysis.md](./docs/22-core-type-gap-analysis.md)
 - [docs/09-mcp-tool-spec.md](./docs/09-mcp-tool-spec.md)
+- [docs/37-browser-host-capability-contract.md](./docs/37-browser-host-capability-contract.md)
 - [docs/10-skill-design.md](./docs/10-skill-design.md)
 
 ### Risk and review

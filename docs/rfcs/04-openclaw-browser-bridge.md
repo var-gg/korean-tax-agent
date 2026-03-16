@@ -17,11 +17,17 @@ The current package already has the right minimum boundaries:
   - `lastOpenedUrl`
   - `activeCheckpointId`
 
-This means the next adapter can be added behind the runtime boundary rather than by rewriting the service contract.
+This means the next OpenClaw implementation can be added behind the runtime boundary rather than by rewriting the service contract.
 
-## Proposed adapter
+## Proposed adapter shape
 
-Add an `OpenClawBrowserRuntimeAdapter` that implements `BrowserAssistRuntimeAdapter`.
+Use the generic browser-host seam already exposed by `packages/browser-assist`:
+
+- `BrowserHostRuntimeAdapter`
+- `BrowserHostRuntimeClient`
+- `BrowserHostExecutor`
+
+Then add an OpenClaw-specific implementation behind that seam, rather than making OpenClaw the generic adapter name.
 
 ### Responsibilities
 
@@ -52,7 +58,7 @@ interface OpenClawBrowserClient {
 ```
 
 ```ts
-class OpenClawBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter {
+class OpenClawBrowserHostClient implements BrowserHostRuntimeClient {
   constructor(private readonly client: OpenClawBrowserClient) {}
 }
 ```
@@ -119,9 +125,10 @@ Optional future metadata:
 The smallest practical implementation after this RFC is:
 
 1. define an adapter-facing `OpenClawBrowserClient`
-2. add `OpenClawBrowserRuntimeAdapter`
-3. implement `openTarget()` using browser open/navigation
-4. implement `getRuntimeState()` using browser snapshot
-5. keep `handoffCheckpoint()` state-only for the first pass
+2. add an `OpenClawBrowserHostClient` or `OpenClawBrowserHostExecutor`
+3. wire that implementation into `BrowserHostRuntimeAdapter`
+4. implement `openTarget()` using browser open/navigation
+5. implement `getRuntimeState()` using browser snapshot
+6. keep `handoffCheckpoint()` state-only for the first pass
 
 That would give the project a real OpenClaw-controlled tab bridge without yet committing to fragile HomeTax DOM automation.

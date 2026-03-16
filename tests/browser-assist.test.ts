@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BrowserAssistSessionError,
+  BrowserHostRuntimeAdapter,
   InMemoryBrowserAssistSessionStore,
-  InMemoryOpenClawBrowserToolExecutor,
-  OpenClawBrowserRuntimeAdapter,
+  InMemoryBrowserHostExecutor,
   RecordingBrowserRuntimeAdapter,
   SystemBrowserRuntimeAdapter,
   createBrowserAssistService,
@@ -114,8 +114,8 @@ describe('browser assist', () => {
     const launches: Array<{ targetUrl: string; sessionId: string }> = [];
     const runtime = new SystemBrowserRuntimeAdapter({
       now: sequence(['2026-03-16T02:00:00.500Z', '2026-03-16T02:00:01.500Z']),
-      transport: 'openclaw-browser-bridge',
-      runtimeTargetPrefix: 'openclaw-tab',
+      transport: 'system-browser-bridge',
+      runtimeTargetPrefix: 'system-target',
       launcher: async (targetUrl, context) => {
         launches.push({ targetUrl, sessionId: context.sessionId });
       },
@@ -137,28 +137,28 @@ describe('browser assist', () => {
       targetUrl: 'https://hometax.go.kr/entry',
       sessionId: 'session-system',
     });
-    expect(started.session.openReceipt.transport).toBe('openclaw-browser-bridge');
-    expect(started.session.openReceipt.runtimeTargetId).toBe('openclaw-tab:session-system');
+    expect(started.session.openReceipt.transport).toBe('system-browser-bridge');
+    expect(started.session.openReceipt.runtimeTargetId).toBe('system-target:session-system');
 
     const afterAuth = await service.resumeHomeTaxAssist({
       sessionId: started.session.id,
       checkpointId: 'checkpoint-auth-system',
     });
 
-    expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-system');
+    expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('system-target:session-system');
     expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-system');
   });
 
-  it('supports an openclaw browser runtime adapter through an injected client', async () => {
+  it('supports a browser-host runtime adapter through an injected client', async () => {
     const clientCalls: Array<{ method: string; sessionId: string; runtimeTargetId?: string | undefined }> = [];
-    const runtime = new OpenClawBrowserRuntimeAdapter({
+    const runtime = new BrowserHostRuntimeAdapter({
       now: sequence(['2026-03-16T03:00:00.500Z', '2026-03-16T03:00:01.500Z', '2026-03-16T03:00:02.500Z']),
       client: {
         async openTarget(input) {
           clientCalls.push({ method: 'openTarget', sessionId: input.sessionId });
           return {
-            runtimeTargetId: `openclaw-tab:${input.sessionId}`,
-            transport: 'openclaw-browser-tool',
+            runtimeTargetId: `browser-target:${input.sessionId}`,
+            transport: 'browser-host',
             currentTargetUrl: `${input.target.entryUrl}/login`,
           };
         },
@@ -194,14 +194,14 @@ describe('browser assist', () => {
       store: new InMemoryBrowserAssistSessionStore(),
       runtime,
       now: sequence(['2026-03-16T03:00:00.000Z', '2026-03-16T03:00:01.000Z']),
-      createId: sequence(['session-openclaw', 'checkpoint-auth-openclaw', 'checkpoint-review-openclaw']),
+      createId: sequence(['session-browser-host', 'checkpoint-auth-browser-host', 'checkpoint-review-browser-host']),
     });
 
     const started = await service.startHomeTaxAssist({
       targetUrl: 'https://hometax.go.kr',
-      requestedBy: 'openclaw-runtime-test',
+      requestedBy: 'browser-host-runtime-test',
     });
-    expect(started.session.openReceipt.runtimeTargetId).toBe('openclaw-tab:session-openclaw');
+    expect(started.session.openReceipt.runtimeTargetId).toBe('browser-target:session-browser-host');
     expect(started.session.runtimeState.currentTargetUrl).toBe('https://hometax.go.kr/login');
 
     const current = await service.getHomeTaxAssistStatus(started.session.id);
@@ -209,20 +209,20 @@ describe('browser assist', () => {
 
     const afterAuth = await service.resumeHomeTaxAssist({
       sessionId: started.session.id,
-      checkpointId: 'checkpoint-auth-openclaw',
+      checkpointId: 'checkpoint-auth-browser-host',
     });
-    expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw');
-    expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-openclaw');
+    expect(afterAuth.session.runtimeState.runtimeTargetId).toBe('browser-target:session-browser-host');
+    expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-browser-host');
     expect(clientCalls.map((call) => call.method)).toEqual(['openTarget', 'getRuntimeState', 'handoffCheckpoint']);
   });
 
-  it('falls back to cached openclaw runtime state when the client only supports openTarget', async () => {
-    const runtime = new OpenClawBrowserRuntimeAdapter({
+  it('falls back to cached browser-host runtime state when the client only supports openTarget', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
       now: sequence(['2026-03-16T04:00:00.500Z', '2026-03-16T04:00:01.500Z']),
       client: {
         async openTarget(input) {
           return {
-            runtimeTargetId: `openclaw-tab:${input.sessionId}`,
+            runtimeTargetId: `browser-target:${input.sessionId}`,
             currentTargetUrl: input.target.entryUrl,
           };
         },
@@ -232,12 +232,12 @@ describe('browser assist', () => {
       store: new InMemoryBrowserAssistSessionStore(),
       runtime,
       now: sequence(['2026-03-16T04:00:00.000Z', '2026-03-16T04:00:01.000Z']),
-      createId: sequence(['session-openclaw-fallback', 'checkpoint-auth-fallback', 'checkpoint-review-fallback']),
+      createId: sequence(['session-browser-host-fallback', 'checkpoint-auth-fallback', 'checkpoint-review-fallback']),
     });
 
     const started = await service.startHomeTaxAssist({
       targetUrl: 'https://hometax.go.kr',
-      requestedBy: 'openclaw-runtime-fallback-test',
+      requestedBy: 'browser-host-runtime-fallback-test',
     });
     const current = await service.getHomeTaxAssistStatus(started.session.id);
     const afterAuth = await service.resumeHomeTaxAssist({
@@ -245,28 +245,28 @@ describe('browser assist', () => {
       checkpointId: 'checkpoint-auth-fallback',
     });
 
-    expect(current.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw-fallback');
+    expect(current.session.runtimeState.runtimeTargetId).toBe('browser-target:session-browser-host-fallback');
     expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-fallback');
-    expect(afterAuth.session.runtimeState.transport).toBe('openclaw-browser-tool');
+    expect(afterAuth.session.runtimeState.transport).toBe('browser-host');
   });
 
-  it('supports an openclaw executor-backed runtime path in-repo', async () => {
-    const executor = new InMemoryOpenClawBrowserToolExecutor({
+  it('supports an executor-backed browser-host runtime path in-repo', async () => {
+    const executor = new InMemoryBrowserHostExecutor({
       now: sequence(['2026-03-16T05:00:00.500Z', '2026-03-16T05:00:01.500Z']),
-      transport: 'openclaw-browser-tool',
-      runtimeTargetPrefix: 'openclaw-tab',
+      transport: 'browser-host',
+      runtimeTargetPrefix: 'browser-target',
     });
-    const runtime = new OpenClawBrowserRuntimeAdapter({ executor });
+    const runtime = new BrowserHostRuntimeAdapter({ executor });
     const service = createBrowserAssistService({
       store: new InMemoryBrowserAssistSessionStore(),
       runtime,
       now: sequence(['2026-03-16T05:00:00.000Z', '2026-03-16T05:00:01.000Z']),
-      createId: sequence(['session-openclaw-executor', 'checkpoint-auth-executor', 'checkpoint-review-executor']),
+      createId: sequence(['session-browser-host-executor', 'checkpoint-auth-executor', 'checkpoint-review-executor']),
     });
 
     const started = await service.startHomeTaxAssist({
-      targetUrl: 'https://hometax.go.kr/openclaw-smoke',
-      requestedBy: 'openclaw-executor-test',
+      targetUrl: 'https://hometax.go.kr/browser-host-smoke',
+      requestedBy: 'browser-host-executor-test',
     });
     const current = await service.getHomeTaxAssistStatus(started.session.id);
     const afterAuth = await service.resumeHomeTaxAssist({
@@ -274,8 +274,8 @@ describe('browser assist', () => {
       checkpointId: 'checkpoint-auth-executor',
     });
 
-    expect(started.session.openReceipt.runtimeTargetId).toBe('openclaw-tab:session-openclaw-executor');
-    expect(current.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw-executor');
+    expect(started.session.openReceipt.runtimeTargetId).toBe('browser-target:session-browser-host-executor');
+    expect(current.session.runtimeState.runtimeTargetId).toBe('browser-target:session-browser-host-executor');
     expect(afterAuth.activeCheckpoint?.id).toBe('checkpoint-review-executor');
     expect(executor.executions.map((execution) => execution.method)).toEqual([
       'openTarget',

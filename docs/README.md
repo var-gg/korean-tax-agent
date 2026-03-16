@@ -69,7 +69,8 @@ Read next:
 4. [24-workflow-state-machine.md](./24-workflow-state-machine.md)
 5. [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
 6. [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
-7. [10-skill-design.md](./10-skill-design.md)
+7. [37-browser-host-capability-contract.md](./37-browser-host-capability-contract.md)
+8. [10-skill-design.md](./10-skill-design.md)
 
 ### If you want collection and trust boundaries
 Read:
@@ -112,6 +113,7 @@ Read:
 - [05-architecture.md](./05-architecture.md) — top-level system components and flow
 - [06-data-model.md](./06-data-model.md) — canonical entity model including collection lifecycle
 - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md) — MCP workflow tool contract
+- [37-browser-host-capability-contract.md](./37-browser-host-capability-contract.md) — minimum browser-host contract and checkpoint handoff rationale
 - [10-skill-design.md](./10-skill-design.md) — agent skill design expectations
 - [20-workspace-state-model.md](./20-workspace-state-model.md) — persistent operational state model
 - [24-workflow-state-machine.md](./24-workflow-state-machine.md) — compact workflow control reference across collection, review, and assist

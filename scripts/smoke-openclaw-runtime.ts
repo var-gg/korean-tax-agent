@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import {
+  BrowserHostRuntimeAdapter,
   InMemoryBrowserAssistSessionStore,
-  InMemoryOpenClawBrowserToolExecutor,
-  OpenClawBrowserRuntimeAdapter,
+  InMemoryBrowserHostExecutor,
   createBrowserAssistService,
 } from '../packages/browser-assist/src/index.js';
 
 async function main() {
-  const executor = new InMemoryOpenClawBrowserToolExecutor({
+  const executor = new InMemoryBrowserHostExecutor({
     transport: 'openclaw-browser-tool',
     runtimeTargetPrefix: 'openclaw-tab',
   });
-  const runtime = new OpenClawBrowserRuntimeAdapter({ executor });
+  const runtime = new BrowserHostRuntimeAdapter({ executor });
   const service = createBrowserAssistService({
     store: new InMemoryBrowserAssistSessionStore(),
     runtime,
