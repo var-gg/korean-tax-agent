@@ -851,11 +851,8 @@ function buildOperatorUpdateLines(params: {
 }): string[] {
   const readinessLine = `READINESS: submission=${humanizeToken(getRuntimeSubmissionReadiness(params.workspace))} | comparison=${humanizeToken(getRuntimeComparisonState(params.workspace))} | freshness=${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}`;
   const queueLine = `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | warnings=${params.draft?.warnings.length ?? 0} | draft=${params.workspace.currentDraftId ?? 'none'}`;
-  const blockerLine = describePrimaryBlocker(params.workspace)
-    ? `BLOCKER: ${describePrimaryBlocker(params.workspace)}`
-    : params.blockers.length > 0
-      ? `BLOCKER: ${describeBlockingReason(params.blockers[0])}`
-      : undefined;
+  const blockerLine = buildPrimaryBlockerLine(params.workspace, params.blockers);
+  const blockerContextLine = buildPrimaryBlockerContextLine(params.workspace);
   const nextLine = params.nextAction ? `NEXT: ${describeRecommendedAction(params.nextAction)}` : undefined;
   const draftLine = params.detailLevel === 'standard' && (params.draft?.fieldValues?.length ?? 0) > 0
     ? `DRAFT: fields=${params.draft?.fieldValues?.length ?? 0}`
@@ -888,6 +885,7 @@ function buildOperatorUpdateLines(params: {
       `STATUS: ${params.headline}`,
       `QUEUE: reviews=${params.workspace.unresolvedReviewCount} | draft=${params.workspace.currentDraftId ?? 'none'}`,
       blockerLine,
+      blockerContextLine,
       nextLine,
       draftLine,
     ]);
@@ -903,6 +901,7 @@ function buildOperatorUpdateLines(params: {
       '⏸️ COLLECTION BLOCKED',
       `STATUS: ${params.headline}`,
       blockerLine,
+      blockerContextLine,
       nextLine,
       `COLLECTION: state=${humanizeToken(params.workspace.lastCollectionStatus ?? 'unknown')}`,
     ]);
@@ -914,6 +913,7 @@ function buildOperatorUpdateLines(params: {
     readinessLine,
     queueLine,
     blockerLine,
+    blockerContextLine,
     nextLine,
     draftLine,
   ]);
@@ -984,6 +984,30 @@ function describePrimaryBlocker(workspace: FilingWorkspace): string | undefined 
   return reason ? describeBlockingReason(reason) : undefined;
 }
 
+function buildPrimaryBlockerLine(workspace: FilingWorkspace, blockers: string[]): string | undefined {
+  const blocker = getPrimaryActiveBlocker(workspace);
+  if (blocker?.message) {
+    return `BLOCKER: ${blocker.message}`;
+  }
+  if (blockers.length > 0) {
+    return `BLOCKER: ${describeBlockingReason(blockers[0])}`;
+  }
+  return undefined;
+}
+
+function buildPrimaryBlockerContextLine(workspace: FilingWorkspace): string | undefined {
+  const blocker = getPrimaryActiveBlocker(workspace);
+  if (!blocker) return undefined;
+
+  const severity = blocker.severity ? `severity=${humanizeToken(blocker.severity)}` : undefined;
+  const domains = blocker.affectedDomains?.length
+    ? `domains=${blocker.affectedDomains.map(humanizeToken).join(',')}`
+    : undefined;
+
+  const context = [severity, domains].filter(Boolean).join(' | ');
+  return context ? `BLOCKER_CONTEXT: ${context}` : undefined;
+}
+
 function getRuntimeSubmissionReadiness(workspace: FilingWorkspace): string {
   return workspace.runtime?.readiness.submissionReadiness ?? workspace.submissionReadiness ?? 'not_ready';
 }
@@ -1048,10 +1072,11 @@ function buildFilingSummaryText(params: {
 
   const readinessSentence = `Submission readiness is ${humanizeToken(getRuntimeSubmissionReadiness(params.workspace))}, with comparison ${humanizeToken(getRuntimeComparisonState(params.workspace))} and freshness ${humanizeToken(params.workspace.freshnessState ?? 'stale_unknown')}.`;
 
+  const blocker = getPrimaryActiveBlocker(params.workspace);
   const blockerSentence = describePrimaryBlocker(params.workspace)
-    ? `Main blocker: ${describePrimaryBlocker(params.workspace)}.`
+    ? `Main blocker: ${describePrimaryBlocker(params.workspace)}${blocker?.severity ? ` (severity ${humanizeToken(blocker.severity)})` : ''}${blocker?.affectedDomains?.length ? ` across ${blocker.affectedDomains.map(humanizeToken).join(', ')}` : ''}.`
     : params.blockers.length > 0
-      ? `Main blocker: ${params.blockers.map((blocker) => describeBlockingReason(blocker)).join(' ')}.`
+      ? `Main blocker: ${params.blockers.map((blockerCode) => describeBlockingReason(blockerCode)).join(' ')}.`
       : 'No blocking reason is currently recorded.';
 
   const nextSentence = params.nextAction
