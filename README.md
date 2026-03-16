@@ -56,7 +56,8 @@ Implemented prototype coverage currently includes:
 - HomeTax comparison,
 - mismatch-to-review escalation,
 - mismatch resolution applied back to the draft,
-- HomeTax preparation and browser-assist handoff.
+- HomeTax preparation and browser-assist handoff,
+- minimum browser-assist session lifecycle and real-browser open bridge.
 
 ## Start here
 
@@ -92,8 +93,9 @@ The current prototype filing loop is:
 10. `tax.filing.prepare_hometax`
 11. `tax.browser.start_hometax_assist`
 
-For a runnable example, use:
+For runnable examples, use:
 - `npm run smoke:workflow`
+- `npx tsx examples/browser-assist-hometax.ts`
 
 ## What this repo contains
 
