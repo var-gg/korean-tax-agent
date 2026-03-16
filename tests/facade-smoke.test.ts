@@ -160,7 +160,8 @@ describe('mcp facade', () => {
 
     const blockerChangedDecision = decideFilingAlert(currentAlertSnapshot, {
       ...currentAlertSnapshot,
-      activeBlockers: currentAlertSnapshot.activeBlockers.map((blocker, index) => index === 0 ? { ...blocker, blockingReason: 'comparison_incomplete' } : blocker),
+      activeBlockers: [],
+      blockers: ['comparison_incomplete'],
     });
     expect(blockerChangedDecision.shouldNotify).toBe(true);
     expect(blockerChangedDecision.reason).toBe('blocker_changed');
