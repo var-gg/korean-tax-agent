@@ -127,6 +127,8 @@ What the core assumes:
 
 These are useful but should remain optional until a host proves them stable:
 
+- `snapshotInspection`
+  - read-only inspection enrichment such as title or visible-page summary carried back through runtime state
 - `snapshot`
   - richer page metadata such as title, load state, or visible DOM summary
 - `act`

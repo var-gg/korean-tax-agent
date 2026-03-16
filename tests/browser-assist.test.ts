@@ -530,6 +530,7 @@ if (input.operation === 'listTargets') {
       hostAvailable: true,
       activeTarget: true,
       runtimeInspection: true,
+      snapshotInspection: true,
       checkpointHandoff: true,
     });
     await expect(client.openTarget({
@@ -652,6 +653,121 @@ if (input.operation === 'listTargets') {
       code: 'OPENCLAW_SESSION_MISMATCH',
       operation: 'getRuntimeState',
     });
+  });
+
+  it('re-resolves a stale OpenClaw target id to a single session-matching replacement', async () => {
+    const relay = new InMemoryOpenClawBrowserRelay({
+      targetPrefix: 'openclaw-tab',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({ relay }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-reresolve', 'checkpoint-auth-openclaw-reresolve', 'checkpoint-review-openclaw-reresolve']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/reresolve',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    const staleTargetId = started.session.runtimeState.runtimeTargetId as string;
+    relay.dropTarget(staleTargetId);
+    relay.addTarget({
+      targetId: 'openclaw-tab:session-openclaw-reresolve:2',
+      sessionId: started.session.id,
+      url: 'https://hometax.go.kr/openclaw/reresolve/ready',
+      available: true,
+      attached: true,
+      title: 'Ready tab',
+    });
+
+    const status = await service.getHomeTaxAssistStatus(started.session.id);
+    expect(status.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw-reresolve:2');
+    expect(status.session.runtimeState.currentTargetUrl).toBe('https://hometax.go.kr/openclaw/reresolve/ready');
+  });
+
+  it('fails explicitly when OpenClaw reconnect candidates remain ambiguous', async () => {
+    const relay = new InMemoryOpenClawBrowserRelay({
+      targetPrefix: 'openclaw-tab',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({ relay }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-ambiguous', 'checkpoint-auth-openclaw-ambiguous', 'checkpoint-review-openclaw-ambiguous']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/ambiguous',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    relay.dropTarget(started.session.runtimeState.runtimeTargetId as string);
+    relay.addTarget({
+      targetId: 'openclaw-tab:session-openclaw-ambiguous:2',
+      sessionId: started.session.id,
+      url: 'https://hometax.go.kr/openclaw/ambiguous/step',
+      available: true,
+      attached: true,
+    });
+    relay.addTarget({
+      targetId: 'openclaw-tab:session-openclaw-ambiguous:3',
+      sessionId: started.session.id,
+      url: 'https://hometax.go.kr/openclaw/ambiguous/step-2',
+      available: true,
+      attached: true,
+    });
+
+    await expect(service.getHomeTaxAssistStatus(started.session.id)).rejects.toMatchObject<Partial<OpenClawBrowserHostError>>({
+      code: 'OPENCLAW_TARGET_AMBIGUOUS',
+      operation: 'getRuntimeState',
+    });
+  });
+
+  it('adds snapshot-backed inspection when the OpenClaw path supports it', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        transport: new OpenClawBrowserToolTransport({
+          client: {
+            async getCapabilities() {
+              return { hostAvailable: true, activeTarget: null, runtimeInspection: true, snapshotInspection: true, checkpointHandoff: true };
+            },
+            async listTargets() {
+              return [];
+            },
+            async openTarget(input) {
+              return { targetId: `openclaw-tab:${input.sessionId}`, sessionId: input.sessionId, url: input.url, attached: true, available: true };
+            },
+            async getTarget(input) {
+              return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', attached: true, available: true };
+            },
+            async snapshotTarget(input) {
+              return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', title: 'Snapshot Ready', snapshotText: '납세 신고서 제출 화면', snapshotTakenAt: '2026-03-16T00:00:05.000Z', attached: true, available: true, inspectionSource: 'snapshot' };
+            },
+            async handoffCheckpoint(input) {
+              return { targetId: input.targetId, sessionId: input.sessionId, url: input.targetUrl, attached: true, available: true };
+            },
+          },
+        }),
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-snapshot', 'checkpoint-auth-openclaw-snapshot', 'checkpoint-review-openclaw-snapshot']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/snapshot',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    const status = await service.getHomeTaxAssistStatus(started.session.id);
+    expect(status.session.runtimeState.currentTargetTitle).toBe('Snapshot Ready');
+    expect(status.session.runtimeState.inspectionSource).toBe('snapshot');
+    expect(status.session.runtimeState.snapshotText).toContain('납세 신고서 제출');
   });
 
   it('surfaces unsupported OpenClaw runtime inspection explicitly', async () => {

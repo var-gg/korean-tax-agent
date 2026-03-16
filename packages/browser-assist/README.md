@@ -70,7 +70,7 @@ First concrete host adapter implementation behind the generic browser-host seam.
 - Encapsulates OpenClaw-specific open/attach/inspect behavior without changing the core contract.
 - Implements the minimum stable surface for `openTarget()`, `getRuntimeState()`, and `handoffCheckpoint()`.
 - Delegates to a transport/provider object so the executor stays capability-aware and host-agnostic above the OpenClaw layer.
-- Surfaces explicit failure codes for transport unavailability, browser-host unavailability, missing/unavailable targets, session mismatch, and unsupported runtime inspection.
+- Surfaces explicit failure codes for transport unavailability, browser-host unavailability, missing/unavailable targets, ambiguous reconnects, session mismatch, unsupported runtime inspection, and snapshot failures.
 - Works with both `InMemoryOpenClawBrowserRelay` and `OpenClawBrowserToolTransport` while keeping DOM automation out of scope.
 
 ### `OpenClawBrowserToolTransport`
@@ -87,8 +87,9 @@ Thin real bridge/runtime path for T6.
 
 - `OpenClawBrowserRuntimeCommandClient` already spoke the T5 stdin/stdout command protocol seam.
 - `scripts/openclaw-browser-runtime.ts` is the concrete adapter entrypoint that reads that protocol and calls a live OpenClaw browser control server client.
-- `OpenClawBrowserControlServerClient` currently maps the stable slice onto OpenClaw browser server actions: `status`, `tabs`, and `open`.
-- `handoffCheckpoint()` is intentionally state-preserving today: it re-resolves the bound target instead of inventing DOM automation.
+- `OpenClawBrowserControlServerClient` currently maps the stable slice onto OpenClaw browser server actions: `status`, `tabs`, `open`, and narrow `snapshot` reads.
+- `getRuntimeState()` and `handoffCheckpoint()` can now enrich runtime state with snapshot-backed inspection data when the transport advertises that capability.
+- `handoffCheckpoint()` remains state-preserving: it re-resolves/re-binds the bound target instead of inventing DOM automation.
 - Live use is environment-dependent: it requires `OPENCLAW_BROWSER_SERVER_URL` and usually a relay-attached Chrome target/profile if you want attach semantics.
 
 ### `InMemoryOpenClawBrowserRelay`

@@ -48,6 +48,10 @@ export interface BrowserAssistRuntimeState {
   runtimeTargetId?: string;
   currentTargetUrl: string;
   lastOpenedUrl: string;
+  currentTargetTitle?: string;
+  inspectionSource?: 'target' | 'snapshot';
+  snapshotText?: string;
+  snapshotTakenAt?: string;
   activeCheckpointId: string | null;
   updatedAt: string;
 }
@@ -176,6 +180,7 @@ export interface BrowserHostCapabilities {
   hostAvailable: boolean;
   activeTarget: boolean | null;
   runtimeInspection: boolean;
+  snapshotInspection: boolean;
   checkpointHandoff: boolean;
 }
 
@@ -540,6 +545,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
         hostAvailable: true,
         activeTarget: input.runtimeState?.runtimeTargetId ? true : null,
         runtimeInspection: typeof this.client.getRuntimeState === 'function',
+        snapshotInspection: false,
         checkpointHandoff: typeof this.client.handoffCheckpoint === 'function',
       });
     }
@@ -559,6 +565,10 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
       targetUrl: clientReceipt.targetUrl ?? request.target.entryUrl,
       currentTargetUrl: clientReceipt.currentTargetUrl ?? request.target.entryUrl,
       lastOpenedUrl: clientReceipt.lastOpenedUrl ?? request.target.entryUrl,
+      currentTargetTitle: clientReceipt.currentTargetTitle,
+      inspectionSource: clientReceipt.inspectionSource,
+      snapshotText: clientReceipt.snapshotText,
+      snapshotTakenAt: clientReceipt.snapshotTakenAt,
       activeCheckpointId: clientReceipt.activeCheckpointId ?? request.activeCheckpoint.id,
     });
 
@@ -581,6 +591,10 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
         runtimeTargetId: clientState?.runtimeTargetId ?? previousState?.runtimeTargetId,
         currentTargetUrl: clientState?.currentTargetUrl ?? request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
         lastOpenedUrl: clientState?.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? request.target.entryUrl,
+        currentTargetTitle: clientState?.currentTargetTitle ?? previousState?.currentTargetTitle,
+        inspectionSource: clientState?.inspectionSource ?? previousState?.inspectionSource,
+        snapshotText: clientState?.snapshotText ?? previousState?.snapshotText,
+        snapshotTakenAt: clientState?.snapshotTakenAt ?? previousState?.snapshotTakenAt,
         activeCheckpointId: clientState?.activeCheckpointId ?? (request.nextCheckpoint ? request.nextCheckpoint.id : null),
         updatedAt: clientState?.updatedAt ?? request.handedOffAt ?? this.now(),
       });
@@ -595,6 +609,10 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
       runtimeTargetId: previousState?.runtimeTargetId,
       currentTargetUrl: request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
       lastOpenedUrl: previousState?.lastOpenedUrl ?? request.target.entryUrl,
+      currentTargetTitle: previousState?.currentTargetTitle,
+      inspectionSource: previousState?.inspectionSource,
+      snapshotText: previousState?.snapshotText,
+      snapshotTakenAt: previousState?.snapshotTakenAt,
       activeCheckpointId: request.nextCheckpoint ? request.nextCheckpoint.id : null,
       updatedAt: request.handedOffAt ?? this.now(),
     });
@@ -620,6 +638,10 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
           runtimeTargetId: clientState.runtimeTargetId ?? previousState?.runtimeTargetId,
           currentTargetUrl: clientState.currentTargetUrl ?? previousState?.currentTargetUrl ?? input.target.entryUrl,
           lastOpenedUrl: clientState.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? input.target.entryUrl,
+          currentTargetTitle: clientState.currentTargetTitle ?? previousState?.currentTargetTitle,
+          inspectionSource: clientState.inspectionSource ?? previousState?.inspectionSource,
+          snapshotText: clientState.snapshotText ?? previousState?.snapshotText,
+          snapshotTakenAt: clientState.snapshotTakenAt ?? previousState?.snapshotTakenAt,
           activeCheckpointId: clientState.activeCheckpointId ?? previousState?.activeCheckpointId ?? null,
           updatedAt: clientState.updatedAt ?? previousState?.updatedAt ?? this.now(),
         });
@@ -962,6 +984,10 @@ function normalizeRuntimeReceipt(
     targetUrl,
     currentTargetUrl: receipt?.currentTargetUrl || context.target.entryUrl,
     lastOpenedUrl: receipt?.lastOpenedUrl || targetUrl,
+    currentTargetTitle: receipt?.currentTargetTitle,
+    inspectionSource: receipt?.inspectionSource,
+    snapshotText: receipt?.snapshotText,
+    snapshotTakenAt: receipt?.snapshotTakenAt,
     activeCheckpointId: receipt?.activeCheckpointId || context.activeCheckpoint.id,
   });
 }
@@ -977,6 +1003,10 @@ function normalizeRuntimeState(
     runtimeTargetId: runtimeState?.runtimeTargetId,
     currentTargetUrl: runtimeState?.currentTargetUrl || context.session.target.entryUrl,
     lastOpenedUrl: runtimeState?.lastOpenedUrl || runtimeState?.currentTargetUrl || context.session.target.entryUrl,
+    currentTargetTitle: runtimeState?.currentTargetTitle,
+    inspectionSource: runtimeState?.inspectionSource,
+    snapshotText: runtimeState?.snapshotText,
+    snapshotTakenAt: runtimeState?.snapshotTakenAt,
     activeCheckpointId: activeCheckpoint ? activeCheckpoint.id : null,
     updatedAt: runtimeState?.updatedAt || context.handedOffAt || context.session.updatedAt,
   });
@@ -991,6 +1021,10 @@ function createRuntimeReceipt(input: BrowserAssistOpenReceipt): BrowserAssistOpe
     runtimeTargetId: input.runtimeTargetId,
     currentTargetUrl: input.currentTargetUrl,
     lastOpenedUrl: input.lastOpenedUrl,
+    currentTargetTitle: input.currentTargetTitle,
+    inspectionSource: input.inspectionSource,
+    snapshotText: input.snapshotText,
+    snapshotTakenAt: input.snapshotTakenAt,
     activeCheckpointId: input.activeCheckpointId,
     updatedAt: input.updatedAt,
   };
@@ -1003,6 +1037,10 @@ function createRuntimeState(input: BrowserAssistRuntimeState): BrowserAssistRunt
     runtimeTargetId: input.runtimeTargetId,
     currentTargetUrl: input.currentTargetUrl,
     lastOpenedUrl: input.lastOpenedUrl,
+    currentTargetTitle: input.currentTargetTitle,
+    inspectionSource: input.inspectionSource,
+    snapshotText: input.snapshotText,
+    snapshotTakenAt: input.snapshotTakenAt,
     activeCheckpointId: input.activeCheckpointId ?? null,
     updatedAt: input.updatedAt,
   };
@@ -1013,6 +1051,7 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     hostAvailable: true,
     activeTarget: null,
     runtimeInspection: false,
+    snapshotInspection: false,
     checkpointHandoff: false,
     ...cloneValue(overrides),
   };
@@ -1023,6 +1062,7 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     hostAvailable: input?.hostAvailable ?? true,
     activeTarget: input?.activeTarget ?? null,
     runtimeInspection: input?.runtimeInspection ?? false,
+    snapshotInspection: input?.snapshotInspection ?? false,
     checkpointHandoff: input?.checkpointHandoff ?? false,
   };
 }

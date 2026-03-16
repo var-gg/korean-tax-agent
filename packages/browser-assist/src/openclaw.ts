@@ -18,6 +18,7 @@ export type OpenClawBrowserHostErrorCode =
   | 'OPENCLAW_TARGET_NOT_FOUND'
   | 'OPENCLAW_TARGET_AMBIGUOUS'
   | 'OPENCLAW_SESSION_MISMATCH'
+  | 'OPENCLAW_SNAPSHOT_UNAVAILABLE'
   | 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED';
 
 export interface OpenClawRelayTarget {
@@ -29,6 +30,9 @@ export interface OpenClawRelayTarget {
   attached?: boolean;
   active?: boolean;
   updatedAt?: string;
+  inspectionSource?: 'target' | 'snapshot';
+  snapshotText?: string;
+  snapshotTakenAt?: string;
 }
 
 export interface OpenClawRelayOpenRequest {
@@ -61,7 +65,9 @@ export interface OpenClawBrowserTransport {
   }): Promise<Partial<OpenClawBrowserTransportCapabilities>> | Partial<OpenClawBrowserTransportCapabilities>;
   open(input: OpenClawRelayOpenRequest): Promise<OpenClawRelayTarget> | OpenClawRelayTarget;
   attach?(input: OpenClawRelayAttachRequest): Promise<OpenClawRelayTarget | null> | OpenClawRelayTarget | null;
+  listTargets?(input: { sessionId?: string; url?: string; targetId?: string | null }): Promise<OpenClawRelayTarget[]> | OpenClawRelayTarget[];
   getTarget?(input: { targetId: string }): Promise<OpenClawRelayTarget | null> | OpenClawRelayTarget | null;
+  snapshotTarget?(input: { targetId: string }): Promise<OpenClawRelayTarget | null> | OpenClawRelayTarget | null;
   handoffCheckpoint?(
     input: OpenClawRelayCheckpointHandoffRequest,
   ): Promise<OpenClawRelayTarget | null> | OpenClawRelayTarget | null;
@@ -109,6 +115,7 @@ export interface OpenClawBrowserToolClient {
   }): Promise<OpenClawBrowserToolClientTarget[]> | OpenClawBrowserToolClientTarget[];
   openTarget(input: OpenClawRelayOpenRequest): Promise<OpenClawBrowserToolClientTarget> | OpenClawBrowserToolClientTarget;
   getTarget?(input: { targetId: string }): Promise<OpenClawBrowserToolClientTarget | null> | OpenClawBrowserToolClientTarget | null;
+  snapshotTarget?(input: { targetId: string }): Promise<OpenClawBrowserToolClientTarget | null> | OpenClawBrowserToolClientTarget | null;
   handoffCheckpoint?(
     input: OpenClawRelayCheckpointHandoffRequest,
   ): Promise<OpenClawBrowserToolClientTarget | null> | OpenClawBrowserToolClientTarget | null;
@@ -128,6 +135,7 @@ export type OpenClawBrowserRuntimeCommandOperation =
   | 'listTargets'
   | 'openTarget'
   | 'getTarget'
+  | 'snapshotTarget'
   | 'handoffCheckpoint';
 
 export interface OpenClawBrowserRuntimeCommandRequest<TInput = unknown> {
@@ -162,6 +170,9 @@ interface OpenClawSessionBinding {
   runtimeTargetId: string;
   lastOpenedUrl: string;
   currentTargetUrl: string;
+  currentTargetTitle?: string;
+  lastSnapshotText?: string;
+  lastInspectionSource?: 'target' | 'snapshot';
 }
 
 export class OpenClawBrowserHostError extends Error {
@@ -216,6 +227,10 @@ export class OpenClawBrowserRuntimeCommandClient implements OpenClawBrowserToolC
 
   async getTarget(input: { targetId: string }) {
     return this.invoke<OpenClawBrowserToolClientTarget | null>('getTarget', input);
+  }
+
+  async snapshotTarget(input: { targetId: string }) {
+    return this.invoke<OpenClawBrowserToolClientTarget | null>('snapshotTarget', input);
   }
 
   async handoffCheckpoint(input: OpenClawRelayCheckpointHandoffRequest) {
@@ -321,6 +336,9 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       runtimeTargetId: opened.target.targetId,
       lastOpenedUrl: input.target.entryUrl,
       currentTargetUrl,
+      currentTargetTitle: opened.target.title,
+      lastSnapshotText: opened.target.snapshotText,
+      lastInspectionSource: opened.target.inspectionSource,
     });
     this.executions.push({ method: 'openTarget', sessionId: input.sessionId, runtimeTargetId: opened.target.targetId, usedAttachedTarget: opened.usedAttachedTarget });
     return {
@@ -329,6 +347,10 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       targetUrl: input.target.entryUrl,
       currentTargetUrl,
       lastOpenedUrl: input.target.entryUrl,
+      currentTargetTitle: opened.target.title,
+      inspectionSource: opened.target.inspectionSource,
+      snapshotText: opened.target.snapshotText,
+      snapshotTakenAt: opened.target.snapshotTakenAt,
       activeCheckpointId: input.activeCheckpoint.id,
       openedAt,
       updatedAt: openedAt,
@@ -337,16 +359,21 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
 
   async getRuntimeState(input: { sessionId: string; target: { entryUrl: string }; runtimeState: BrowserAssistRuntimeState | null }) {
     const { binding, target } = await this.readBoundTarget({ operation: 'getRuntimeState', sessionId: input.sessionId, entryUrl: input.target.entryUrl, runtimeState: input.runtimeState });
-    const currentTargetUrl = target.url ?? binding.currentTargetUrl ?? input.target.entryUrl;
+    const inspectedTarget = await this.enrichWithSnapshotInspection('getRuntimeState', target, binding);
+    const currentTargetUrl = inspectedTarget.url ?? binding.currentTargetUrl ?? input.target.entryUrl;
     const lastOpenedUrl = input.runtimeState?.lastOpenedUrl ?? binding.lastOpenedUrl ?? input.target.entryUrl;
-    const updatedAt = target.updatedAt ?? this.now();
-    this.bindingBySessionId.set(input.sessionId, { ...binding, currentTargetUrl, lastOpenedUrl });
-    this.executions.push({ method: 'getRuntimeState', sessionId: input.sessionId, runtimeTargetId: target.targetId });
+    const updatedAt = inspectedTarget.updatedAt ?? this.now();
+    this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: inspectedTarget.targetId, currentTargetUrl, lastOpenedUrl, currentTargetTitle: inspectedTarget.title, lastSnapshotText: inspectedTarget.snapshotText, lastInspectionSource: inspectedTarget.inspectionSource });
+    this.executions.push({ method: 'getRuntimeState', sessionId: input.sessionId, runtimeTargetId: inspectedTarget.targetId });
     return {
       transport: this.transportLabel,
-      runtimeTargetId: target.targetId,
+      runtimeTargetId: inspectedTarget.targetId,
       currentTargetUrl,
       lastOpenedUrl,
+      currentTargetTitle: inspectedTarget.title,
+      inspectionSource: inspectedTarget.inspectionSource,
+      snapshotText: inspectedTarget.snapshotText,
+      snapshotTakenAt: inspectedTarget.snapshotTakenAt,
       activeCheckpointId: input.runtimeState?.activeCheckpointId ?? null,
       updatedAt,
     };
@@ -377,24 +404,30 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       })),
       expectedTargetId: binding.runtimeTargetId,
     });
-    const currentTargetUrl = target.url ?? input.targetUrl ?? binding.currentTargetUrl ?? input.target.entryUrl;
+    const inspectedTarget = await this.enrichWithSnapshotInspection('handoffCheckpoint', target, binding);
+    const currentTargetUrl = inspectedTarget.url ?? input.targetUrl ?? binding.currentTargetUrl ?? input.target.entryUrl;
     const lastOpenedUrl = input.runtimeState?.lastOpenedUrl ?? binding.lastOpenedUrl ?? input.target.entryUrl;
-    this.bindingBySessionId.set(input.sessionId, { ...binding, currentTargetUrl, lastOpenedUrl });
-    this.executions.push({ method: 'handoffCheckpoint', sessionId: input.sessionId, runtimeTargetId: target.targetId });
+    this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: inspectedTarget.targetId, currentTargetUrl, lastOpenedUrl, currentTargetTitle: inspectedTarget.title, lastSnapshotText: inspectedTarget.snapshotText, lastInspectionSource: inspectedTarget.inspectionSource });
+    this.executions.push({ method: 'handoffCheckpoint', sessionId: input.sessionId, runtimeTargetId: inspectedTarget.targetId });
     return {
       transport: this.transportLabel,
-      runtimeTargetId: target.targetId,
+      runtimeTargetId: inspectedTarget.targetId,
       currentTargetUrl,
       lastOpenedUrl,
+      currentTargetTitle: inspectedTarget.title,
+      inspectionSource: inspectedTarget.inspectionSource,
+      snapshotText: inspectedTarget.snapshotText,
+      snapshotTakenAt: inspectedTarget.snapshotTakenAt,
       activeCheckpointId: input.nextCheckpoint ? input.nextCheckpoint.id : null,
-      updatedAt: target.updatedAt ?? (input.handedOffAt || this.now()),
+      updatedAt: inspectedTarget.updatedAt ?? (input.handedOffAt || this.now()),
     };
   }
 
   private async readCapabilities(operation: OpenClawBrowserHostOperation, input: { sessionId?: string; runtimeState?: BrowserAssistRuntimeState | null }) {
     const fallback = defaultOpenClawCapabilities({
       activeTarget: input.runtimeState?.runtimeTargetId ? null : false,
-      runtimeInspection: typeof this.transport.getTarget === 'function',
+      runtimeInspection: typeof this.transport.getTarget === 'function' || typeof this.transport.listTargets === 'function',
+      snapshotInspection: typeof this.transport.snapshotTarget === 'function',
       checkpointHandoff: typeof this.transport.handoffCheckpoint === 'function',
     });
     if (typeof this.transport.getCapabilities !== 'function') {
@@ -424,11 +457,63 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     if (capabilities.activeTarget === false && !binding.runtimeTargetId) {
       throw new OpenClawBrowserHostError('OPENCLAW_TARGET_UNAVAILABLE', input.operation, `No OpenClaw target is attached for session ${input.sessionId}.`);
     }
-    if (typeof this.transport.getTarget !== 'function' || !capabilities.runtimeInspection) {
+    if (!capabilities.runtimeInspection || (typeof this.transport.getTarget !== 'function' && typeof this.transport.listTargets !== 'function')) {
       throw new OpenClawBrowserHostError('OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED', input.operation, `OpenClaw transport does not support ${input.operation} target inspection.`);
     }
-    const target = await this.callRelay(input.operation, () => this.transport.getTarget!.call(this.transport, { targetId: binding.runtimeTargetId }));
-    return { binding, target: this.validateTarget({ operation: input.operation, sessionId: input.sessionId, target, expectedTargetId: binding.runtimeTargetId }) };
+    let target = typeof this.transport.getTarget === 'function'
+      ? await this.callRelay(input.operation, () => this.transport.getTarget!.call(this.transport, { targetId: binding.runtimeTargetId }))
+      : null;
+    if (!target) {
+      target = await this.reconnectTarget(input.operation, binding, input.entryUrl);
+    }
+    const validated = this.validateTarget({ operation: input.operation, sessionId: input.sessionId, target, expectedTargetId: binding.runtimeTargetId });
+    if (validated.targetId !== binding.runtimeTargetId) {
+      this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: validated.targetId, currentTargetUrl: validated.url ?? binding.currentTargetUrl, currentTargetTitle: validated.title ?? binding.currentTargetTitle });
+    }
+    return { binding: this.bindingBySessionId.get(input.sessionId) ?? binding, target: validated };
+  }
+
+  private async reconnectTarget(operation: Exclude<OpenClawBrowserHostOperation, 'openTarget'>, binding: OpenClawSessionBinding, entryUrl: string): Promise<OpenClawRelayTarget> {
+    if (typeof this.transport.listTargets !== 'function') {
+      throw new OpenClawBrowserHostError('OPENCLAW_TARGET_NOT_FOUND', operation, `OpenClaw target ${binding.runtimeTargetId} was not found for session ${binding.sessionId}.`);
+    }
+    const targets = normalizeToolTargets(await this.callRelay(operation, () => this.transport.listTargets!({ sessionId: binding.sessionId, url: binding.currentTargetUrl || entryUrl, targetId: null })), this.now);
+    let resolved: OpenClawRelayTarget | null;
+    try {
+      resolved = resolveReconnectCandidate(targets, { sessionId: binding.sessionId, boundTargetId: binding.runtimeTargetId, entryUrl, currentTargetUrl: binding.currentTargetUrl, lastOpenedUrl: binding.lastOpenedUrl });
+    } catch (error) {
+      const mapped = mapOpenClawHostError(error, operation);
+      if (mapped) throw mapped;
+      throw error;
+    }
+    if (!resolved) {
+      throw new OpenClawBrowserHostError('OPENCLAW_TARGET_NOT_FOUND', operation, `OpenClaw target ${binding.runtimeTargetId} was not found for session ${binding.sessionId}.`);
+    }
+    return cloneValue(resolved);
+  }
+
+  private async enrichWithSnapshotInspection(operation: OpenClawBrowserHostOperation, target: OpenClawRelayTarget, binding: OpenClawSessionBinding): Promise<OpenClawRelayTarget> {
+    if (typeof this.transport.snapshotTarget !== 'function') return cloneValue(target);
+    try {
+      const snapshot = await this.callRelay(operation, () => this.transport.snapshotTarget!({ targetId: target.targetId }));
+      if (!snapshot) return cloneValue(target);
+      const normalized = this.validateTarget({ operation, sessionId: binding.sessionId, target: snapshot, expectedTargetId: target.targetId });
+      return {
+        ...target,
+        ...normalized,
+        url: normalized.url ?? target.url,
+        title: normalized.title ?? target.title,
+        snapshotText: normalized.snapshotText ?? target.snapshotText,
+        snapshotTakenAt: normalized.snapshotTakenAt ?? target.snapshotTakenAt ?? this.now(),
+        inspectionSource: normalized.snapshotText || normalized.title || normalized.url ? 'snapshot' : (target.inspectionSource ?? 'target'),
+      };
+    } catch (error) {
+      const mapped = mapOpenClawHostError(error, operation);
+      if (mapped?.code === 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED' || mapped?.code === 'OPENCLAW_SNAPSHOT_UNAVAILABLE') {
+        return cloneValue(target);
+      }
+      throw error;
+    }
   }
 
   private resolveBinding(input: { operation: Exclude<OpenClawBrowserHostOperation, 'openTarget'>; sessionId: string; entryUrl: string; runtimeState: BrowserAssistRuntimeState | null }): OpenClawSessionBinding {
@@ -495,16 +580,21 @@ export class OpenClawBrowserToolTransport implements OpenClawBrowserTransport {
       hostAvailable: reported?.hostAvailable ?? true,
       activeTarget,
       runtimeInspection: reported?.runtimeInspection ?? true,
+      snapshotInspection: reported?.snapshotInspection ?? (typeof this.client.snapshotTarget === 'function'),
       checkpointHandoff: reported?.checkpointHandoff ?? (typeof this.client.handoffCheckpoint === 'function'),
-    }, defaultOpenClawCapabilities({ runtimeInspection: true, checkpointHandoff: typeof this.client.handoffCheckpoint === 'function' }));
+    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function' }));
   }
 
   async open(input: OpenClawRelayOpenRequest): Promise<OpenClawRelayTarget> {
     return normalizeToolTarget(await this.client.openTarget(cloneValue(input)), input.sessionId, this.now);
   }
 
+  async listTargets(input: { sessionId?: string; url?: string; targetId?: string | null }): Promise<OpenClawRelayTarget[]> {
+    return normalizeToolTargets(await this.client.listTargets(cloneValue(input)), this.now);
+  }
+
   async attach(input: OpenClawRelayAttachRequest): Promise<OpenClawRelayTarget | null> {
-    const targets = normalizeToolTargets(await this.client.listTargets({ sessionId: input.sessionId, url: input.url, targetId: null }), this.now);
+    const targets = await this.listTargets({ sessionId: input.sessionId, url: input.url, targetId: null });
     const attachedTarget = this.resolveAttachedTarget(targets, input);
     return attachedTarget ? cloneValue(attachedTarget) : null;
   }
@@ -514,9 +604,17 @@ export class OpenClawBrowserToolTransport implements OpenClawBrowserTransport {
       const target = await this.client.getTarget({ targetId: input.targetId });
       return target ? normalizeToolTarget(target, target.sessionId ?? null, this.now) : null;
     }
-    const targets = normalizeToolTargets(await this.client.listTargets({ targetId: input.targetId }), this.now).filter((target) => target.targetId === input.targetId);
+    const targets = (await this.listTargets({ targetId: input.targetId })).filter((target) => target.targetId === input.targetId);
     if (targets.length > 1) throw createOpenClawCodeError('OPENCLAW_TARGET_AMBIGUOUS', `OpenClaw runtime returned multiple targets for ${input.targetId}.`);
     return targets[0] ? cloneValue(targets[0]) : null;
+  }
+
+  async snapshotTarget(input: { targetId: string }): Promise<OpenClawRelayTarget | null> {
+    if (typeof this.client.snapshotTarget !== 'function') {
+      throw createOpenClawCodeError('OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED', 'OpenClaw runtime client does not support snapshot inspection.');
+    }
+    const target = await this.client.snapshotTarget(cloneValue(input));
+    return target ? normalizeToolTarget(target, target.sessionId ?? null, this.now) : null;
   }
 
   async handoffCheckpoint(input: OpenClawRelayCheckpointHandoffRequest): Promise<OpenClawRelayTarget | null> {
@@ -549,6 +647,7 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
       hostAvailable: true,
       activeTarget: input.runtimeTargetId ? isUsableTarget(this.targetById.get(input.runtimeTargetId) ?? null) : null,
       runtimeInspection: true,
+      snapshotInspection: true,
       checkpointHandoff: true,
     };
   }
@@ -563,14 +662,29 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
 
   async attach(input: OpenClawRelayAttachRequest): Promise<OpenClawRelayTarget | null> {
     this.operations.push({ method: 'attach', sessionId: input.sessionId });
-    const target = defaultAttachedTargetResolver(this.listTargets(), input);
+    const target = defaultAttachedTargetResolver(this.listTargetsInternal(), input);
     return target ? cloneValue(target) : null;
+  }
+
+  async listTargets(): Promise<OpenClawRelayTarget[]> {
+    return this.listTargetsInternal();
   }
 
   async getTarget(input: { targetId: string }): Promise<OpenClawRelayTarget | null> {
     this.operations.push({ method: 'getTarget', targetId: input.targetId });
     const target = this.targetById.get(input.targetId);
     return target ? cloneValue(target) : null;
+  }
+
+  async snapshotTarget(input: { targetId: string }): Promise<OpenClawRelayTarget | null> {
+    const target = this.targetById.get(input.targetId);
+    if (!target) return null;
+    return {
+      ...cloneValue(target),
+      inspectionSource: 'snapshot',
+      snapshotText: `snapshot:${target.title ?? target.url ?? target.targetId}`,
+      snapshotTakenAt: this.now(),
+    };
   }
 
   async handoffCheckpoint(input: OpenClawRelayCheckpointHandoffRequest): Promise<OpenClawRelayTarget | null> {
@@ -609,7 +723,7 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
     return nextOrdinal === 1 ? `${this.targetPrefix}:${sessionId}` : `${this.targetPrefix}:${sessionId}:${nextOrdinal}`;
   }
 
-  private listTargets(): OpenClawRelayTarget[] {
+  private listTargetsInternal(): OpenClawRelayTarget[] {
     return Array.from(this.targetById.values()).map((target) => cloneValue(target));
   }
 }
@@ -648,12 +762,13 @@ function normalizeOpenClawCapabilities(input: Partial<OpenClawBrowserTransportCa
     hostAvailable: input?.hostAvailable ?? fallback.hostAvailable,
     activeTarget: input?.activeTarget ?? fallback.activeTarget,
     runtimeInspection: input?.runtimeInspection ?? fallback.runtimeInspection,
+    snapshotInspection: input?.snapshotInspection ?? fallback.snapshotInspection,
     checkpointHandoff: input?.checkpointHandoff ?? fallback.checkpointHandoff,
   };
 }
 
 function defaultOpenClawCapabilities(overrides: Partial<OpenClawBrowserTransportCapabilities> = {}): OpenClawBrowserTransportCapabilities {
-  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, checkpointHandoff: false, ...cloneValue(overrides) };
+  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, checkpointHandoff: false, ...cloneValue(overrides) };
 }
 
 function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: OpenClawRelayAttachRequest): OpenClawRelayTarget | null {
@@ -700,6 +815,9 @@ function normalizeToolTarget(target: OpenClawBrowserToolClientTarget | OpenClawR
     attached: target.attached ?? true,
     active: target.active ?? false,
     updatedAt: target.updatedAt ?? now(),
+    inspectionSource: target.inspectionSource,
+    snapshotText: target.snapshotText,
+    snapshotTakenAt: target.snapshotTakenAt,
   };
 }
 
@@ -727,6 +845,7 @@ function normalizeOpenClawHostErrorCode(value: unknown): OpenClawBrowserHostErro
     case 'OPENCLAW_TARGET_NOT_FOUND':
     case 'OPENCLAW_TARGET_AMBIGUOUS':
     case 'OPENCLAW_SESSION_MISMATCH':
+    case 'OPENCLAW_SNAPSHOT_UNAVAILABLE':
     case 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED':
       return value;
     default:
@@ -736,4 +855,29 @@ function normalizeOpenClawHostErrorCode(value: unknown): OpenClawBrowserHostErro
 
 function cloneValue<T>(value: T): T {
   return structuredClone(value);
+}
+
+
+function resolveReconnectCandidate(targets: OpenClawRelayTarget[], input: { sessionId: string; boundTargetId: string; entryUrl: string; currentTargetUrl: string; lastOpenedUrl: string }): OpenClawRelayTarget | null {
+  const usable = targets.filter(isUsableTarget);
+  const exactSession = usable.filter((target) => normalizeSessionId(target.sessionId) === input.sessionId);
+  const byBoundId = exactSession.find((target) => target.targetId === input.boundTargetId);
+  if (byBoundId) return cloneValue(byBoundId);
+  const urlCandidates = exactSession.filter((target) => urlLooksRelated(target.url, input.currentTargetUrl) || urlLooksRelated(target.url, input.lastOpenedUrl) || urlLooksRelated(target.url, input.entryUrl));
+  if (urlCandidates.length === 1) return cloneValue(urlCandidates[0]);
+  if (urlCandidates.length > 1) throw createOpenClawCodeError('OPENCLAW_TARGET_AMBIGUOUS', `Multiple OpenClaw targets match the known session/url flow for ${input.sessionId}.`);
+  if (exactSession.length === 1) return cloneValue(exactSession[0]);
+  if (exactSession.length > 1) throw createOpenClawCodeError('OPENCLAW_TARGET_AMBIGUOUS', `Multiple OpenClaw targets remain attached for session ${input.sessionId}.`);
+  const looseUrl = usable.filter((target) => urlLooksRelated(target.url, input.currentTargetUrl) || urlLooksRelated(target.url, input.lastOpenedUrl) || urlLooksRelated(target.url, input.entryUrl));
+  if (looseUrl.length === 1) return cloneValue(looseUrl[0]);
+  if (looseUrl.length > 1) throw createOpenClawCodeError('OPENCLAW_TARGET_AMBIGUOUS', `Multiple OpenClaw targets match the known URL flow for ${input.sessionId}.`);
+  return null;
+}
+
+function urlLooksRelated(targetUrl: string | null | undefined, expectedUrl: string | null | undefined): boolean {
+  const left = normalizeComparableUrl(targetUrl);
+  const right = normalizeComparableUrl(expectedUrl);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
