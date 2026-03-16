@@ -1,4 +1,5 @@
 import type {
+  ActiveBlocker,
   BlockingReason,
   CheckpointType,
   ClassificationDecision,
@@ -14,6 +15,7 @@ import type {
   ReadinessLevel,
   ReviewItem,
   SourceState,
+  SubmissionComparisonSummary,
   SyncAttemptState,
   TaxpayerFact,
   WithholdingRecord,
@@ -377,6 +379,14 @@ export type StartHomeTaxAssistData = {
   authRequired: boolean;
 };
 
+export type RuntimeSnapshot = {
+  blockerCodes: BlockingReason[];
+  activeBlockers: ActiveBlocker[];
+  coverageByDomain?: CoverageByDomain;
+  materialCoverageSummary?: MaterialCoverageSummary;
+  submissionComparison?: SubmissionComparisonSummary;
+};
+
 export type GetWorkspaceStatusData = {
   workspace: {
     workspaceId: string;
@@ -402,6 +412,7 @@ export type GetWorkspaceStatusData = {
     warningCount: number;
     fieldValueCount: number;
   };
+  runtimeSnapshot?: RuntimeSnapshot;
   nextRecommendedAction?: string;
 };
 
@@ -414,6 +425,7 @@ export type GetFilingSummaryData = {
   status: string;
   keyPoints: string[];
   blockers: string[];
+  runtimeSnapshot?: RuntimeSnapshot;
   nextRecommendedAction?: string;
   metrics: {
     unresolvedReviewCount: number;

@@ -304,6 +304,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     this.syncWorkspaceSnapshot(input.workspaceId);
     const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
     const draft = this.getDraft(input.workspaceId);
+    const runtimeSnapshot = buildRuntimeSnapshot(workspace);
 
     return {
       ok: true,
@@ -335,6 +336,7 @@ export class InMemoryKoreanTaxMCPRuntime {
               fieldValueCount: draft.fieldValues?.length ?? 0,
             }
           : undefined,
+        runtimeSnapshot,
         nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
       },
       readiness: {
@@ -361,6 +363,8 @@ export class InMemoryKoreanTaxMCPRuntime {
       ...getRuntimeBlockerCodes(workspace),
       ...(draft?.blockerCodes ?? []),
     ]);
+
+    const runtimeSnapshot = buildRuntimeSnapshot(workspace);
 
     const keyPoints = [
       `workspace_status=${workspace.status}`,
@@ -401,6 +405,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         status: workspace.status,
         keyPoints,
         blockers,
+        runtimeSnapshot,
         nextRecommendedAction: nextAction,
         metrics: {
           unresolvedReviewCount: workspace.unresolvedReviewCount,
@@ -930,6 +935,16 @@ function buildOperatorUpdateLines(params: {
 
 function compactLines(lines: Array<string | undefined>): string[] {
   return lines.filter((line): line is string => Boolean(line));
+}
+
+function buildRuntimeSnapshot(workspace: FilingWorkspace) {
+  return {
+    blockerCodes: getRuntimeBlockerCodes(workspace),
+    activeBlockers: workspace.runtime?.activeBlockers ?? [],
+    coverageByDomain: workspace.runtime?.coverageByDomain,
+    materialCoverageSummary: workspace.runtime?.materialCoverageSummary,
+    submissionComparison: workspace.runtime?.submissionComparison,
+  };
 }
 
 function getPrimaryActiveBlocker(workspace: FilingWorkspace) {
