@@ -12,7 +12,7 @@ import { buildFilingAlertDigests } from '../packages/mcp-server/src/integrations
 import { planFilingAlertDelivery } from '../packages/mcp-server/src/integrations/alert-delivery-policy.js';
 import { buildFilingAlertSenderBatch, discordFilingAlertChannel } from '../packages/mcp-server/src/integrations/alert-sender-adapter.js';
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
-import { formatFilingSummaryForDiscord } from '../packages/mcp-server/src/reply-formatters.js';
+import { formatFilingSummaryForDiscord, formatFilingSummaryForReply } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
 import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
@@ -75,6 +75,8 @@ describe('mcp facade', () => {
     expect(workspaceStatusResult.ok).toBe(true);
     expect(workspaceStatusResult.data.workspace.workspaceId).toBe(demo.workspaceId);
     expect(typeof workspaceStatusResult.data.workspace.status).toBe('string');
+    expect(workspaceStatusResult.data.runtimeSnapshot?.activeBlockers.length ?? 0).toBeGreaterThan(0);
+    expect(workspaceStatusResult.readinessState?.coverageByDomain).toBeTruthy();
 
     const filingSummaryResult = facade.invokeTool({
       name: 'tax.filing.get_summary',
@@ -128,10 +130,20 @@ describe('mcp facade', () => {
     );
     expect(integratedGenericReply.message).toContain(standardSummaryResult.data.headline);
     expect(integratedGenericReply.message).toContain('Submission readiness');
+    expect(integratedGenericReply.message).toContain('Active blockers:');
+    expect(integratedGenericReply.message).toContain('Submission comparison:');
+
+    const genericFormatted = formatFilingSummaryForReply(
+      standardSummaryResult as Parameters<typeof formatFilingSummaryForReply>[0],
+      'generic',
+    );
+    expect(genericFormatted).toContain('Active blockers:');
 
     const currentAlertSnapshot = toFilingAlertSnapshot(
       standardSummaryResult.data as Parameters<typeof toFilingAlertSnapshot>[0],
     );
+    expect(currentAlertSnapshot.activeBlockers.length).toBeGreaterThan(0);
+    expect(currentAlertSnapshot.blockers).toEqual(standardSummaryResult.data.runtimeSnapshot?.blockerCodes ?? standardSummaryResult.data.blockers);
     const alertDecision = decideFilingAlert(undefined, currentAlertSnapshot);
     expect(alertDecision.shouldNotify).toBe(true);
     expect(alertDecision.severity).toBe('high');
@@ -146,10 +158,18 @@ describe('mcp facade', () => {
       }).target,
     ).toBe('discord:#tax-operator-immediate');
 
+    const blockerChangedDecision = decideFilingAlert(currentAlertSnapshot, {
+      ...currentAlertSnapshot,
+      activeBlockers: currentAlertSnapshot.activeBlockers.map((blocker, index) => index === 0 ? { ...blocker, blockingReason: 'comparison_incomplete' } : blocker),
+    });
+    expect(blockerChangedDecision.shouldNotify).toBe(true);
+    expect(blockerChangedDecision.reason).toBe('blocker_changed');
+
     const transitionedAlertDecision = decideFilingAlert(currentAlertSnapshot, {
       ...currentAlertSnapshot,
       status: 'ready_for_hometax_assist',
       blockers: [],
+      activeBlockers: [],
       nextRecommendedAction: 'tax.filing.prepare_hometax',
       operatorUpdate: '✅ READY FOR HOMETAX ASSIST\nNEXT: prepare the draft for HomeTax handoff',
     });
