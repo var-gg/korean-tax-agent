@@ -7,8 +7,10 @@ import {
   InMemoryOpenClawBrowserRelay,
   OpenClawBrowserHostError,
   OpenClawBrowserHostExecutor,
+  OpenClawBrowserControlServerClient,
   OpenClawBrowserRuntimeCommandClient,
   OpenClawBrowserToolTransport,
+  handleOpenClawBrowserRuntimeCommand,
   RecordingBrowserRuntimeAdapter,
   SystemBrowserRuntimeAdapter,
   createBrowserAssistService,
@@ -466,6 +468,83 @@ if (input.operation === 'listTargets') {
       targetUrl: 'https://hometax.go.kr/cmd/ready',
       handedOffAt: '2026-03-16T00:00:00.000Z',
     })).resolves.toEqual(expect.objectContaining({ url: 'https://hometax.go.kr/cmd/ready' }));
+  });
+
+  it('maps runtime command requests to the thin bridge handler', async () => {
+    await expect(handleOpenClawBrowserRuntimeCommand({
+      operation: 'openTarget',
+      input: {
+        sessionId: 'session-handler',
+        url: 'https://hometax.go.kr/handler',
+        label: 'HomeTax',
+      },
+    }, {
+      client: {
+        listTargets: async () => [],
+        openTarget: async (input) => ({ targetId: 'target-handler', sessionId: input.sessionId, url: input.url, attached: true, available: true }),
+      },
+    })).resolves.toEqual({
+      ok: true,
+      result: expect.objectContaining({ targetId: 'target-handler', sessionId: 'session-handler' }),
+    });
+
+    await expect(handleOpenClawBrowserRuntimeCommand({
+      operation: 'handoffCheckpoint',
+      input: {
+        sessionId: 'session-handler',
+        targetId: 'target-handler',
+        targetUrl: 'https://hometax.go.kr/handler/ready',
+        handedOffAt: '2026-03-16T00:00:00.000Z',
+      },
+    }, {
+      client: {
+        listTargets: async () => [],
+        openTarget: async () => ({ targetId: 'unused' }),
+      },
+    })).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED' }),
+    });
+  });
+
+  it('maps OpenClaw browser control server actions through the live bridge client', async () => {
+    const calls: Array<{ action: string; body: any }> = [];
+    const client = new OpenClawBrowserControlServerClient({
+      baseUrl: 'http://openclaw.test',
+      profile: 'chrome',
+      fetchImpl: async (url, init) => {
+        const body = JSON.parse(String(init?.body || '{}'));
+        calls.push({ action: body.action, body });
+        const payload = body.action === 'status'
+          ? { running: true }
+          : body.action === 'tabs'
+            ? [{ id: 'target-live', url: 'https://hometax.go.kr/live/ready', title: 'Live tab', active: true }]
+            : body.action === 'open'
+              ? { id: 'target-live', url: body.url, title: 'Opened live tab' }
+              : {};
+        return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    await expect(client.getCapabilities({ runtimeTargetId: 'target-live' })).resolves.toEqual({
+      hostAvailable: true,
+      activeTarget: true,
+      runtimeInspection: true,
+      checkpointHandoff: true,
+    });
+    await expect(client.openTarget({
+      sessionId: 'session-live',
+      url: 'https://hometax.go.kr/live',
+      label: 'HomeTax',
+    })).resolves.toEqual(expect.objectContaining({ targetId: 'target-live', url: 'https://hometax.go.kr/live' }));
+    await expect(client.handoffCheckpoint({
+      sessionId: 'session-live',
+      targetId: 'target-live',
+      targetUrl: 'https://hometax.go.kr/live/ready',
+      handedOffAt: '2026-03-16T00:00:00.000Z',
+    })).resolves.toEqual(expect.objectContaining({ targetId: 'target-live' }));
+    expect(calls.map((call) => call.action)).toEqual(['status', 'tabs', 'open', 'tabs']);
+    expect(calls[2]?.body).toMatchObject({ action: 'open', profile: 'chrome', url: 'https://hometax.go.kr/live' });
   });
 
   it('surfaces relay unavailability during OpenClaw openTarget', async () => {

@@ -81,6 +81,16 @@ Production-style OpenClaw transport for the executor path.
 - Maps OpenClaw browser availability and tab inspection into generic host capabilities.
 - Supports attach-or-open semantics for `openTarget()` and tab-backed inspection for `getRuntimeState()` / `handoffCheckpoint()`.
 
+### `OpenClawBrowserRuntimeCommandClient` + `scripts/openclaw-browser-runtime.ts`
+
+Thin real bridge/runtime path for T6.
+
+- `OpenClawBrowserRuntimeCommandClient` already spoke the T5 stdin/stdout command protocol seam.
+- `scripts/openclaw-browser-runtime.ts` is the concrete adapter entrypoint that reads that protocol and calls a live OpenClaw browser control server client.
+- `OpenClawBrowserControlServerClient` currently maps the stable slice onto OpenClaw browser server actions: `status`, `tabs`, and `open`.
+- `handoffCheckpoint()` is intentionally state-preserving today: it re-resolves the bound target instead of inventing DOM automation.
+- Live use is environment-dependent: it requires `OPENCLAW_BROWSER_SERVER_URL` and usually a relay-attached Chrome target/profile if you want attach semantics.
+
 ### `InMemoryOpenClawBrowserRelay`
 
 In-repo relay stub for the OpenClaw executor path.
@@ -151,6 +161,7 @@ const service = createBrowserAssistService({
 ```
 
 See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
+For the real command-bridge path, see `examples/browser-assist-openclaw-live-bridge.ts` and `scripts/openclaw-browser-runtime.ts`.
 
 ## Future wiring points
 
@@ -169,7 +180,7 @@ See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
 - The runtime adapter shape stays stable while the transport is split into a browser-assist client layer and a host executor seam.
 - Remaining gaps:
   - OpenClaw coverage is intentionally limited to open/status/handoff state, not DOM automation
-  - `OpenClawBrowserToolTransport` now supports an external command/runtime client seam (`OpenClawBrowserRuntimeCommandClient`), but this repo still does not ship the OpenClaw runtime itself
+  - the repo now ships a thin command runtime (`scripts/openclaw-browser-runtime.ts`), but the truly live path still depends on an external OpenClaw browser control server and, for attach semantics, a relay-attached Chrome tab/profile
   - attach resolution is intentionally narrow and should be refined by the real host integration rather than by core workflow code
   - no DOM automation or HomeTax field entry
   - persistence is still only in-memory until another store is provided

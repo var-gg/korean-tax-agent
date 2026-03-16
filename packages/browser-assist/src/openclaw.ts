@@ -662,7 +662,7 @@ function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: Op
     .filter(isUsableTarget)
     .map((target) => {
       const matchesSession = normalizeSessionId(target.sessionId) === input.sessionId;
-      const matchesUrl = normalizedUrl !== null && normalizeComparableUrl(target.url) === normalizedUrl;
+      const matchesUrl = normalizedUrl !== null && urlsMatchForAttach(target.url, normalizedUrl);
       return { target, matchesSession, matchesUrl, score: (matchesSession ? 100 : 0) + (matchesUrl ? 10 : 0) + (target.active ? 1 : 0) };
     })
     .filter((candidate) => candidate.matchesSession || candidate.matchesUrl);
@@ -675,6 +675,13 @@ function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: Op
       : `Multiple OpenClaw targets match ${input.url}; refusing to attach implicitly.`);
   }
   return cloneValue(best[0].target);
+}
+
+function urlsMatchForAttach(targetUrl: string | null | undefined, requestedUrl: string): boolean {
+  const normalizedTargetUrl = normalizeComparableUrl(targetUrl);
+  if (!normalizedTargetUrl) return false;
+  if (normalizedTargetUrl === requestedUrl) return true;
+  return normalizedTargetUrl.startsWith(`${requestedUrl}/`) || requestedUrl.startsWith(`${normalizedTargetUrl}/`);
 }
 
 function normalizeToolTargets(targets: OpenClawBrowserToolClientTarget[] | OpenClawRelayTarget[] | null | undefined, now: () => string): OpenClawRelayTarget[] {

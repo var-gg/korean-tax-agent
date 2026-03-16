@@ -13,8 +13,10 @@
     "demo": "tsx scripts/run-demo.ts",
     "smoke:workflow": "tsx scripts/smoke-workflow.ts",
     "smoke:openclaw-runtime": "tsx scripts/smoke-openclaw-runtime.ts",
+    "smoke:openclaw-bridge": "tsx scripts/smoke-openclaw-bridge.ts",
     "example:browser-assist": "tsx examples/browser-assist-hometax.ts",
-    "example:openclaw-browser-assist": "tsx examples/browser-assist-openclaw-adapter.ts"
+    "example:openclaw-browser-assist": "tsx examples/browser-assist-openclaw-adapter.ts",
+    "example:openclaw-live-bridge": "tsx examples/browser-assist-openclaw-live-bridge.ts"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

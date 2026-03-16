@@ -59,7 +59,7 @@ Implemented prototype coverage currently includes:
 - HomeTax preparation and browser-assist handoff,
 - minimum browser-assist session lifecycle and real-browser open bridge.
 
-A minimum real-browser bridge is included through `SystemBrowserRuntimeAdapter`. The repo now also has a generic browser-host runtime seam, capability reporting, and a first concrete `OpenClawBrowserHostExecutor` adapter that can run either against the in-repo relay stub or a production-style `OpenClawBrowserToolTransport` bound to an external OpenClaw runtime/client path for the stable open/runtime-state/checkpoint-handoff slice. Full browser automation and HomeTax field-level interaction are still pending.
+A minimum real-browser bridge is included through `SystemBrowserRuntimeAdapter`. The repo now also has a generic browser-host runtime seam, capability reporting, and a first concrete `OpenClawBrowserHostExecutor` adapter that can run either against the in-repo relay stub or a production-style `OpenClawBrowserToolTransport` bound to an external OpenClaw runtime/client path for the stable open/runtime-state/checkpoint-handoff slice. T6 adds a thin command-bridge runtime script (`scripts/openclaw-browser-runtime.ts`) plus a live-style control-server client for that path. Full browser automation and HomeTax field-level interaction are still pending.
 ## Start here
 
 ### English reading path
@@ -97,8 +97,10 @@ The current prototype filing loop is:
 For runnable examples, use:
 - `npm run smoke:workflow`
 - `npm run smoke:openclaw-runtime`
+- `npm run smoke:openclaw-bridge`
 - `npm run example:browser-assist`
 - `npm run example:openclaw-browser-assist`
+- `npm run example:openclaw-live-bridge`
 
 ## What this repo contains
 
