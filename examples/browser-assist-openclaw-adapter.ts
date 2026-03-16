@@ -7,28 +7,51 @@ import {
 } from '../packages/browser-assist/src/index.js';
 
 async function main() {
-  const tabs = [
-    {
-      targetId: 'openclaw-tab:session-openclaw-live-example',
-      url: 'https://hometax.go.kr/openclaw-live-example/ready',
-      attached: true,
-      available: true,
-      sessionId: 'session-openclaw-live-example',
-    },
-  ];
   const transport = new OpenClawBrowserToolTransport({
     client: {
-      async status() {
-        return { available: true, connected: true, attached: true };
+      async getCapabilities() {
+        return {
+          hostAvailable: true,
+          activeTarget: null,
+          runtimeInspection: true,
+          checkpointHandoff: true,
+        };
       },
-      async open(input) {
+      async listTargets() {
+        return [
+          {
+            targetId: 'openclaw-tab:session-openclaw-live-example',
+            url: 'https://hometax.go.kr/openclaw-live-example/ready',
+            attached: true,
+            available: true,
+            sessionId: 'session-openclaw-live-example',
+          },
+        ];
+      },
+      async openTarget(input) {
         return {
           targetId: 'openclaw-tab:session-openclaw-live-example',
+          sessionId: input.sessionId,
           url: input.url,
         };
       },
-      async tabs() {
-        return tabs;
+      async getTarget(input) {
+        return {
+          targetId: input.targetId,
+          sessionId: 'session-openclaw-live-example',
+          url: 'https://hometax.go.kr/openclaw-live-example/ready',
+          attached: true,
+          available: true,
+        };
+      },
+      async handoffCheckpoint(input) {
+        return {
+          targetId: input.targetId,
+          sessionId: input.sessionId,
+          url: input.targetUrl,
+          attached: true,
+          available: true,
+        };
       },
     },
   });

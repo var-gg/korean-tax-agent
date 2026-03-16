@@ -227,7 +227,7 @@ The safest first adapter slice is:
 
 Current implementation note:
 - the repo now includes `OpenClawBrowserHostExecutor` for exactly this slice,
-- `OpenClawBrowserToolTransport` is the first live-style transport behind that executor,
+- `OpenClawBrowserToolTransport` is the first production-style transport behind that executor, with a narrow external runtime/client binding seam,
 - `InMemoryOpenClawBrowserRelay` remains for tests/examples/smoke coverage,
 - no DOM mutation or field-level automation is part of this tranche.
 

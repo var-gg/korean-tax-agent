@@ -52,6 +52,8 @@ async function main() {
     'getTarget',
     'getCapabilities',
     'getTarget',
+    'getCapabilities',
+    'handoffCheckpoint',
   ]);
 
   console.log(

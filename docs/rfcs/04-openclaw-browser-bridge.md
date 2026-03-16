@@ -47,7 +47,9 @@ Then add an OpenClaw-specific implementation behind that seam, rather than makin
 
 ```ts
 interface OpenClawBrowserClient {
-  open(input: { url: string }): Promise<{ targetId: string; url?: string }>;
+  openTarget(input: { sessionId: string; url: string; label: string }): Promise<{ targetId: string; url?: string; sessionId?: string }>;
+  listTargets(input: { sessionId?: string; url?: string; targetId?: string | null }): Promise<Array<{ targetId: string; url?: string }>>;
+  handoffCheckpoint?(input: { sessionId: string; targetId: string; targetUrl: string; handedOffAt: string }): Promise<{ targetId: string; url?: string } | null>;
   navigate(input: { targetId: string; url: string }): Promise<{ url?: string }>;
   snapshot(input: { targetId: string }): Promise<{
     url?: string;

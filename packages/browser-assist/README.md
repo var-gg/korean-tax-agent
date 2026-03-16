@@ -75,9 +75,9 @@ First concrete host adapter implementation behind the generic browser-host seam.
 
 ### `OpenClawBrowserToolTransport`
 
-Live-style OpenClaw transport for the executor path.
+Production-style OpenClaw transport for the executor path.
 
-- Wraps a narrow browser-tool client (`status()`, `open()`, `tabs()`).
+- Wraps a narrow external runtime client (`getCapabilities()`, `listTargets()`, `openTarget()`, optional `getTarget()` and `handoffCheckpoint()`).
 - Maps OpenClaw browser availability and tab inspection into generic host capabilities.
 - Supports attach-or-open semantics for `openTarget()` and tab-backed inspection for `getRuntimeState()` / `handoffCheckpoint()`.
 
@@ -155,7 +155,7 @@ See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
 ## Future wiring points
 
 - `OpenClawBrowserHostExecutor` is the first concrete host adapter wired into the generic `BrowserHostExecutor` seam.
-- `OpenClawBrowserToolTransport` is the first live-style transport/provider behind that executor; `InMemoryOpenClawBrowserRelay` remains the in-repo stub path.
+- `OpenClawBrowserToolTransport` is the first production-style transport/provider behind that executor; it now supports a real external runtime/client binding path while `InMemoryOpenClawBrowserRelay` remains the in-repo stub path.
 - `BrowserHostExecutor.openTarget()` remains the minimum host seam to map a browser-assist session into a real host/browser open or attach call.
 - `BrowserHostExecutor.getRuntimeState()` remains the host seam to read tab or session state back into `getHomeTaxAssistStatus()`.
 - `BrowserHostExecutor.handoffCheckpoint()` remains the host seam to carry consent-checkpoint context across login/page-ready transitions.
@@ -169,7 +169,7 @@ See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
 - The runtime adapter shape stays stable while the transport is split into a browser-assist client layer and a host executor seam.
 - Remaining gaps:
   - OpenClaw coverage is intentionally limited to open/status/handoff state, not DOM automation
-  - `OpenClawBrowserToolTransport` still depends on an external browser-tool client binding; this repo models that boundary but does not ship the OpenClaw runtime itself
+  - `OpenClawBrowserToolTransport` now supports an external command/runtime client seam (`OpenClawBrowserRuntimeCommandClient`), but this repo still does not ship the OpenClaw runtime itself
   - attach resolution is intentionally narrow and should be refined by the real host integration rather than by core workflow code
   - no DOM automation or HomeTax field entry
   - persistence is still only in-memory until another store is provided
