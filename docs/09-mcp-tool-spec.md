@@ -450,9 +450,11 @@ Output:
 - short summary text
 - compact operator update text
 - key points
-- blockers
+- blockers (compatibility summary)
+- runtime snapshot (canonical current runtime view)
 - next recommended action
 - lightweight draft metrics
+- readiness state (canonical calculated readiness view, when available)
 
 Formatting note:
 - `operatorUpdate` should be compact and channel-friendly for operator surfaces like Discord
@@ -462,19 +464,23 @@ Notes:
 - this is the preferred narrative read model when an agent needs to explain status in plain language
 - `short` should emphasize blocker + next step, while `standard` should also include draft/readiness context
 - for Discord-style operator replies, agents should prefer `operatorUpdate` over rebuilding formatting from raw fields
+- consumers should prefer `readinessState` for readiness/policy branching
+- consumers should prefer `runtimeSnapshot` for current blocker rendering, ordered blocker context, and submission-comparison state
+- `blockers` remains useful as a lightweight compatibility summary, but it should not be treated as the richest source of blocker truth
 
 Example integration:
 - invoke `tax.filing.get_summary`
 - on Discord/operator surfaces, send `operatorUpdate`
-- on generic chat surfaces, use `headline + summaryText`
+- on generic chat surfaces, use `headline + summaryText` and optionally append `runtimeSnapshot`-derived details such as active blockers / submission comparison
+- use `readinessState` for decisions such as whether to escalate review, block submission prep, or request user intervention
 - facade helpers: `invokeAndFormatFilingSummaryForDiscord(...)` and `invokeAndFormatFilingSummary(..., 'generic')`
 - sample usage: `examples/filing-summary-reply-example.ts`
 
 Alerting pattern:
 - Core MCP behavior:
-  - keep the previous filing-summary snapshot (`status`, `blockers`, `nextRecommendedAction`, `operatorUpdate`)
+  - keep the previous filing-summary snapshot (`status`, `nextRecommendedAction`, `operatorUpdate`, and preferably `runtimeSnapshot.blockerCodes` / `runtimeSnapshot.activeBlockers`)
   - recompute a new snapshot after workflow progress
-  - notify only when status, blockers, or next action changed
+  - notify only when status, blocker state, or next action changed
   - classify alert severity for operator routing (`high`, `medium`, `info`, `none`)
   - map severity into abstract routes such as `operator-immediate`, `operator-watch`, `operator-updates`, or `drop`
   - convert routes into host/runtime-selected targets with a dispatch-plan adapter
