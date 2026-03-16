@@ -91,9 +91,11 @@ describe('workflow smoke', () => {
       reviewItems,
     );
 
-    expect(initialDraftResult.status).toBe('completed');
+    expect(initialDraftResult.status).toBe('blocked');
+    expect(initialDraftResult.blockingReason).toBe('awaiting_review_decision');
+    expect(initialDraftResult.checkpointType).toBe('review_judgment');
     expect(initialDraftResult.readiness?.blockerCodes).toContain('awaiting_review_decision');
-    expect(initialDraftResult.readiness?.draftReadiness).toBe('draft_ready');
+    expect(initialDraftResult.readiness?.draftReadiness).toBe('estimate_ready');
 
     const resolutionResult = taxClassifyResolveReviewItem(
       {

@@ -49,12 +49,14 @@ describe('in-memory runtime filing flow', () => {
       includeAssumptions: true,
     });
 
-    expect(initialDraft.status).toBe('completed');
+    expect(initialDraft.status).toBe('blocked');
+    expect(initialDraft.blockingReason).toBe('awaiting_review_decision');
+    expect(initialDraft.checkpointType).toBe('review_judgment');
     expect(initialDraft.readiness?.blockerCodes).toContain('awaiting_review_decision');
     expect(runtime.getDraft(demo.workspaceId)?.draftId).toBe(initialDraft.data.draftId);
     expect(runtime.getWorkspace(demo.workspaceId)?.currentDraftId).toBe(initialDraft.data.draftId);
     expect(runtime.getWorkspace(demo.workspaceId)?.unresolvedReviewCount).toBeGreaterThan(0);
-    expect(runtime.getWorkspace(demo.workspaceId)?.lastBlockingReason).toBe('awaiting_review_decision');
+    expect(runtime.getWorkspace(demo.workspaceId)?.lastBlockingReason).toBe('missing_material_coverage');
 
     const resolveResult = runtime.invoke('tax.classify.resolve_review_item', {
       reviewItemIds: listedReviewItems.data.items.map((item) => item.reviewItemId),

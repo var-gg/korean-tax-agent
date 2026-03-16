@@ -65,7 +65,9 @@ const initialDraftResult = runtime.invoke('tax.filing.compute_draft', {
   includeAssumptions: true,
 });
 
-assert(initialDraftResult.status === 'completed', 'initial draft compute should complete');
+assert(initialDraftResult.status === 'blocked', 'initial draft compute should be blocked until review decisions are resolved');
+assert(initialDraftResult.blockingReason === 'awaiting_review_decision', 'initial draft should expose awaiting_review_decision as the blocking reason');
+assert(initialDraftResult.checkpointType === 'review_judgment', 'initial draft should surface review_judgment checkpoint');
 assert(initialDraftResult.readiness?.blockerCodes?.includes('awaiting_review_decision'), 'initial draft should flag awaiting review decision');
 
 const resolveReviewResult = runtime.invoke('tax.classify.resolve_review_item', {
