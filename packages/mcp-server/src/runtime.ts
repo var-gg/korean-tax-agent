@@ -305,6 +305,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
     const draft = this.getDraft(input.workspaceId);
     const runtimeSnapshot = buildRuntimeSnapshot(workspace);
+    const readiness = buildRuntimeReadiness(workspace, runtimeSnapshot.blockerCodes);
+    const readinessState = buildRuntimeReadinessState(workspace);
 
     return {
       ok: true,
@@ -339,17 +341,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         runtimeSnapshot,
         nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
       },
-      readiness: {
-        supportTier: workspace.runtime?.readiness.supportTier ?? workspace.supportTier ?? 'undetermined',
-        filingPathKind: workspace.filingPathKind ?? 'unknown',
-        estimateReadiness: workspace.estimateReadiness ?? 'not_ready',
-        draftReadiness: workspace.draftReadiness ?? 'not_ready',
-        submissionReadiness: workspace.submissionReadiness ?? 'not_ready',
-        comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
-        freshnessState: workspace.freshnessState ?? 'stale_unknown',
-        majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [],
-        blockerCodes: getRuntimeBlockerCodes(workspace),
-      },
+      readiness,
+      readinessState,
       nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
     };
   }
@@ -365,6 +358,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     ]);
 
     const runtimeSnapshot = buildRuntimeSnapshot(workspace);
+    const readiness = buildRuntimeReadiness(workspace, blockers.filter(isBlockingReason));
+    const readinessState = buildRuntimeReadinessState(workspace);
 
     const keyPoints = [
       `workspace_status=${workspace.status}`,
@@ -413,17 +408,8 @@ export class InMemoryKoreanTaxMCPRuntime {
           fieldValueCount: draft?.fieldValues?.length ?? 0,
         },
       },
-      readiness: {
-        supportTier: workspace.runtime?.readiness.supportTier ?? workspace.supportTier ?? 'undetermined',
-        filingPathKind: workspace.filingPathKind ?? 'unknown',
-        estimateReadiness: workspace.estimateReadiness ?? 'not_ready',
-        draftReadiness: workspace.draftReadiness ?? 'not_ready',
-        submissionReadiness: workspace.submissionReadiness ?? 'not_ready',
-        comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
-        freshnessState: workspace.freshnessState ?? 'stale_unknown',
-        majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [],
-        blockerCodes: blockers.filter((code): code is BlockingReason => isBlockingReason(code)),
-      },
+      readiness,
+      readinessState,
       nextRecommendedAction: nextAction,
     };
   }
@@ -944,6 +930,31 @@ function buildRuntimeSnapshot(workspace: FilingWorkspace) {
     coverageByDomain: workspace.runtime?.coverageByDomain,
     materialCoverageSummary: workspace.runtime?.materialCoverageSummary,
     submissionComparison: workspace.runtime?.submissionComparison,
+  };
+}
+
+function buildRuntimeReadiness(workspace: FilingWorkspace, blockerCodes: BlockingReason[]): NonNullable<MCPResponseEnvelope['readiness']> {
+  return {
+    supportTier: workspace.runtime?.readiness.supportTier ?? workspace.supportTier ?? 'undetermined',
+    filingPathKind: workspace.filingPathKind ?? 'unknown',
+    estimateReadiness: workspace.estimateReadiness ?? 'not_ready',
+    draftReadiness: workspace.draftReadiness ?? 'not_ready',
+    submissionReadiness: workspace.submissionReadiness ?? 'not_ready',
+    comparisonSummaryState: workspace.comparisonSummaryState ?? 'not_started',
+    freshnessState: workspace.freshnessState ?? 'stale_unknown',
+    majorUnknowns: workspace.runtime?.readiness.majorUnknowns ?? workspace.majorUnknowns ?? [],
+    blockerCodes,
+  };
+}
+
+function buildRuntimeReadinessState(workspace: FilingWorkspace): MCPResponseEnvelope['readinessState'] {
+  if (!workspace.runtime) return undefined;
+  return {
+    readiness: workspace.runtime.readiness,
+    coverageByDomain: workspace.runtime.coverageByDomain,
+    materialCoverageSummary: workspace.runtime.materialCoverageSummary,
+    majorUnknowns: workspace.runtime.readiness.majorUnknowns,
+    supportTier: workspace.runtime.readiness.supportTier,
   };
 }
 
