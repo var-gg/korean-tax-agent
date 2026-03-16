@@ -87,7 +87,7 @@ const awaitingAuthSource = transitionSourceState(
 const collectionStatusBeforeResume = taxSourcesGetCollectionStatus(
   { workspaceId: demo.workspaceId },
   demo.sources.map((source) => (source.sourceId === awaitingAuthSource.sourceId ? awaitingAuthSource : source)),
-  demo.coverageGaps.map((gap) => gap.description),
+  demo.coverageGaps,
 );
 
 const syncResult = taxSourcesSync({
