@@ -467,12 +467,14 @@ Notes:
 - consumers should prefer `readinessState` for readiness/policy branching
 - consumers should prefer `runtimeSnapshot` for current blocker rendering, ordered blocker context, and submission-comparison state
 - `blockers` remains useful as a lightweight compatibility summary, but it should not be treated as the richest source of blocker truth
+- legacy single-value fields such as `lastBlockingReason` should be treated as compatibility data, not canonical state
 
 Example integration:
 - invoke `tax.filing.get_summary`
 - on Discord/operator surfaces, send `operatorUpdate`
 - on generic chat surfaces, use `headline + summaryText` and optionally append `runtimeSnapshot`-derived details such as active blockers / submission comparison
 - use `readinessState` for decisions such as whether to escalate review, block submission prep, or request user intervention
+- migration note: existing consumers that read `blockers` / `lastBlockingReason` can keep doing so short-term, but new work should branch on `readinessState` and render blocker state from `runtimeSnapshot`
 - facade helpers: `invokeAndFormatFilingSummaryForDiscord(...)` and `invokeAndFormatFilingSummary(..., 'generic')`
 - sample usage: `examples/filing-summary-reply-example.ts`
 

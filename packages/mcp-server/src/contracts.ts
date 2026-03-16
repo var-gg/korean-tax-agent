@@ -425,6 +425,10 @@ export type GetWorkspaceStatusData = {
     submissionReadiness?: ReadinessLevel;
     comparisonSummaryState?: FilingComparisonSummaryState;
     freshnessState?: DataFreshnessState;
+    /**
+     * Legacy single-value blocker summary kept for compatibility.
+     * Prefer `runtimeSnapshot.activeBlockers` / `runtimeSnapshot.blockerCodes` for new consumers.
+     */
     lastBlockingReason?: BlockingReason;
     lastCollectionStatus?: SyncAttemptState;
     majorUnknowns?: string[];
@@ -453,6 +457,11 @@ export type GetFilingSummaryData = {
   operatorUpdate: string;
   status: string;
   keyPoints: string[];
+  /**
+   * Legacy lightweight blocker summary kept for compatibility.
+   * New consumers should prefer `runtimeSnapshot.activeBlockers` and
+   * `runtimeSnapshot.blockerCodes`.
+   */
   blockers: string[];
   /**
    * Current workspace runtime view for operator summaries and UI rendering.
