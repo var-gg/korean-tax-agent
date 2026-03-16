@@ -4,6 +4,7 @@ import type {
   CheckpointType,
   ClassificationDecision,
   CoverageByDomain,
+  CoverageGap,
   DataFreshnessState,
   DraftCalibrationSnapshot,
   FilingComparisonSummaryState,
@@ -156,7 +157,7 @@ export type CollectionStatusData = {
     state: SourceState | string;
   }>;
   pendingCheckpoints: CheckpointType[];
-  coverageGaps: string[];
+  coverageGaps: CoverageGap[];
   blockedAttempts: string[];
 };
 

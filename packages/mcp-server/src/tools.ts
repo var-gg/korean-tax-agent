@@ -18,6 +18,7 @@ import type {
   ClassificationDecision,
   ConsentRecord,
   CoverageByDomain,
+  CoverageGap,
   FilingCoverageDomain,
   LedgerTransaction,
   MappedReadinessState,
@@ -130,13 +131,14 @@ function buildCollectionReadinessState(params: {
   supportTier?: import('../../core/src/types.js').FilingSupportTier;
   pendingCheckpoints?: number;
   blockedAttempts?: string[];
-  coverageGaps?: string[];
+  coverageGaps?: CoverageGap[];
   sourceState?: import('../../core/src/types.js').SourceState;
   blockingReason?: import('../../core/src/types.js').BlockingReason;
   resumed?: boolean;
 }): MappedReadinessState {
   const blocked = (params.blockedAttempts?.length ?? 0) > 0 || params.blockingReason !== undefined;
-  const hasCoverageGaps = (params.coverageGaps?.length ?? 0) > 0;
+  const openCoverageGaps = (params.coverageGaps ?? []).filter((gap) => gap.state === 'open');
+  const hasCoverageGaps = openCoverageGaps.length > 0;
   const submissionComparison = params.resumed ? 'partial' : 'weak';
   const coverageByDomain: CoverageByDomain = {
     filingPath: hasCoverageGaps ? 'weak' : 'partial',
@@ -149,7 +151,7 @@ function buildCollectionReadinessState(params: {
 
   const majorUnknowns = [
     ...(blocked ? ['Source collection is still blocked or incomplete.'] : []),
-    ...(hasCoverageGaps ? ['Collection coverage gaps remain open.'] : []),
+    ...openCoverageGaps.map((gap) => gap.description),
     ...((params.pendingCheckpoints ?? 0) > 0 ? ['A user checkpoint is still pending before stronger readiness claims.'] : []),
   ];
 
@@ -241,7 +243,7 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
 export function taxSourcesGetCollectionStatus(
   _input: GetCollectionStatusInput,
   sources: SourceConnection[] = [],
-  coverageGaps: string[] = [],
+  coverageGaps: CoverageGap[] = [],
 ): MCPResponseEnvelope<CollectionStatusData> {
   const connectedSources = sources.map((source) => ({
     sourceId: source.sourceId,
