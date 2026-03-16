@@ -85,6 +85,14 @@ export function createToolInvocationErrorResponse(name: string, error: unknown):
   };
 }
 
+/**
+ * Thin façade over the in-memory runtime.
+ *
+ * Consumer guidance:
+ * - Use `response.readinessState` for canonical readiness decisions.
+ * - Use `response.data.runtimeSnapshot` for current runtime/UI state when available.
+ * - Use `response.readiness` only for compact compatibility summaries.
+ */
 export class KoreanTaxMCPFacade {
   readonly runtime: InMemoryKoreanTaxMCPRuntime;
 

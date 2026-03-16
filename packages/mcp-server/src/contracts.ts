@@ -49,6 +49,12 @@ export type MCPProgress = {
   percent: number;
 };
 
+/**
+ * Backward-compatible readiness summary.
+ *
+ * Use this when a consumer only needs compact headline state.
+ * For canonical decisioning, prefer `readinessState`.
+ */
 export type MCPReadiness = {
   supportTier: FilingSupportTier;
   filingPathKind: FilingPathKind;
@@ -66,9 +72,19 @@ export type MCPCoverageByDomain = Partial<CoverageByDomain>;
 export type MCPMaterialCoverageSummary = Partial<MaterialCoverageSummary>;
 
 export type MCPResponseEnvelope<TData = Record<string, unknown>> = {
+  /** Primary tool payload. */
   ok: boolean;
   data: TData;
+  /**
+   * Compact compatibility summary for legacy or lightweight consumers.
+   * Prefer `readinessState` when branching on readiness logic.
+   */
   readiness?: MCPReadiness;
+  /**
+   * Canonical calculated readiness payload.
+   * Consumers should prefer this for policy/decision logic, domain coverage,
+   * and detailed readiness reasoning.
+   */
   readinessState?: MappedReadinessState;
   warnings?: MCPWarning[];
   requiresConsent?: boolean;
@@ -380,6 +396,13 @@ export type StartHomeTaxAssistData = {
   authRequired: boolean;
 };
 
+/**
+ * Canonical workspace runtime snapshot for operator/UI rendering.
+ *
+ * This is the best source for "what is true right now in the workspace runtime",
+ * including ordered active blockers and submission-comparison status.
+ * For calculated readiness decisions, prefer `readinessState`.
+ */
 export type RuntimeSnapshot = {
   blockerCodes: BlockingReason[];
   activeBlockers: ActiveBlocker[];
@@ -413,6 +436,11 @@ export type GetWorkspaceStatusData = {
     warningCount: number;
     fieldValueCount: number;
   };
+  /**
+   * Current workspace runtime view for rendering/status surfaces.
+   * Prefer this over legacy single-value fields like `lastBlockingReason`
+   * when detailed blocker context is needed.
+   */
   runtimeSnapshot?: RuntimeSnapshot;
   nextRecommendedAction?: string;
 };
@@ -426,6 +454,10 @@ export type GetFilingSummaryData = {
   status: string;
   keyPoints: string[];
   blockers: string[];
+  /**
+   * Current workspace runtime view for operator summaries and UI rendering.
+   * Prefer this over `blockers` when detailed blocker metadata is needed.
+   */
   runtimeSnapshot?: RuntimeSnapshot;
   nextRecommendedAction?: string;
   metrics: {
