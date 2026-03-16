@@ -1,3 +1,4 @@
+import type { ActiveBlocker } from '../../core/src/types.js';
 import type { GetFilingSummaryData } from './contracts.js';
 
 export type FilingAlertSnapshot = Pick<
@@ -5,6 +6,7 @@ export type FilingAlertSnapshot = Pick<
   'status' | 'blockers' | 'nextRecommendedAction' | 'operatorUpdate'
 > & {
   workspaceId: string;
+  activeBlockers: ActiveBlocker[];
 };
 
 export type FilingAlertSeverity = 'high' | 'medium' | 'info' | 'none';
@@ -25,7 +27,8 @@ export function toFilingAlertSnapshot(data: GetFilingSummaryData): FilingAlertSn
   return {
     workspaceId: data.workspaceId,
     status: data.status,
-    blockers: data.blockers,
+    blockers: data.runtimeSnapshot?.blockerCodes ?? data.blockers,
+    activeBlockers: data.runtimeSnapshot?.activeBlockers ?? [],
     nextRecommendedAction: data.nextRecommendedAction,
     operatorUpdate: data.operatorUpdate,
   };
@@ -53,7 +56,7 @@ export function decideFilingAlert(
     };
   }
 
-  if (joinTokens(previous.blockers) !== joinTokens(current.blockers)) {
+  if (joinTokens(previous.blockers) !== joinTokens(current.blockers) || joinTokens(previous.activeBlockers.map((blocker) => blocker.blockingReason)) !== joinTokens(current.activeBlockers.map((blocker) => blocker.blockingReason))) {
     return {
       shouldNotify: true,
       reason: 'blocker_changed',
@@ -79,11 +82,15 @@ export function decideFilingAlert(
 }
 
 export function classifyFilingAlertSeverity(snapshot: FilingAlertSnapshot): FilingAlertSeverity {
+  const blockerCodes = snapshot.activeBlockers.length > 0
+    ? snapshot.activeBlockers.map((blocker) => blocker.blockingReason)
+    : snapshot.blockers;
+
   if (
     snapshot.status === 'blocked'
-    || snapshot.blockers.includes('missing_auth')
-    || snapshot.blockers.includes('missing_consent')
-    || snapshot.blockers.includes('export_required')
+    || blockerCodes.includes('missing_auth')
+    || blockerCodes.includes('missing_consent')
+    || blockerCodes.includes('export_required')
     || snapshot.operatorUpdate.includes('COLLECTION BLOCKED')
   ) {
     return 'high';
@@ -91,9 +98,9 @@ export function classifyFilingAlertSeverity(snapshot: FilingAlertSnapshot): Fili
 
   if (
     snapshot.status === 'review_pending'
-    || snapshot.blockers.includes('awaiting_review_decision')
-    || snapshot.blockers.includes('comparison_incomplete')
-    || snapshot.blockers.includes('official_data_refresh_required')
+    || blockerCodes.includes('awaiting_review_decision')
+    || blockerCodes.includes('comparison_incomplete')
+    || blockerCodes.includes('official_data_refresh_required')
   ) {
     return 'medium';
   }
