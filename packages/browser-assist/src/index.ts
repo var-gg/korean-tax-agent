@@ -181,8 +181,40 @@ export interface OpenClawBrowserRuntimeClient {
   }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
 }
 
+export interface OpenClawBrowserToolExecutor {
+  openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> | Partial<BrowserAssistOpenReceipt>;
+  getRuntimeState?(input: {
+    sessionId: string;
+    target: BrowserAssistTarget;
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
+  handoffCheckpoint?(input: BrowserRuntimeCheckpointHandoffRequest & {
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
+}
+
+export interface OpenClawBrowserToolRuntimeClientOptions {
+  executor: OpenClawBrowserToolExecutor;
+}
+
+export interface InMemoryOpenClawBrowserToolExecutorOptions {
+  now?: () => string;
+  transport?: string;
+  runtimeTargetPrefix?: string;
+}
+
+export interface OpenClawBrowserToolExecutionRecord {
+  method: 'openTarget' | 'handoffCheckpoint' | 'getRuntimeState';
+  input:
+    | BrowserRuntimeOpenRequest
+    | (BrowserRuntimeCheckpointHandoffRequest & { runtimeState: BrowserAssistRuntimeState | null })
+    | { sessionId: string; target: BrowserAssistTarget; runtimeState: BrowserAssistRuntimeState | null };
+  output: Partial<BrowserAssistOpenReceipt> | Partial<BrowserAssistRuntimeState> | null;
+}
+
 export interface OpenClawBrowserRuntimeAdapterOptions {
-  client: OpenClawBrowserRuntimeClient;
+  client?: OpenClawBrowserRuntimeClient;
+  executor?: OpenClawBrowserToolExecutor;
   now?: () => string;
   transport?: string;
 }
@@ -334,6 +366,121 @@ export class SystemBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter 
   }
 }
 
+export class OpenClawBrowserToolRuntimeClient implements OpenClawBrowserRuntimeClient {
+  private readonly executor: OpenClawBrowserToolExecutor;
+
+  constructor(options: OpenClawBrowserToolRuntimeClientOptions) {
+    if (!options?.executor || typeof options.executor.openTarget !== 'function') {
+      throw new TypeError('OpenClawBrowserToolRuntimeClient requires an executor with openTarget().');
+    }
+
+    this.executor = options.executor;
+  }
+
+  async openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> {
+    const receipt = await this.executor.openTarget(cloneValue(input));
+    return cloneValue(receipt);
+  }
+
+  async handoffCheckpoint(input: BrowserRuntimeCheckpointHandoffRequest & {
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> {
+    if (typeof this.executor.handoffCheckpoint !== 'function') {
+      return null;
+    }
+
+    const runtimeState = await this.executor.handoffCheckpoint(cloneValue(input));
+    return runtimeState ? cloneValue(runtimeState) : null;
+  }
+
+  async getRuntimeState(input: {
+    sessionId: string;
+    target: BrowserAssistTarget;
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> {
+    if (typeof this.executor.getRuntimeState !== 'function') {
+      return null;
+    }
+
+    const runtimeState = await this.executor.getRuntimeState(cloneValue(input));
+    return runtimeState ? cloneValue(runtimeState) : null;
+  }
+}
+
+export class InMemoryOpenClawBrowserToolExecutor implements OpenClawBrowserToolExecutor {
+  readonly executions: OpenClawBrowserToolExecutionRecord[] = [];
+  private readonly now: () => string;
+  private readonly transport: string;
+  private readonly runtimeTargetPrefix: string;
+  private readonly stateBySessionId = new Map<string, BrowserAssistRuntimeState>();
+
+  constructor(options: InMemoryOpenClawBrowserToolExecutorOptions = {}) {
+    this.now = options.now ?? (() => new Date().toISOString());
+    this.transport = options.transport ?? 'openclaw-browser-tool';
+    this.runtimeTargetPrefix = options.runtimeTargetPrefix ?? 'openclaw-tab';
+  }
+
+  async openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> {
+    const openedAt = this.now();
+    const receipt = createRuntimeReceipt({
+      sessionId: input.sessionId,
+      openedAt,
+      updatedAt: openedAt,
+      transport: this.transport,
+      runtimeTargetId: `${this.runtimeTargetPrefix}:${input.sessionId}`,
+      targetUrl: input.target.entryUrl,
+      currentTargetUrl: input.target.entryUrl,
+      lastOpenedUrl: input.target.entryUrl,
+      activeCheckpointId: input.activeCheckpoint.id,
+    });
+
+    this.stateBySessionId.set(input.sessionId, cloneValue(receipt));
+    this.executions.push({
+      method: 'openTarget',
+      input: cloneValue(input),
+      output: cloneValue(receipt),
+    });
+    return cloneValue(receipt);
+  }
+
+  async handoffCheckpoint(input: BrowserRuntimeCheckpointHandoffRequest & {
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> {
+    const previousState = this.stateBySessionId.get(input.sessionId) ?? input.runtimeState ?? null;
+    const nextState = createRuntimeState({
+      sessionId: input.sessionId,
+      transport: previousState?.transport ?? this.transport,
+      runtimeTargetId: previousState?.runtimeTargetId ?? `${this.runtimeTargetPrefix}:${input.sessionId}`,
+      currentTargetUrl: input.targetUrl || previousState?.currentTargetUrl || input.target.entryUrl,
+      lastOpenedUrl: previousState?.lastOpenedUrl || input.target.entryUrl,
+      activeCheckpointId: input.nextCheckpoint ? input.nextCheckpoint.id : null,
+      updatedAt: input.handedOffAt || this.now(),
+    });
+
+    this.stateBySessionId.set(input.sessionId, cloneValue(nextState));
+    this.executions.push({
+      method: 'handoffCheckpoint',
+      input: cloneValue(input),
+      output: cloneValue(nextState),
+    });
+    return cloneValue(nextState);
+  }
+
+  async getRuntimeState(input: {
+    sessionId: string;
+    target: BrowserAssistTarget;
+    runtimeState: BrowserAssistRuntimeState | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> {
+    const runtimeState = this.stateBySessionId.get(input.sessionId) ?? input.runtimeState ?? null;
+    this.executions.push({
+      method: 'getRuntimeState',
+      input: cloneValue(input),
+      output: runtimeState ? cloneValue(runtimeState) : null,
+    });
+    return runtimeState ? cloneValue(runtimeState) : null;
+  }
+}
+
 export class OpenClawBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter {
   private readonly client: OpenClawBrowserRuntimeClient;
   private readonly now: () => string;
@@ -341,11 +488,7 @@ export class OpenClawBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapte
   private readonly stateBySessionId = new Map<string, BrowserAssistRuntimeState>();
 
   constructor(options: OpenClawBrowserRuntimeAdapterOptions) {
-    if (!options?.client || typeof options.client.openTarget !== 'function') {
-      throw new TypeError('OpenClawBrowserRuntimeAdapter requires a client with openTarget().');
-    }
-
-    this.client = options.client;
+    this.client = resolveOpenClawBrowserRuntimeClient(options);
     this.now = options.now ?? (() => new Date().toISOString());
     this.transport = options.transport ?? 'openclaw-browser-tool';
   }
@@ -809,6 +952,22 @@ function createRuntimeState(input: BrowserAssistRuntimeState): BrowserAssistRunt
     activeCheckpointId: input.activeCheckpointId ?? null,
     updatedAt: input.updatedAt,
   };
+}
+
+function resolveOpenClawBrowserRuntimeClient(
+  options: OpenClawBrowserRuntimeAdapterOptions,
+): OpenClawBrowserRuntimeClient {
+  if (options?.client && typeof options.client.openTarget === 'function') {
+    return options.client;
+  }
+
+  if (options?.executor && typeof options.executor.openTarget === 'function') {
+    return new OpenClawBrowserToolRuntimeClient({ executor: options.executor });
+  }
+
+  throw new TypeError(
+    'OpenClawBrowserRuntimeAdapter requires either client.openTarget() or executor.openTarget().',
+  );
 }
 
 async function openUrlInSystemBrowser(targetUrl: string): Promise<void> {

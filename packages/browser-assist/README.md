@@ -48,12 +48,20 @@ This is intentionally shallow: it does not do DOM automation, tab inspection, or
 
 ### `OpenClawBrowserRuntimeAdapter`
 
-Initial adapter for a future OpenClaw browser-tool-backed runtime.
+Adapter for an OpenClaw browser-tool-backed runtime boundary.
 
-- Delegates browser operations to an injected `OpenClawBrowserRuntimeClient`.
+- Accepts either an injected `OpenClawBrowserRuntimeClient` or an `OpenClawBrowserToolExecutor`.
+- Uses `OpenClawBrowserToolRuntimeClient` as the in-repo client path when an executor is provided.
 - Supports `openTarget()`, `getRuntimeState()`, and `handoffCheckpoint()` today.
 - Caches per-session runtime state so the adapter is usable with a mock or partially implemented client.
-- Keeps the existing browser-assist service contract unchanged while the concrete browser transport is still undecided in-repo.
+
+### `InMemoryOpenClawBrowserToolExecutor`
+
+Concrete in-repo stub executor for the OpenClaw path.
+
+- Keeps per-session runtime state keyed by session id.
+- Records executor calls for tests, smoke workflows, and examples.
+- Provides the minimum transport boundary until a real host/browser-tool bridge is attached.
 
 ## Example
 
@@ -84,19 +92,17 @@ console.log(started.session.runtimeState);
 ```ts
 import {
   InMemoryBrowserAssistSessionStore,
+  InMemoryOpenClawBrowserToolExecutor,
   OpenClawBrowserRuntimeAdapter,
   createBrowserAssistService,
 } from '@korean-tax-agent/browser-assist';
 
+const executor = new InMemoryOpenClawBrowserToolExecutor({
+  runtimeTargetPrefix: 'openclaw-tab',
+});
+
 const runtime = new OpenClawBrowserRuntimeAdapter({
-  client: {
-    async openTarget(input) {
-      return {
-        runtimeTargetId: `openclaw-tab:${input.sessionId}`,
-        currentTargetUrl: `${input.target.entryUrl}/login`,
-      };
-    },
-  },
+  executor,
 });
 
 const service = createBrowserAssistService({
@@ -109,11 +115,17 @@ See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
 
 ## Future wiring points
 
-- `OpenClawBrowserRuntimeClient.openTarget()` is the seam to map a browser-assist session into an OpenClaw browser open/attach call.
-- `OpenClawBrowserRuntimeClient.getRuntimeState()` is the seam to read tab or session state back into `getHomeTaxAssistStatus()`.
-- `OpenClawBrowserRuntimeClient.handoffCheckpoint()` is the seam to carry consent-checkpoint context across login/page-ready transitions.
-- When the MCP server grows a real browser runtime bridge, the client implementation can live there without changing the browser-assist start/resume/status/stop API.
+- `OpenClawBrowserToolExecutor.openTarget()` is the host seam to map a browser-assist session into an OpenClaw browser open or attach call.
+- `OpenClawBrowserToolExecutor.getRuntimeState()` is the host seam to read tab or session state back into `getHomeTaxAssistStatus()`.
+- `OpenClawBrowserToolExecutor.handoffCheckpoint()` is the host seam to carry consent-checkpoint context across login/page-ready transitions.
+- `packages/mcp-server/src/index.ts` now includes a `StubOpenClawBrowserToolExecutor` for the future host package boundary.
 
-## Next bridge
+## Decisions and blockers
 
-See `docs/rfcs/04-openclaw-browser-bridge.md` for the proposed direct bridge from this package into an OpenClaw browser-controlled tab lifecycle.
+- Session state carries explicit checkpoints because HomeTax login and final approval must remain visible user actions.
+- The runtime adapter shape stays stable while the transport is split into a browser-assist client layer and a host executor seam.
+- Remaining gaps:
+  - no actual OpenClaw host transport yet; the in-repo executor is still an in-memory stub
+  - no real browser tab attachment or current-page introspection
+  - no DOM automation or HomeTax field entry
+  - persistence is still only in-memory until another store is provided

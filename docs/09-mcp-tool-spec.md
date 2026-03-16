@@ -680,6 +680,13 @@ Practical prototype loop:
 The browser-assist package now exposes an `OpenClawBrowserRuntimeClient` and
 `OpenClawBrowserRuntimeAdapter` seam for future browser-tool wiring.
 
+An in-repo executor-backed path now exists:
+
+- `OpenClawBrowserToolRuntimeClient` is the browser-assist-side client wrapper.
+- `OpenClawBrowserToolExecutor` is the host/runtime seam.
+- `InMemoryOpenClawBrowserToolExecutor` provides a concrete in-repo stub in `packages/browser-assist`.
+- `StubOpenClawBrowserToolExecutor` in `packages/mcp-server` is the matching host-package stub.
+
 - `openTarget()` should map a browser-assist session into the chosen OpenClaw browser open or attach call.
 - `getRuntimeState()` should map status reads to runtime-side tab or session inspection.
 - `handoffCheckpoint()` should carry checkpoint context forward after authentication and page-ready transitions.

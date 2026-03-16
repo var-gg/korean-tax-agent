@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BrowserAssistSessionError,
   InMemoryBrowserAssistSessionStore,
+  InMemoryOpenClawBrowserToolExecutor,
   OpenClawBrowserRuntimeAdapter,
   RecordingBrowserRuntimeAdapter,
   SystemBrowserRuntimeAdapter,
@@ -247,5 +248,39 @@ describe('browser assist', () => {
     expect(current.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw-fallback');
     expect(afterAuth.session.runtimeState.activeCheckpointId).toBe('checkpoint-review-fallback');
     expect(afterAuth.session.runtimeState.transport).toBe('openclaw-browser-tool');
+  });
+
+  it('supports an openclaw executor-backed runtime path in-repo', async () => {
+    const executor = new InMemoryOpenClawBrowserToolExecutor({
+      now: sequence(['2026-03-16T05:00:00.500Z', '2026-03-16T05:00:01.500Z']),
+      transport: 'openclaw-browser-tool',
+      runtimeTargetPrefix: 'openclaw-tab',
+    });
+    const runtime = new OpenClawBrowserRuntimeAdapter({ executor });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      now: sequence(['2026-03-16T05:00:00.000Z', '2026-03-16T05:00:01.000Z']),
+      createId: sequence(['session-openclaw-executor', 'checkpoint-auth-executor', 'checkpoint-review-executor']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw-smoke',
+      requestedBy: 'openclaw-executor-test',
+    });
+    const current = await service.getHomeTaxAssistStatus(started.session.id);
+    const afterAuth = await service.resumeHomeTaxAssist({
+      sessionId: started.session.id,
+      checkpointId: 'checkpoint-auth-executor',
+    });
+
+    expect(started.session.openReceipt.runtimeTargetId).toBe('openclaw-tab:session-openclaw-executor');
+    expect(current.session.runtimeState.runtimeTargetId).toBe('openclaw-tab:session-openclaw-executor');
+    expect(afterAuth.activeCheckpoint?.id).toBe('checkpoint-review-executor');
+    expect(executor.executions.map((execution) => execution.method)).toEqual([
+      'openTarget',
+      'getRuntimeState',
+      'handoffCheckpoint',
+    ]);
   });
 });

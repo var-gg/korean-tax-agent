@@ -12,6 +12,7 @@
     "test": "vitest run",
     "demo": "tsx scripts/run-demo.ts",
     "smoke:workflow": "tsx scripts/smoke-workflow.ts",
+    "smoke:openclaw-runtime": "tsx scripts/smoke-openclaw-runtime.ts",
     "example:browser-assist": "tsx examples/browser-assist-hometax.ts",
     "example:openclaw-browser-assist": "tsx examples/browser-assist-openclaw-adapter.ts"
   },

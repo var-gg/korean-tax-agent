@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import {
   InMemoryBrowserAssistSessionStore,
   InMemoryOpenClawBrowserToolExecutor,
@@ -11,7 +12,6 @@ async function main() {
     runtimeTargetPrefix: 'openclaw-tab',
   });
   const runtime = new OpenClawBrowserRuntimeAdapter({ executor });
-
   const service = createBrowserAssistService({
     store: new InMemoryBrowserAssistSessionStore(),
     runtime,
@@ -19,13 +19,22 @@ async function main() {
 
   const started = await service.startHomeTaxAssist({
     targetUrl: 'https://hometax.go.kr/openclaw-smoke',
-    requestedBy: 'openclaw-example',
+    requestedBy: 'smoke-openclaw-runtime',
   });
   const current = await service.getHomeTaxAssistStatus(started.session.id);
   const afterAuth = await service.resumeHomeTaxAssist({
     sessionId: started.session.id,
     note: 'Authentication complete.',
   });
+
+  assert.equal(started.session.openReceipt.transport, 'openclaw-browser-tool');
+  assert.equal(current.session.runtimeState.runtimeTargetId, started.session.runtimeState.runtimeTargetId);
+  assert.equal(afterAuth.activeCheckpoint?.code, 'target-page-review');
+  assert.deepEqual(executor.executions.map((execution) => execution.method), [
+    'openTarget',
+    'getRuntimeState',
+    'handoffCheckpoint',
+  ]);
 
   console.log(
     JSON.stringify(

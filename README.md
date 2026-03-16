@@ -59,6 +59,7 @@ Implemented prototype coverage currently includes:
 - HomeTax preparation and browser-assist handoff,
 - minimum browser-assist session lifecycle and real-browser open bridge.
 
+A minimum real-browser bridge is included through SystemBrowserRuntimeAdapter. The OpenClaw path now also has an in-repo executor-backed runtime boundary for tests, examples, and future host integration, while full browser automation and HomeTax field-level interaction are still pending.
 ## Start here
 
 ### English reading path
@@ -179,3 +180,4 @@ See also:
 
 This project is licensed under the **Apache License 2.0**.
 See [`LICENSE`](LICENSE).
+
