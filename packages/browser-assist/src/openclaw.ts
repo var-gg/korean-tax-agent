@@ -5,11 +5,14 @@ import type {
   BrowserAssistRuntimeState,
   BrowserHostActionReadiness,
   BrowserHostCapabilities,
+  BrowserHostDomActionFailureCode,
+  BrowserHostDomActionRecoveryAdvice,
   BrowserHostDomActionRequest,
   BrowserHostDomActionResult,
   BrowserHostExecutor,
   BrowserHostInspectionMetadata,
   BrowserHostLocatorKind,
+  BrowserHostRecoveryAdviceStep,
   BrowserHostSnapshotContext,
   BrowserHostTargetResolutionEvidence,
   BrowserHostTargetResolutionResult,
@@ -659,11 +662,17 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
 
   private actionFailure(code: 'action_unsupported' | 'locator_unsupported' | 'target_not_found' | 'ambiguous_target' | 'ambiguous_ref' | 'host_unavailable' | 'session_mismatch' | 'missing_inspection_context' | 'missing_snapshot_context' | 'stale_ref' | 'timeout' | 'transport_failure' | 'action_rejected', message: string, input: BrowserHostDomActionRequest, runtimeTargetId?: string, readiness?: BrowserHostActionReadiness, retryable?: boolean): BrowserHostDomActionResult {
     const resolvedReadiness = readiness ?? this.createActionReadiness(input, runtimeTargetId);
+    const recoveryAdvice = createSnapshotBoundActionRecoveryAdvice({
+      code,
+      actionRequest: input,
+      readiness: resolvedReadiness,
+    });
     return {
       ok: false,
       code,
       message,
       retryable,
+      recoveryAdvice: recoveryAdvice ? cloneValue(recoveryAdvice) : undefined,
       receipt: {
         actionId: `${input.sessionId}:${runtimeTargetId ?? 'no-target'}:${input.action.kind}:${input.requestedAt ?? this.now()}`,
         sessionId: input.sessionId,
@@ -1072,6 +1081,112 @@ function normalizeOpenClawHostErrorCode(value: unknown): OpenClawBrowserHostErro
     default:
       return null;
   }
+}
+
+function createSnapshotBoundActionRecoveryAdvice(input: {
+  code: BrowserHostDomActionFailureCode;
+  actionRequest: BrowserHostDomActionRequest;
+  readiness: BrowserHostActionReadiness;
+}): BrowserHostDomActionRecoveryAdvice | undefined {
+  if (!input.readiness.preconditions.locatorNeedsSnapshotRef && input.actionRequest.locator.kind !== 'aria-ref') {
+    return undefined;
+  }
+
+  const steps: BrowserHostRecoveryAdviceStep[] = [];
+  switch (input.code) {
+    case 'target_not_found':
+      pushRecoveryAdviceStep(steps, {
+        action: 'rebind',
+        resource: 'target_binding',
+        state: 'missing',
+        detail: 'Rebind the session to the intended browser target before retrying the snapshot-bound action.',
+      });
+      break;
+    case 'ambiguous_target':
+    case 'session_mismatch':
+      pushRecoveryAdviceStep(steps, {
+        action: 'rebind',
+        resource: 'target_binding',
+        state: 'obsolete',
+        detail: 'Confirm the intended browser target for this session and rebind before retrying the snapshot-bound action.',
+      });
+      break;
+  }
+
+  if (input.code === 'missing_inspection_context') {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reinspect',
+      resource: 'inspection_context',
+      state: 'missing',
+      detail: 'Reinspect the currently bound target so the action can use current inspection context.',
+    });
+  }
+
+  if (
+    (input.code === 'missing_inspection_context' || input.code === 'missing_snapshot_context')
+    && (input.readiness.snapshot === 'missing' || input.readiness.snapshotRef.freshness === 'missing_runtime_snapshot')
+  ) {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reinspect',
+      resource: 'snapshot_context',
+      state: 'missing',
+      detail: 'Reinspect the currently bound target to capture a current snapshot artifact before retrying the snapshot-bound action.',
+    });
+  }
+
+  if (
+    input.code === 'missing_snapshot_context'
+    && input.readiness.snapshotRef.freshness === 'missing_requested_snapshot'
+  ) {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reacquire',
+      resource: 'snapshot_ref',
+      state: 'missing',
+      detail: 'Reacquire the locator from an explicit snapshot artifact/version and include that snapshot context in the action request.',
+    });
+  }
+
+  if (input.code === 'stale_ref') {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reacquire',
+      resource: 'snapshot_ref',
+      state: 'obsolete',
+      detail: 'Reacquire the locator from the currently bound snapshot artifact/version instead of reusing an older snapshot ref.',
+    });
+  }
+
+  if (input.code === 'ambiguous_ref') {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reinspect',
+      resource: 'inspection_context',
+      state: 'obsolete',
+      detail: 'Reinspect the currently bound target to confirm the current page structure before choosing a locator.',
+    });
+    pushRecoveryAdviceStep(steps, {
+      action: 'reacquire',
+      resource: 'snapshot_ref',
+      state: 'obsolete',
+      detail: 'Reacquire a fresh locator from the current snapshot instead of reusing the ambiguous snapshot ref.',
+    });
+  }
+
+  if (!steps.length) return undefined;
+  return {
+    kind: 'snapshot-bound-action',
+    autoRecovery: 'none',
+    steps,
+  };
+}
+
+function pushRecoveryAdviceStep(steps: BrowserHostRecoveryAdviceStep[], step: BrowserHostRecoveryAdviceStep): void {
+  if (steps.some((current) =>
+    current.action === step.action
+    && current.resource === step.resource
+    && current.state === step.state
+  )) {
+    return;
+  }
+  steps.push(step);
 }
 
 function cloneValue<T>(value: T): T {

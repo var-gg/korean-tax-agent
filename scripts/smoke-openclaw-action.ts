@@ -107,6 +107,15 @@ async function main() {
     locator: { kind: 'role-name', role: 'button', name: 'Submit' },
     action: { kind: 'click' },
   });
+  const staleRefFailure = await runtime.executeDomAction({
+    sessionId: started.session.id,
+    runtimeState: started.session.runtimeState,
+    locator: { kind: 'aria-ref', ref: 'e12', description: 'Submit button' },
+    action: { kind: 'click' },
+    snapshotContext: started.session.runtimeState?.snapshotContext
+      ? { artifact: { ...started.session.runtimeState.snapshotContext.artifact, version: 'stale-v0' } }
+      : undefined,
+  });
 
   assert.equal(success.ok, true);
   assert.equal(locatorFailure.ok, false);
@@ -116,12 +125,19 @@ async function main() {
   assert.equal(success.receipt.readiness.snapshotRef.freshness, 'current');
   assert.equal(success.receipt.snapshotContext?.artifact.artifactId, 'snapshot:action-smoke');
   assert.equal(locatorFailure.code, 'locator_unsupported');
+  assert.equal(staleRefFailure.ok, false);
+  if (staleRefFailure.ok) throw new Error('expected stale ref failure');
+  assert.equal(staleRefFailure.code, 'stale_ref');
+  assert.deepEqual(staleRefFailure.recoveryAdvice?.steps.map((step) => `${step.action}:${step.resource}:${step.state}`), [
+    'reacquire:snapshot_ref:obsolete',
+  ]);
 
   console.log(JSON.stringify({
     ok: true,
     smoke: 'openclaw-action',
     successReceipt: success.receipt,
     locatorFailure,
+    staleRefFailure,
   }, null, 2));
 }
 

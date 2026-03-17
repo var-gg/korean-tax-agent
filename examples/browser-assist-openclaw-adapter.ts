@@ -119,6 +119,18 @@ async function main() {
     action: { kind: 'click' },
     snapshotContext: afterAuth.session.runtimeState.snapshotContext,
   });
+  const staleRefFailure = await runtime.executeDomAction({
+    sessionId: afterAuth.session.id,
+    runtimeState: afterAuth.session.runtimeState,
+    locator: { kind: 'aria-ref', ref: 'e12', description: 'Example continue button' },
+    action: { kind: 'click' },
+    snapshotContext: {
+      artifact: {
+        ...afterAuth.session.runtimeState.snapshotContext!.artifact,
+        version: 'stale-v0',
+      },
+    },
+  });
 
   console.log(
     JSON.stringify(
@@ -128,6 +140,7 @@ async function main() {
         currentTargetUrl: current.session.runtimeState.currentTargetUrl,
         nextCheckpoint: afterAuth.activeCheckpoint?.code,
         actionResult,
+        staleRefFailure,
         executorMethods: executor.executions.map((execution) => execution.method),
         capabilities: await runtime.getCapabilities({
           sessionId: afterAuth.session.id,

@@ -137,6 +137,27 @@ export type BrowserHostDomActionFailureCode =
   | 'transport_failure'
   | 'action_rejected';
 
+export type BrowserHostRecoveryAdviceAction = 'reacquire' | 'reinspect' | 'rebind';
+export type BrowserHostRecoveryAdviceResource =
+  | 'target_binding'
+  | 'inspection_context'
+  | 'snapshot_context'
+  | 'snapshot_ref';
+export type BrowserHostRecoveryAdviceState = 'missing' | 'obsolete';
+
+export interface BrowserHostRecoveryAdviceStep {
+  action: BrowserHostRecoveryAdviceAction;
+  resource: BrowserHostRecoveryAdviceResource;
+  state: BrowserHostRecoveryAdviceState;
+  detail: string;
+}
+
+export interface BrowserHostDomActionRecoveryAdvice {
+  kind: 'snapshot-bound-action';
+  autoRecovery: 'none';
+  steps: BrowserHostRecoveryAdviceStep[];
+}
+
 export interface BrowserHostDomActionReceipt {
   actionId: string;
   sessionId: string;
@@ -163,6 +184,7 @@ export interface BrowserHostDomActionFailure {
   code: BrowserHostDomActionFailureCode;
   message: string;
   retryable?: boolean;
+  recoveryAdvice?: BrowserHostDomActionRecoveryAdvice;
   receipt?: BrowserHostDomActionReceipt;
 }
 
@@ -1453,18 +1475,131 @@ function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { r
 }
 
 function createDomActionFailure(input: { code: BrowserHostDomActionFailureCode; message: string; input: BrowserHostDomActionRequest; runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; retryable?: boolean }): BrowserHostDomActionFailure {
+  const readiness = input.readiness ?? createActionReadiness(input.input, input.input.runtimeState ?? null);
+  const recoveryAdvice = createSnapshotBoundActionRecoveryAdvice({
+    code: input.code,
+    actionRequest: input.input,
+    readiness,
+  });
   return {
     ok: false,
     code: input.code,
     message: input.message,
     retryable: input.retryable,
+    recoveryAdvice: recoveryAdvice ? cloneValue(recoveryAdvice) : undefined,
     receipt: createDomActionReceipt(input.input, {
       runtimeTargetId: input.runtimeTargetId,
-      readiness: input.readiness,
-      snapshotContext: input.readiness?.snapshotRef.current,
+      readiness,
+      snapshotContext: readiness.snapshotRef.current,
       actedAt: input.input.requestedAt ?? new Date().toISOString(),
     }),
   };
+}
+
+function createSnapshotBoundActionRecoveryAdvice(input: {
+  code: BrowserHostDomActionFailureCode;
+  actionRequest: BrowserHostDomActionRequest;
+  readiness: BrowserHostActionReadiness;
+}): BrowserHostDomActionRecoveryAdvice | undefined {
+  if (!input.readiness.preconditions.locatorNeedsSnapshotRef && input.actionRequest.locator.kind !== 'aria-ref') {
+    return undefined;
+  }
+
+  const steps: BrowserHostRecoveryAdviceStep[] = [];
+  switch (input.code) {
+    case 'target_not_found':
+      pushRecoveryAdviceStep(steps, {
+        action: 'rebind',
+        resource: 'target_binding',
+        state: 'missing',
+        detail: 'Rebind the session to the intended browser target before retrying the snapshot-bound action.',
+      });
+      break;
+    case 'ambiguous_target':
+    case 'session_mismatch':
+      pushRecoveryAdviceStep(steps, {
+        action: 'rebind',
+        resource: 'target_binding',
+        state: 'obsolete',
+        detail: 'Confirm the intended browser target for this session and rebind before retrying the snapshot-bound action.',
+      });
+      break;
+  }
+
+  if (input.code === 'missing_inspection_context') {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reinspect',
+      resource: 'inspection_context',
+      state: 'missing',
+      detail: 'Reinspect the currently bound target so the action can use current inspection context.',
+    });
+  }
+
+  if (
+    (input.code === 'missing_inspection_context' || input.code === 'missing_snapshot_context')
+    && (input.readiness.snapshot === 'missing' || input.readiness.snapshotRef.freshness === 'missing_runtime_snapshot')
+  ) {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reinspect',
+      resource: 'snapshot_context',
+      state: 'missing',
+      detail: 'Reinspect the currently bound target to capture a current snapshot artifact before retrying the snapshot-bound action.',
+    });
+  }
+
+  if (
+    input.code === 'missing_snapshot_context'
+    && input.readiness.snapshotRef.freshness === 'missing_requested_snapshot'
+  ) {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reacquire',
+      resource: 'snapshot_ref',
+      state: 'missing',
+      detail: 'Reacquire the locator from an explicit snapshot artifact/version and include that snapshot context in the action request.',
+    });
+  }
+
+  if (input.code === 'stale_ref') {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reacquire',
+      resource: 'snapshot_ref',
+      state: 'obsolete',
+      detail: 'Reacquire the locator from the currently bound snapshot artifact/version instead of reusing an older snapshot ref.',
+    });
+  }
+
+  if (input.code === 'ambiguous_ref') {
+    pushRecoveryAdviceStep(steps, {
+      action: 'reinspect',
+      resource: 'inspection_context',
+      state: 'obsolete',
+      detail: 'Reinspect the currently bound target to confirm the current page structure before choosing a locator.',
+    });
+    pushRecoveryAdviceStep(steps, {
+      action: 'reacquire',
+      resource: 'snapshot_ref',
+      state: 'obsolete',
+      detail: 'Reacquire a fresh locator from the current snapshot instead of reusing the ambiguous snapshot ref.',
+    });
+  }
+
+  if (!steps.length) return undefined;
+  return {
+    kind: 'snapshot-bound-action',
+    autoRecovery: 'none',
+    steps,
+  };
+}
+
+function pushRecoveryAdviceStep(steps: BrowserHostRecoveryAdviceStep[], step: BrowserHostRecoveryAdviceStep): void {
+  if (steps.some((current) =>
+    current.action === step.action
+    && current.resource === step.resource
+    && current.state === step.state
+  )) {
+    return;
+  }
+  steps.push(step);
 }
 
 function resolveBrowserHostRuntimeClient(

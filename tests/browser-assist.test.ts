@@ -913,6 +913,77 @@ if (input.operation === 'listTargets') {
     });
   });
 
+  it('adds host-agnostic recovery advice to generic snapshot-bound action failures', async () => {
+    const executor = new InMemoryBrowserHostExecutor({
+      now: sequence(['2026-03-16T07:10:00.500Z', '2026-03-16T07:10:01.500Z']),
+      transport: 'browser-host',
+      runtimeTargetPrefix: 'browser-target',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({ executor });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-dom-action-recovery', 'checkpoint-auth-dom-action-recovery', 'checkpoint-review-dom-action-recovery']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/dom-action-recovery',
+      requestedBy: 'dom-action-test',
+    });
+
+    const missingRequestedSnapshot = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'e12' },
+      action: { kind: 'click' },
+    });
+    const staleSnapshotRef = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'e12' },
+      action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext
+        ? {
+            artifact: {
+              ...started.session.runtimeState.snapshotContext.artifact,
+              version: 'stale-v0',
+            },
+          }
+        : undefined,
+    });
+
+    expect(missingRequestedSnapshot).toMatchObject({
+      ok: false,
+      code: 'missing_snapshot_context',
+      recoveryAdvice: {
+        kind: 'snapshot-bound-action',
+        autoRecovery: 'none',
+        steps: [
+          {
+            action: 'reacquire',
+            resource: 'snapshot_ref',
+            state: 'missing',
+          },
+        ],
+      },
+    });
+    expect(staleSnapshotRef).toMatchObject({
+      ok: false,
+      code: 'stale_ref',
+      recoveryAdvice: {
+        kind: 'snapshot-bound-action',
+        autoRecovery: 'none',
+        steps: [
+          {
+            action: 'reacquire',
+            resource: 'snapshot_ref',
+            state: 'obsolete',
+          },
+        ],
+      },
+    });
+  });
+
   it('capability-gates DOM actions before dispatch', async () => {
     const runtime = new BrowserHostRuntimeAdapter({
       client: {
@@ -1026,6 +1097,14 @@ if (input.operation === 'listTargets') {
     expect(result).toMatchObject({
       ok: false,
       code: 'missing_inspection_context',
+      recoveryAdvice: {
+        kind: 'snapshot-bound-action',
+        autoRecovery: 'none',
+        steps: [
+          { action: 'reinspect', resource: 'inspection_context', state: 'missing' },
+          { action: 'reinspect', resource: 'snapshot_context', state: 'missing' },
+        ],
+      },
       receipt: {
         readiness: {
           target: 'ready',
@@ -1064,6 +1143,13 @@ if (input.operation === 'listTargets') {
     expect(result).toMatchObject({
       ok: false,
       code: 'missing_snapshot_context',
+      recoveryAdvice: {
+        kind: 'snapshot-bound-action',
+        autoRecovery: 'none',
+        steps: [
+          { action: 'reacquire', resource: 'snapshot_ref', state: 'missing' },
+        ],
+      },
       receipt: {
         readiness: {
           target: 'ready',
@@ -1071,6 +1157,33 @@ if (input.operation === 'listTargets') {
           snapshot: 'present',
           snapshotRef: { freshness: 'missing_requested_snapshot' },
         },
+      },
+    });
+  });
+
+  it('adds rebind advice when snapshot-bound OpenClaw actions have no bound target', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        relay: new InMemoryOpenClawBrowserRelay({ targetPrefix: 'openclaw-tab' }),
+      }),
+    });
+
+    const result = await runtime.executeDomAction({
+      sessionId: 'session-openclaw-missing-binding',
+      runtimeState: null,
+      locator: { kind: 'aria-ref', ref: 'e12' },
+      action: { kind: 'click' },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'target_not_found',
+      recoveryAdvice: {
+        kind: 'snapshot-bound-action',
+        autoRecovery: 'none',
+        steps: [
+          { action: 'rebind', resource: 'target_binding', state: 'missing' },
+        ],
       },
     });
   });
@@ -1117,6 +1230,13 @@ if (input.operation === 'listTargets') {
     expect(stale).toMatchObject({
       ok: false,
       code: 'stale_ref',
+      recoveryAdvice: {
+        kind: 'snapshot-bound-action',
+        autoRecovery: 'none',
+        steps: [
+          { action: 'reacquire', resource: 'snapshot_ref', state: 'obsolete' },
+        ],
+      },
       receipt: {
         readiness: {
           snapshot: 'present',
@@ -1124,7 +1244,18 @@ if (input.operation === 'listTargets') {
         },
       },
     });
-    expect(ambiguous).toEqual(expect.objectContaining({ ok: false, code: 'ambiguous_ref' }));
+    expect(ambiguous).toMatchObject({
+      ok: false,
+      code: 'ambiguous_ref',
+      recoveryAdvice: {
+        kind: 'snapshot-bound-action',
+        autoRecovery: 'none',
+        steps: [
+          { action: 'reinspect', resource: 'inspection_context', state: 'obsolete' },
+          { action: 'reacquire', resource: 'snapshot_ref', state: 'obsolete' },
+        ],
+      },
+    });
   });
 
   it('capability-gates readiness-aware action dispatch', async () => {
