@@ -25,6 +25,32 @@ function createSnapshotDerivedAriaRefProvenance(input: {
   };
 }
 
+function createSnapshotDerivedAriaRefCandidate(input: {
+  ref: string;
+  label?: string;
+  description?: string;
+  snapshotContext: { artifact: { artifactId: string; version: string; capturedAt?: string } };
+  inspection?: { source?: 'target' | 'snapshot' | 'runtime'; url?: string; normalizedUrl?: string; capturedAt?: string };
+  evidence?: { title?: string; textSnippet?: string; description?: string };
+}) {
+  const description = input.description ?? input.evidence?.description ?? input.label ?? input.ref;
+  return {
+    kind: 'snapshot-derived' as const,
+    label: input.label ?? description,
+    snapshotContext: input.snapshotContext,
+    locator: {
+      kind: 'aria-ref' as const,
+      ref: input.ref,
+      description,
+      provenance: createSnapshotDerivedAriaRefProvenance({
+        snapshotContext: input.snapshotContext,
+        inspection: input.inspection,
+        evidence: input.evidence ?? { description },
+      }),
+    },
+  };
+}
+
 async function main() {
   const transport = new OpenClawBrowserToolTransport({
     client: {
@@ -68,6 +94,7 @@ async function main() {
         };
       },
       async snapshotTarget(input) {
+        const snapshotContext = { artifact: { artifactId: 'snapshot:example-openclaw', version: 'v1', capturedAt: '2026-03-16T00:00:04.000Z' } };
         return {
           targetId: input.targetId,
           sessionId: 'session-openclaw-live-example',
@@ -82,7 +109,26 @@ async function main() {
             normalizedUrl: 'https://hometax.go.kr/openclaw-live-example/ready',
             textSnippet: '예시 제출 버튼',
             capturedAt: '2026-03-16T00:00:04.000Z',
-            snapshotContext: { artifact: { artifactId: 'snapshot:example-openclaw', version: 'v1', capturedAt: '2026-03-16T00:00:04.000Z' } },
+            snapshotContext,
+            locatorCandidates: [
+              createSnapshotDerivedAriaRefCandidate({
+                ref: 'e12',
+                label: 'button: 예시 제출',
+                description: 'Fresh continue button',
+                snapshotContext,
+                inspection: {
+                  source: 'snapshot',
+                  url: 'https://hometax.go.kr/openclaw-live-example/ready',
+                  normalizedUrl: 'https://hometax.go.kr/openclaw-live-example/ready',
+                  capturedAt: '2026-03-16T00:00:04.000Z',
+                },
+                evidence: {
+                  title: 'button: 예시 제출',
+                  textSnippet: '예시 제출 버튼',
+                  description: 'Fresh continue button',
+                },
+              }),
+            ],
           },
         };
       },
@@ -130,6 +176,7 @@ async function main() {
     sessionId: started.session.id,
     note: 'Authentication complete.',
   });
+  const selectedCandidate = afterAuth.session.runtimeState.inspection?.locatorCandidates?.[0];
 
   const actionResult = await runtime.executeDomAction({
     sessionId: afterAuth.session.id,
@@ -143,12 +190,14 @@ async function main() {
     runtimeState: afterAuth.session.runtimeState,
     locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old continue button' },
     action: { kind: 'click' },
-    snapshotContext: afterAuth.session.runtimeState.snapshotContext,
-    rebinding: {
-      snapshotContext: afterAuth.session.runtimeState.snapshotContext!,
-      locator: { kind: 'aria-ref', ref: 'e12', description: 'Fresh continue button' },
-      previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old continue button' },
-    },
+    snapshotContext: selectedCandidate?.snapshotContext ?? afterAuth.session.runtimeState.snapshotContext,
+    rebinding: selectedCandidate
+      ? {
+          snapshotContext: selectedCandidate.snapshotContext,
+          locator: selectedCandidate.locator,
+          previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old continue button' },
+        }
+      : undefined,
   });
   const staleRefFailure = await runtime.executeDomAction({
     sessionId: afterAuth.session.id,
@@ -169,6 +218,7 @@ async function main() {
         sessionId: afterAuth.session.id,
         runtimeTargetId: afterAuth.session.runtimeState.runtimeTargetId,
         currentTargetUrl: current.session.runtimeState.currentTargetUrl,
+        selectedCandidate,
         nextCheckpoint: afterAuth.activeCheckpoint?.code,
         actionResult,
         explicitRebindResult,

@@ -11,6 +11,7 @@ import type {
   BrowserHostDomActionResult,
   BrowserHostExecutor,
   BrowserHostInspectionMetadata,
+  BrowserHostInspectionLocatorCandidate,
   BrowserHostLocatorKind,
   BrowserHostRecoveryAdviceStep,
   BrowserHostSnapshotContext,
@@ -874,17 +875,19 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
     if (!target) return null;
     const capturedAt = this.now();
     const snapshotContext = createOpenClawSnapshotContext(input.targetId, target.updatedAt ?? capturedAt, capturedAt);
+    const inspection = normalizeInspectionMetadata({
+      source: 'snapshot',
+      title: target.title,
+      url: target.url,
+      normalizedUrl: normalizeComparableUrl(target.url) ?? undefined,
+      textSnippet: `snapshot:${target.title ?? target.url ?? target.targetId}`,
+      capturedAt,
+      snapshotContext,
+      locatorCandidates: target.inspection?.locatorCandidates,
+    }, target, () => capturedAt);
     const snapshotTarget: OpenClawRelayTarget = {
       ...cloneValue(target),
-      inspection: {
-        source: 'snapshot',
-        title: target.title,
-        url: target.url,
-        normalizedUrl: normalizeComparableUrl(target.url) ?? undefined,
-        textSnippet: `snapshot:${target.title ?? target.url ?? target.targetId}`,
-        capturedAt,
-        snapshotContext,
-      },
+      inspection,
     };
     this.targetById.set(input.targetId, cloneValue(snapshotTarget));
     return snapshotTarget;
@@ -1350,14 +1353,17 @@ function normalizeInspectionMetadata(inspection: BrowserHostInspectionMetadata |
   const textSnippet = inspection?.textSnippet;
   const capturedAt = inspection?.capturedAt ?? target.updatedAt ?? now();
   const snapshotContext = normalizeSnapshotContext(inspection?.snapshotContext);
-  if (!title && !url && !textSnippet && !inspection && !snapshotContext) return undefined;
-  return { source, title, url, normalizedUrl, textSnippet, capturedAt, snapshotContext };
+  const normalizedInspection: BrowserHostInspectionMetadata = { source, title, url, normalizedUrl, textSnippet, capturedAt, snapshotContext };
+  const locatorCandidates = normalizeInspectionLocatorCandidates(inspection?.locatorCandidates, normalizedInspection);
+  if (!title && !url && !textSnippet && !inspection && !snapshotContext && !locatorCandidates) return undefined;
+  if (locatorCandidates) normalizedInspection.locatorCandidates = locatorCandidates;
+  return normalizedInspection;
 }
 
 function mergeInspectionMetadata(current: BrowserHostInspectionMetadata | undefined, incoming: BrowserHostInspectionMetadata | undefined, now: () => string): BrowserHostInspectionMetadata | undefined {
   if (!current) return incoming ? cloneValue(incoming) : undefined;
   if (!incoming) return cloneValue(current);
-  return {
+  const mergedInspection: BrowserHostInspectionMetadata = {
     source: incoming.source ?? current.source ?? 'target',
     title: incoming.title ?? current.title,
     url: incoming.url ?? current.url,
@@ -1366,6 +1372,84 @@ function mergeInspectionMetadata(current: BrowserHostInspectionMetadata | undefi
     capturedAt: incoming.capturedAt ?? current.capturedAt ?? now(),
     snapshotContext: normalizeSnapshotContext(incoming.snapshotContext ?? current.snapshotContext),
   };
+  if (incoming.locatorCandidates) {
+    mergedInspection.locatorCandidates = cloneValue(incoming.locatorCandidates);
+  }
+  return mergedInspection;
+}
+
+function normalizeInspectionLocatorCandidates(
+  candidates: BrowserHostInspectionLocatorCandidate[] | null | undefined,
+  inspection: Pick<BrowserHostInspectionMetadata, 'source' | 'url' | 'normalizedUrl' | 'capturedAt' | 'snapshotContext'>,
+): BrowserHostInspectionLocatorCandidate[] | undefined {
+  const normalized = (Array.isArray(candidates) ? candidates : [])
+    .map((candidate) => normalizeInspectionLocatorCandidate(candidate, inspection))
+    .filter((candidate): candidate is BrowserHostInspectionLocatorCandidate => Boolean(candidate));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeInspectionLocatorCandidate(
+  candidate: BrowserHostInspectionLocatorCandidate | null | undefined,
+  inspection: Pick<BrowserHostInspectionMetadata, 'source' | 'url' | 'normalizedUrl' | 'capturedAt' | 'snapshotContext'>,
+): BrowserHostInspectionLocatorCandidate | undefined {
+  if (!candidate || candidate.kind !== 'snapshot-derived' || candidate.locator.kind !== 'aria-ref') return undefined;
+  const locator = normalizeBrowserHostLocator(candidate.locator);
+  if (locator.kind !== 'aria-ref' || !locator.provenance) return undefined;
+  const snapshotContext = normalizeSnapshotContext(candidate.snapshotContext ?? locator.provenance.snapshotContext ?? inspection.snapshotContext);
+  if (!snapshotContext) return undefined;
+  if (!snapshotContextsMatch(locator.provenance.snapshotContext, snapshotContext)) return undefined;
+  if (inspection.snapshotContext && !snapshotContextsMatch(inspection.snapshotContext, snapshotContext)) return undefined;
+  const inspectionUrl = inspection.normalizedUrl ?? inspection.url;
+  const provenanceUrl = locator.provenance.inspection.normalizedUrl ?? locator.provenance.inspection.url;
+  if (inspection.source !== locator.provenance.inspection.source) return undefined;
+  if (inspectionUrl && provenanceUrl && inspectionUrl !== provenanceUrl) return undefined;
+  if (inspection.capturedAt && locator.provenance.inspection.capturedAt && inspection.capturedAt !== locator.provenance.inspection.capturedAt) return undefined;
+  const label = normalizeInspectionLocatorCandidateLabel(
+    candidate.label,
+    locator.description,
+    locator.provenance.evidence?.description,
+    locator.provenance.evidence?.title,
+    locator.ref,
+  );
+  return {
+    kind: 'snapshot-derived',
+    label,
+    snapshotContext,
+    locator: {
+      ...locator,
+      provenance: {
+        ...locator.provenance,
+        inspection: {
+          source: locator.provenance.inspection.source,
+          capturedAt: locator.provenance.inspection.capturedAt ?? inspection.capturedAt,
+          url: locator.provenance.inspection.url ?? inspection.url,
+          normalizedUrl: locator.provenance.inspection.normalizedUrl ?? inspection.normalizedUrl,
+        },
+        snapshotContext,
+      },
+    },
+  };
+}
+
+function normalizeInspectionLocatorCandidateLabel(...inputs: Array<string | undefined>): string {
+  for (const value of inputs) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return 'snapshot candidate';
+}
+
+function snapshotContextsMatch(
+  left: BrowserHostSnapshotContext | null | undefined,
+  right: BrowserHostSnapshotContext | null | undefined,
+): boolean {
+  const normalizedLeft = normalizeSnapshotContext(left);
+  const normalizedRight = normalizeSnapshotContext(right);
+  return Boolean(
+    normalizedLeft
+    && normalizedRight
+    && normalizedLeft.artifact.artifactId === normalizedRight.artifact.artifactId
+    && normalizedLeft.artifact.version === normalizedRight.artifact.version,
+  );
 }
 
 function createOpenClawSnapshotContext(targetId: string, versionSeed: string, capturedAt: string): BrowserHostSnapshotContext {

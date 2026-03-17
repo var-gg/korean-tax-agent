@@ -101,6 +101,7 @@ export interface BrowserHostInspectionMetadata {
   textSnippet?: string;
   capturedAt?: string;
   snapshotContext?: BrowserHostSnapshotContext;
+  locatorCandidates?: BrowserHostInspectionLocatorCandidate[];
 }
 
 export type BrowserHostLocatorDerivationBasis = 'snapshot-ref';
@@ -131,6 +132,15 @@ export type BrowserHostLocator =
   | { kind: 'aria-ref'; ref: string; description?: string; provenance?: BrowserHostSnapshotLocatorProvenance }
   | { kind: 'role-name'; role: string; name: string; exact?: boolean; description?: string }
   | { kind: 'css'; selector: string; description?: string };
+
+export type BrowserHostSnapshotRefLocator = Extract<BrowserHostLocator, { kind: 'aria-ref' }>;
+
+export interface BrowserHostInspectionLocatorCandidate {
+  kind: 'snapshot-derived';
+  label: string;
+  locator: BrowserHostSnapshotRefLocator;
+  snapshotContext: BrowserHostSnapshotContext;
+}
 
 export type BrowserHostDomActionKind = 'click' | 'fill' | 'press';
 
@@ -1390,7 +1400,7 @@ function normalizeBrowserHostInspectionMetadata(
 ): BrowserHostInspectionMetadata | undefined {
   if (!inspection) return undefined;
   const snapshotContext = normalizeSnapshotContext(inspection.snapshotContext);
-  return {
+  const normalizedInspection: BrowserHostInspectionMetadata = {
     source: inspection.source,
     title: inspection.title,
     url: inspection.url,
@@ -1399,6 +1409,12 @@ function normalizeBrowserHostInspectionMetadata(
     capturedAt: inspection.capturedAt,
     snapshotContext,
   };
+  const locatorCandidates = normalizeBrowserHostInspectionLocatorCandidates(
+    inspection.locatorCandidates,
+    normalizedInspection,
+  );
+  if (locatorCandidates) normalizedInspection.locatorCandidates = locatorCandidates;
+  return normalizedInspection;
 }
 
 function normalizeSnapshotLocatorProvenance(
@@ -1436,6 +1452,80 @@ function normalizeBrowserHostLocator(locator: BrowserHostLocator): BrowserHostLo
     ...cloneValue(locator),
     provenance: normalizeSnapshotLocatorProvenance(locator.provenance),
   };
+}
+
+function normalizeBrowserHostInspectionLocatorCandidates(
+  candidates: BrowserHostInspectionLocatorCandidate[] | null | undefined,
+  inspection: Pick<BrowserHostInspectionMetadata, 'source' | 'url' | 'normalizedUrl' | 'capturedAt' | 'snapshotContext'>,
+): BrowserHostInspectionLocatorCandidate[] | undefined {
+  const normalized = (Array.isArray(candidates) ? candidates : [])
+    .map((candidate) => normalizeBrowserHostInspectionLocatorCandidate(candidate, inspection))
+    .filter((candidate): candidate is BrowserHostInspectionLocatorCandidate => Boolean(candidate));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeBrowserHostInspectionLocatorCandidate(
+  candidate: BrowserHostInspectionLocatorCandidate | null | undefined,
+  inspection: Pick<BrowserHostInspectionMetadata, 'source' | 'url' | 'normalizedUrl' | 'capturedAt' | 'snapshotContext'>,
+): BrowserHostInspectionLocatorCandidate | undefined {
+  if (!candidate || candidate.kind !== 'snapshot-derived' || candidate.locator.kind !== 'aria-ref') return undefined;
+  const locator = normalizeBrowserHostLocator(candidate.locator);
+  if (locator.kind !== 'aria-ref' || !locator.provenance) return undefined;
+  const snapshotContext = normalizeSnapshotContext(candidate.snapshotContext ?? locator.provenance.snapshotContext ?? inspection.snapshotContext);
+  if (!snapshotContext) return undefined;
+  if (!snapshotContextsMatch(locator.provenance.snapshotContext, snapshotContext)) return undefined;
+  if (inspection.snapshotContext && !snapshotContextsMatch(inspection.snapshotContext, snapshotContext)) return undefined;
+  const inspectionUrl = inspection.normalizedUrl ?? inspection.url;
+  const provenanceUrl = locator.provenance.inspection.normalizedUrl ?? locator.provenance.inspection.url;
+  if (inspection.source !== locator.provenance.inspection.source) return undefined;
+  if (inspectionUrl && provenanceUrl && inspectionUrl !== provenanceUrl) return undefined;
+  if (inspection.capturedAt && locator.provenance.inspection.capturedAt && inspection.capturedAt !== locator.provenance.inspection.capturedAt) return undefined;
+  const label = normalizeInspectionLocatorCandidateLabel(
+    candidate.label,
+    locator.description,
+    locator.provenance.evidence?.description,
+    locator.provenance.evidence?.title,
+    locator.ref,
+  );
+  return {
+    kind: 'snapshot-derived',
+    label,
+    snapshotContext,
+    locator: {
+      ...locator,
+      provenance: {
+        ...locator.provenance,
+        inspection: {
+          source: locator.provenance.inspection.source,
+          capturedAt: locator.provenance.inspection.capturedAt ?? inspection.capturedAt,
+          url: locator.provenance.inspection.url ?? inspection.url,
+          normalizedUrl: locator.provenance.inspection.normalizedUrl ?? inspection.normalizedUrl,
+        },
+        snapshotContext,
+      },
+    },
+  };
+}
+
+function normalizeInspectionLocatorCandidateLabel(...inputs: Array<string | undefined>): string {
+  for (const value of inputs) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return 'snapshot candidate';
+}
+
+function snapshotContextsMatch(
+  left: BrowserHostSnapshotContext | null | undefined,
+  right: BrowserHostSnapshotContext | null | undefined,
+): boolean {
+  const normalizedLeft = normalizeSnapshotContext(left);
+  const normalizedRight = normalizeSnapshotContext(right);
+  return Boolean(
+    normalizedLeft
+    && normalizedRight
+    && normalizedLeft.artifact.artifactId === normalizedRight.artifact.artifactId
+    && normalizedLeft.artifact.version === normalizedRight.artifact.version,
+  );
 }
 
 function createSnapshotContext(input: {

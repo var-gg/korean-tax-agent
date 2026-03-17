@@ -26,6 +26,32 @@ function createSnapshotDerivedAriaRefProvenance(input: {
   };
 }
 
+function createSnapshotDerivedAriaRefCandidate(input: {
+  ref: string;
+  label?: string;
+  description?: string;
+  snapshotContext: { artifact: { artifactId: string; version: string; capturedAt?: string } };
+  inspection?: { source?: 'target' | 'snapshot' | 'runtime'; url?: string; normalizedUrl?: string; capturedAt?: string };
+  evidence?: { title?: string; textSnippet?: string; description?: string };
+}) {
+  const description = input.description ?? input.evidence?.description ?? input.label ?? input.ref;
+  return {
+    kind: 'snapshot-derived' as const,
+    label: input.label ?? description,
+    snapshotContext: input.snapshotContext,
+    locator: {
+      kind: 'aria-ref' as const,
+      ref: input.ref,
+      description,
+      provenance: createSnapshotDerivedAriaRefProvenance({
+        snapshotContext: input.snapshotContext,
+        inspection: input.inspection,
+        evidence: input.evidence ?? { description },
+      }),
+    },
+  };
+}
+
 async function main() {
   const runtime = new BrowserHostRuntimeAdapter({
     executor: new OpenClawBrowserHostExecutor({
@@ -68,6 +94,7 @@ async function main() {
             };
           },
           async snapshotTarget(input) {
+            const snapshotContext = { artifact: { artifactId: 'snapshot:action-smoke', version: 'v1', capturedAt: '2026-03-16T00:00:04.000Z' } };
             return {
               targetId: input.targetId,
               sessionId: 'session-openclaw-action-smoke',
@@ -82,7 +109,26 @@ async function main() {
                 normalizedUrl: 'https://hometax.go.kr/openclaw/action/ready',
                 textSnippet: '제출 버튼',
                 capturedAt: '2026-03-16T00:00:04.000Z',
-                snapshotContext: { artifact: { artifactId: 'snapshot:action-smoke', version: 'v1', capturedAt: '2026-03-16T00:00:04.000Z' } },
+                snapshotContext,
+                locatorCandidates: [
+                  createSnapshotDerivedAriaRefCandidate({
+                    ref: 'e44',
+                    label: 'button: 새 제출',
+                    description: 'Fresh submit button',
+                    snapshotContext,
+                    inspection: {
+                      source: 'snapshot',
+                      url: 'https://hometax.go.kr/openclaw/action/ready',
+                      normalizedUrl: 'https://hometax.go.kr/openclaw/action/ready',
+                      capturedAt: '2026-03-16T00:00:04.000Z',
+                    },
+                    evidence: {
+                      title: 'button: 새 제출',
+                      textSnippet: '제출 버튼',
+                      description: 'Fresh submit button',
+                    },
+                  }),
+                ],
               },
             };
           },
@@ -113,6 +159,8 @@ async function main() {
     targetUrl: 'https://hometax.go.kr/openclaw/action',
     requestedBy: 'smoke-openclaw-action',
   });
+  const selectedCandidate = started.session.runtimeState.inspection?.locatorCandidates?.[0];
+  if (!selectedCandidate) throw new Error('expected inspection locator candidate');
 
   const success = await runtime.executeDomAction({
     sessionId: started.session.id,
@@ -126,11 +174,11 @@ async function main() {
     runtimeState: started.session.runtimeState,
     locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
     action: { kind: 'click' },
-    snapshotContext: started.session.runtimeState?.snapshotContext,
-    rebinding: started.session.runtimeState?.snapshotContext
+    snapshotContext: selectedCandidate.snapshotContext,
+    rebinding: selectedCandidate
       ? {
-          snapshotContext: started.session.runtimeState.snapshotContext,
-          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button', provenance: createSnapshotDerivedAriaRefProvenance({ snapshotContext: started.session.runtimeState.snapshotContext, inspection: started.session.runtimeState.inspection, evidence: { description: 'Fresh submit button' } }) },
+          snapshotContext: selectedCandidate.snapshotContext,
+          locator: selectedCandidate.locator,
           previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
         }
       : undefined,
@@ -140,11 +188,11 @@ async function main() {
     runtimeState: started.session.runtimeState,
     locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
     action: { kind: 'click' },
-    snapshotContext: started.session.runtimeState?.snapshotContext,
-    rebinding: started.session.runtimeState?.snapshotContext
+    snapshotContext: selectedCandidate.snapshotContext,
+    rebinding: selectedCandidate
       ? {
-          snapshotContext: { artifact: { ...started.session.runtimeState.snapshotContext.artifact, version: 'other-v0' } },
-          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button', provenance: createSnapshotDerivedAriaRefProvenance({ snapshotContext: started.session.runtimeState.snapshotContext, inspection: started.session.runtimeState.inspection, evidence: { description: 'Fresh submit button' } }) },
+          snapshotContext: { artifact: { ...selectedCandidate.snapshotContext.artifact, version: 'other-v0' } },
+          locator: selectedCandidate.locator,
           previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
         }
       : undefined,
@@ -194,6 +242,7 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     smoke: 'openclaw-action',
+    selectedCandidate,
     successReceipt: success.receipt,
     explicitRebindReceipt: explicitRebind.receipt,
     rebindingMismatch,

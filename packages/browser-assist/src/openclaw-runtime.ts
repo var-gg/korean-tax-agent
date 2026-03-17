@@ -171,6 +171,16 @@ export class OpenClawBrowserControlServerClient {
     const url = normalizeString(snapshot?.url) ?? normalizeString(snapshot?.page?.url);
     const title = normalizeString(snapshot?.title) ?? normalizeString(snapshot?.page?.title) ?? normalizeString(snapshot?.documentTitle);
     const capturedAt = normalizeString(snapshot?.capturedAt) ?? new Date().toISOString();
+    const snapshotContext = createOpenClawSnapshotContext(snapshot, input.targetId, capturedAt);
+    const inspection = {
+      source: 'snapshot' as const,
+      title: title ?? undefined,
+      url: url ?? undefined,
+      normalizedUrl: url ?? undefined,
+      textSnippet: text ?? undefined,
+      capturedAt,
+      snapshotContext,
+    };
     return {
       targetId: input.targetId,
       url,
@@ -178,13 +188,8 @@ export class OpenClawBrowserControlServerClient {
       attached: true,
       available: true,
       inspection: {
-        source: 'snapshot',
-        title: title ?? undefined,
-        url: url ?? undefined,
-        normalizedUrl: url ?? undefined,
-        textSnippet: text ?? undefined,
-        capturedAt,
-        snapshotContext: createOpenClawSnapshotContext(snapshot, input.targetId, capturedAt),
+        ...inspection,
+        locatorCandidates: extractSnapshotLocatorCandidates(snapshot, inspection),
       },
     } satisfies OpenClawBrowserToolClientTarget;
   }
@@ -341,6 +346,109 @@ function extractSnapshotText(snapshot: any): string | null {
   const nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : Array.isArray(snapshot.elements) ? snapshot.elements : [];
   const parts = nodes.flatMap((node: any) => [node?.name, node?.text, node?.value]).filter((value: unknown) => typeof value === 'string' && value.trim());
   return parts.length > 0 ? parts.join(' ').slice(0, 4000) : null;
+}
+
+function extractSnapshotLocatorCandidates(
+  snapshot: any,
+  inspection: {
+    source: 'snapshot';
+    url?: string;
+    normalizedUrl?: string;
+    capturedAt?: string;
+    snapshotContext: BrowserHostSnapshotContext;
+  },
+) {
+  const seenRefs = new Set<string>();
+  const candidates = collectSnapshotCandidateNodes(snapshot)
+    .flatMap((node) => {
+      const ref = readSnapshotAriaRef(node);
+      if (!ref || seenRefs.has(ref)) return [];
+      seenRefs.add(ref);
+      const label = createSnapshotLocatorCandidateLabel(node, ref);
+      const description = normalizeCandidateText(node?.description)
+        ?? normalizeCandidateText(node?.text)
+        ?? normalizeCandidateText(node?.name)
+        ?? label;
+      const evidence = {
+        title: normalizeCandidateText(node?.title)
+          ?? normalizeCandidateText(node?.name)
+          ?? label,
+        textSnippet: normalizeCandidateText(node?.text)
+          ?? normalizeCandidateText(node?.value)
+          ?? normalizeCandidateText(node?.label),
+        description,
+      };
+      return [{
+        kind: 'snapshot-derived' as const,
+        label,
+        snapshotContext: inspection.snapshotContext,
+        locator: {
+          kind: 'aria-ref' as const,
+          ref,
+          description,
+          provenance: {
+            kind: 'snapshot-derived' as const,
+            inspection: {
+              source: inspection.source,
+              url: inspection.url,
+              normalizedUrl: inspection.normalizedUrl,
+              capturedAt: inspection.capturedAt,
+            },
+            snapshotContext: inspection.snapshotContext,
+            derivation: {
+              locatorKind: 'aria-ref' as const,
+              basis: 'snapshot-ref' as const,
+            },
+            evidence,
+          },
+        },
+      }];
+    });
+  return candidates.length > 0 ? candidates : undefined;
+}
+
+function collectSnapshotCandidateNodes(snapshot: any): any[] {
+  const layers = [snapshot, snapshot?.snapshot].filter((value) => value && typeof value === 'object');
+  const nodes: any[] = [];
+  for (const layer of layers) {
+    if (Array.isArray(layer.nodes)) nodes.push(...layer.nodes);
+    if (Array.isArray(layer.elements)) nodes.push(...layer.elements);
+    if (Array.isArray(layer.refs)) nodes.push(...layer.refs);
+    if (layer.refs && typeof layer.refs === 'object' && !Array.isArray(layer.refs)) {
+      nodes.push(
+        ...Object.entries(layer.refs).map(([ref, value]) => (
+          value && typeof value === 'object'
+            ? { ref, ...(value as Record<string, unknown>) }
+            : { ref, value }
+        )),
+      );
+    }
+  }
+  return nodes;
+}
+
+function readSnapshotAriaRef(node: any): string | undefined {
+  return normalizeCandidateText(node?.ref)
+    ?? normalizeCandidateText(node?.ariaRef)
+    ?? normalizeCandidateText(node?.aria_ref)
+    ?? normalizeCandidateText(node?.['aria-ref']);
+}
+
+function createSnapshotLocatorCandidateLabel(node: any, ref: string): string {
+  const role = normalizeCandidateText(node?.role);
+  const name = normalizeCandidateText(node?.name)
+    ?? normalizeCandidateText(node?.label)
+    ?? normalizeCandidateText(node?.text)
+    ?? normalizeCandidateText(node?.description)
+    ?? normalizeCandidateText(node?.title)
+    ?? normalizeCandidateText(node?.value);
+  if (role && name) return `${role}: ${name}`;
+  return name ?? role ?? ref;
+}
+
+function normalizeCandidateText(value: unknown): string | undefined {
+  const normalized = normalizeString(value);
+  return normalized ? normalized.slice(0, 240) : undefined;
 }
 
 function createOpenClawSnapshotContext(snapshot: any, targetId: string, capturedAt: string): BrowserHostSnapshotContext {

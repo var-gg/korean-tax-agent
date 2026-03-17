@@ -76,7 +76,7 @@ First concrete host adapter implementation behind the generic browser-host seam.
 - T10 adds explicit host-agnostic action readiness/precondition reporting so action requests and receipts can say whether target, inspection, and snapshot-ref context were required, present, or missing.
 - T11 upgrades snapshot-backed refs from “inspection is present” to an explicit versioned artifact context (`snapshotContext.artifact.{artifactId,version,capturedAt}`) that flows through inspection, runtime state, action requests, readiness, and receipts.
 - The first honest OpenClaw action mapping only supports `aria-ref` locators; those actions now explicitly require that request snapshot context match the bound runtime snapshot artifact/version and distinguish `missing_snapshot_context`, `stale_ref`, and `ambiguous_ref` from broader transport failures.
-- T12 adds narrow host-agnostic `recoveryAdvice` metadata on explicit snapshot-bound action failures so callers can inspect whether they need to reinspect the current target, reacquire a fresh snapshot artifact, or rebind/reacquire the locator from that fresh snapshot. T14 extends that advice with optional expected locator provenance metadata (`snapshot-derived`, derivation basis, snapshot artifact, inspection URL/source) so the next manual acquisition can be audited. The core does not auto-recover, auto-resnapshot, or retry.
+- T12 adds narrow host-agnostic `recoveryAdvice` metadata on explicit snapshot-bound action failures so callers can inspect whether they need to reinspect the current target, reacquire a fresh snapshot artifact, or rebind/reacquire the locator from that fresh snapshot. T14 extends that advice with optional expected locator provenance metadata (`snapshot-derived`, derivation basis, snapshot artifact, inspection URL/source) so the next manual acquisition can be audited. T15 adds typed `inspection.locatorCandidates[]` outputs for snapshot-derived locator material, so callers can now inspect fresh candidates, choose one, and submit it directly through the existing explicit rebinding contract. The core does not auto-recover, auto-resnapshot, auto-select a candidate, or retry.
 
 ### `OpenClawBrowserToolTransport`
 
@@ -93,7 +93,7 @@ Thin real bridge/runtime path for T6.
 - `OpenClawBrowserRuntimeCommandClient` already spoke the T5 stdin/stdout command protocol seam.
 - `scripts/openclaw-browser-runtime.ts` is the concrete adapter entrypoint that reads that protocol and calls a live OpenClaw browser control server client.
 - `OpenClawBrowserControlServerClient` currently maps the stable slice onto OpenClaw browser server actions: `status`, `tabs`, `open`, and narrow `snapshot` reads.
-- `getRuntimeState()` and `handoffCheckpoint()` can now enrich runtime state with normalized inspection metadata (`inspection.source/title/url/normalizedUrl/textSnippet/capturedAt/snapshotContext`) when the transport advertises inspection support.
+- `getRuntimeState()` and `handoffCheckpoint()` can now enrich runtime state with normalized inspection metadata (`inspection.source/title/url/normalizedUrl/textSnippet/capturedAt/snapshotContext/locatorCandidates`) when the transport advertises inspection support.
 - Reconnect and rebind now flow through a generic evidence-based target-resolution contract instead of OpenClaw-only heuristics; OpenClaw is just the first adapter implementing it.
 - `handoffCheckpoint()` remains state-preserving: it re-resolves/re-binds the bound target instead of inventing DOM automation.
 - Live use is environment-dependent: it requires `OPENCLAW_BROWSER_SERVER_URL` and usually a relay-attached Chrome target/profile if you want attach semantics.
@@ -169,6 +169,13 @@ const service = createBrowserAssistService({
 
 See `examples/browser-assist-openclaw-adapter.ts` for a fuller mockable flow.
 For the real command-bridge path, see `examples/browser-assist-openclaw-live-bridge.ts` and `scripts/openclaw-browser-runtime.ts`.
+
+Manual snapshot-bound action loop:
+
+- inspect runtime state and read `runtimeState.inspection?.locatorCandidates`
+- pick one candidate explicitly in caller code
+- submit that candidate’s `snapshotContext` and `locator` through `rebinding`
+- execute the action without any hidden acquisition or auto-selection in the core
 
 ## Future wiring points
 

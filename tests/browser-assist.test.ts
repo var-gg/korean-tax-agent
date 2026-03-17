@@ -45,6 +45,32 @@ function createSnapshotDerivedAriaRefProvenance(input: {
   };
 }
 
+function createSnapshotDerivedAriaRefCandidate(input: {
+  ref: string;
+  label?: string;
+  description?: string;
+  snapshotContext: { artifact: { artifactId: string; version: string; capturedAt?: string } };
+  inspection?: { source?: 'target' | 'snapshot' | 'runtime'; url?: string; normalizedUrl?: string; capturedAt?: string };
+  evidence?: { title?: string; textSnippet?: string; description?: string };
+}) {
+  const description = input.description ?? input.evidence?.description ?? input.label ?? input.ref;
+  return {
+    kind: 'snapshot-derived' as const,
+    label: input.label ?? description,
+    snapshotContext: input.snapshotContext,
+    locator: {
+      kind: 'aria-ref' as const,
+      ref: input.ref,
+      description,
+      provenance: createSnapshotDerivedAriaRefProvenance({
+        snapshotContext: input.snapshotContext,
+        inspection: input.inspection,
+        evidence: input.evidence ?? { description },
+      }),
+    },
+  };
+}
+
 async function canSpawnNodeSubprocess(): Promise<boolean> {
   return await new Promise((resolve) => {
     try {
@@ -601,6 +627,70 @@ if (input.operation === 'listTargets') {
     expect(calls[2]?.body).toMatchObject({ action: 'open', profile: 'chrome', url: 'https://hometax.go.kr/live' });
   });
 
+  it('extracts typed snapshot-derived aria-ref candidates from the OpenClaw live bridge snapshot response', async () => {
+    const calls: Array<{ action: string; body: any }> = [];
+    const client = new OpenClawBrowserControlServerClient({
+      baseUrl: 'http://openclaw.test',
+      profile: 'chrome',
+      fetchImpl: async (_url, init) => {
+        const body = JSON.parse(String(init?.body || '{}'));
+        calls.push({ action: body.action, body });
+        const payload = body.action === 'snapshot'
+          ? {
+              snapshotId: 'snapshot:live-candidate',
+              snapshotVersion: 'v3',
+              url: 'https://hometax.go.kr/live/candidate',
+              title: 'Candidate Ready',
+              capturedAt: '2026-03-16T04:30:00.000Z',
+              nodes: [
+                { ref: 'aria-submit-7', role: 'button', name: '신고서 제출', text: '신고서 제출' },
+                { ref: 'aria-cancel-2', role: 'button', name: '취소', text: '취소' },
+              ],
+            }
+          : {};
+        return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    const target = await client.snapshotTarget({ targetId: 'target-live' });
+
+    expect(target).toEqual(expect.objectContaining({
+      targetId: 'target-live',
+      inspection: expect.objectContaining({
+        source: 'snapshot',
+        snapshotContext: {
+          artifact: {
+            artifactId: 'snapshot:live-candidate',
+            version: 'v3',
+            capturedAt: '2026-03-16T04:30:00.000Z',
+          },
+        },
+        locatorCandidates: [
+          expect.objectContaining({
+            kind: 'snapshot-derived',
+            label: 'button: 신고서 제출',
+            locator: expect.objectContaining({
+              kind: 'aria-ref',
+              ref: 'aria-submit-7',
+              provenance: expect.objectContaining({
+                kind: 'snapshot-derived',
+                derivation: { locatorKind: 'aria-ref', basis: 'snapshot-ref' },
+                evidence: expect.objectContaining({ description: '신고서 제출' }),
+              }),
+            }),
+          }),
+          expect.objectContaining({
+            kind: 'snapshot-derived',
+            label: 'button: 취소',
+            locator: expect.objectContaining({ kind: 'aria-ref', ref: 'aria-cancel-2' }),
+          }),
+        ],
+      }),
+    }));
+    expect(calls.map((call) => call.action)).toEqual(['snapshot']);
+    expect(calls[0]?.body).toMatchObject({ action: 'snapshot', refs: 'aria', targetId: 'target-live' });
+  });
+
   it('surfaces relay unavailability during OpenClaw openTarget', async () => {
     const runtime = new BrowserHostRuntimeAdapter({
       executor: new OpenClawBrowserHostExecutor({
@@ -798,6 +888,13 @@ if (input.operation === 'listTargets') {
               return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', attached: true, available: true };
             },
             async snapshotTarget(input) {
+              const snapshotContext = {
+                artifact: {
+                  artifactId: 'snapshot:openclaw-tab:session-openclaw-snapshot',
+                  version: 'snapshot-v1',
+                  capturedAt: '2026-03-16T00:00:05.000Z',
+                },
+              };
               return {
                 targetId: input.targetId,
                 sessionId: 'session-openclaw-snapshot',
@@ -812,13 +909,26 @@ if (input.operation === 'listTargets') {
                   normalizedUrl: 'https://hometax.go.kr/openclaw/snapshot/ready',
                   textSnippet: '납세 신고서 제출 화면',
                   capturedAt: '2026-03-16T00:00:05.000Z',
-                  snapshotContext: {
-                    artifact: {
-                      artifactId: 'snapshot:openclaw-tab:session-openclaw-snapshot',
-                      version: 'snapshot-v1',
-                      capturedAt: '2026-03-16T00:00:05.000Z',
-                    },
-                  },
+                  snapshotContext,
+                  locatorCandidates: [
+                    createSnapshotDerivedAriaRefCandidate({
+                      ref: 'aria-submit-1',
+                      label: 'button: 신고서 제출',
+                      description: '신고서 제출 버튼',
+                      snapshotContext,
+                      inspection: {
+                        source: 'snapshot',
+                        url: 'https://hometax.go.kr/openclaw/snapshot/ready',
+                        normalizedUrl: 'https://hometax.go.kr/openclaw/snapshot/ready',
+                        capturedAt: '2026-03-16T00:00:05.000Z',
+                      },
+                      evidence: {
+                        title: 'button: 신고서 제출',
+                        textSnippet: '납세 신고서 제출 화면',
+                        description: '신고서 제출 버튼',
+                      },
+                    }),
+                  ],
                 },
               };
             },
@@ -843,6 +953,21 @@ if (input.operation === 'listTargets') {
     expect(status.session.runtimeState.inspection?.title).toBe('Snapshot Ready');
     expect(status.session.runtimeState.inspection?.source).toBe('snapshot');
     expect(status.session.runtimeState.inspection?.textSnippet).toContain('납세 신고서 제출');
+    expect(status.session.runtimeState.inspection?.locatorCandidates).toEqual([
+      expect.objectContaining({
+        kind: 'snapshot-derived',
+        label: 'button: 신고서 제출',
+        locator: expect.objectContaining({
+          kind: 'aria-ref',
+          ref: 'aria-submit-1',
+          provenance: expect.objectContaining({
+            kind: 'snapshot-derived',
+            derivation: { locatorKind: 'aria-ref', basis: 'snapshot-ref' },
+            evidence: expect.objectContaining({ description: '신고서 제출 버튼' }),
+          }),
+        }),
+      }),
+    ]);
     expect(status.session.runtimeState.snapshotContext).toEqual({
       artifact: {
         artifactId: 'snapshot:openclaw-tab:session-openclaw-snapshot',
@@ -881,6 +1006,149 @@ if (input.operation === 'listTargets') {
       code: 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED',
       operation: 'getRuntimeState',
     });
+  });
+
+  it('propagates coherent snapshot-derived inspection locator candidates through generic runtime state normalization', async () => {
+    const snapshotContext = {
+      artifact: {
+        artifactId: 'snapshot:generic-candidate',
+        version: 'snapshot-v1',
+        capturedAt: '2026-03-16T03:15:00.000Z',
+      },
+    };
+    const runtime = new BrowserHostRuntimeAdapter({
+      client: {
+        async openTarget(input) {
+          return {
+            transport: 'browser-host',
+            runtimeTargetId: `browser-target:${input.sessionId}`,
+            targetUrl: input.target.entryUrl,
+            currentTargetUrl: input.target.entryUrl,
+            lastOpenedUrl: input.target.entryUrl,
+            snapshotContext,
+            activeCheckpointId: input.activeCheckpoint.id,
+            inspection: {
+              source: 'snapshot',
+              title: 'Generic Snapshot Ready',
+              url: input.target.entryUrl,
+              normalizedUrl: input.target.entryUrl,
+              textSnippet: '납부 버튼',
+              capturedAt: '2026-03-16T03:15:00.000Z',
+              snapshotContext,
+              locatorCandidates: [
+                createSnapshotDerivedAriaRefCandidate({
+                  ref: 'aria-pay-1',
+                  label: 'button: 납부',
+                  description: '납부 버튼',
+                  snapshotContext,
+                  inspection: {
+                    source: 'snapshot',
+                    url: input.target.entryUrl,
+                    normalizedUrl: input.target.entryUrl,
+                    capturedAt: '2026-03-16T03:15:00.000Z',
+                  },
+                }),
+              ],
+            },
+          };
+        },
+      },
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-generic-candidate', 'checkpoint-auth-generic-candidate', 'checkpoint-review-generic-candidate']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/generic/candidate',
+      requestedBy: 'browser-assist-test',
+    });
+
+    expect(started.session.runtimeState.inspection?.locatorCandidates).toEqual([
+      expect.objectContaining({
+        kind: 'snapshot-derived',
+        label: 'button: 납부',
+        snapshotContext,
+        locator: expect.objectContaining({
+          kind: 'aria-ref',
+          ref: 'aria-pay-1',
+          provenance: expect.objectContaining({
+            inspection: expect.objectContaining({
+              source: 'snapshot',
+              normalizedUrl: 'https://hometax.go.kr/generic/candidate',
+            }),
+            snapshotContext,
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it('drops incoherent snapshot-derived inspection locator candidates during normalization', async () => {
+    const inspectionSnapshotContext = {
+      artifact: {
+        artifactId: 'snapshot:generic-candidate-mismatch',
+        version: 'snapshot-v1',
+        capturedAt: '2026-03-16T03:25:00.000Z',
+      },
+    };
+    const runtime = new BrowserHostRuntimeAdapter({
+      client: {
+        async openTarget(input) {
+          return {
+            transport: 'browser-host',
+            runtimeTargetId: `browser-target:${input.sessionId}`,
+            targetUrl: input.target.entryUrl,
+            currentTargetUrl: input.target.entryUrl,
+            lastOpenedUrl: input.target.entryUrl,
+            snapshotContext: inspectionSnapshotContext,
+            activeCheckpointId: input.activeCheckpoint.id,
+            inspection: {
+              source: 'snapshot',
+              title: 'Mismatched Snapshot Ready',
+              url: input.target.entryUrl,
+              normalizedUrl: input.target.entryUrl,
+              textSnippet: '오래된 버튼',
+              capturedAt: '2026-03-16T03:25:00.000Z',
+              snapshotContext: inspectionSnapshotContext,
+              locatorCandidates: [
+                createSnapshotDerivedAriaRefCandidate({
+                  ref: 'aria-old-1',
+                  label: 'button: 오래된 버튼',
+                  description: '오래된 버튼',
+                  snapshotContext: {
+                    artifact: {
+                      artifactId: 'snapshot:generic-candidate-mismatch',
+                      version: 'snapshot-v0',
+                      capturedAt: '2026-03-16T03:24:59.000Z',
+                    },
+                  },
+                  inspection: {
+                    source: 'snapshot',
+                    url: input.target.entryUrl,
+                    normalizedUrl: input.target.entryUrl,
+                    capturedAt: '2026-03-16T03:25:00.000Z',
+                  },
+                }),
+              ],
+            },
+          };
+        },
+      },
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-generic-candidate-mismatch', 'checkpoint-auth-generic-candidate-mismatch', 'checkpoint-review-generic-candidate-mismatch']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/generic/candidate/mismatch',
+      requestedBy: 'browser-assist-test',
+    });
+
+    expect(started.session.runtimeState.inspection?.locatorCandidates).toBeUndefined();
   });
 
   it('returns audited DOM action receipts through the generic in-memory host seam', async () => {
@@ -1166,7 +1434,7 @@ if (input.operation === 'listTargets') {
   });
 
 
-  it('uses explicit rebinding submissions for OpenClaw aria-ref actions without hidden fallback', async () => {
+  it('uses selected inspection locator candidates for explicit OpenClaw aria-ref rebinding without hidden fallback', async () => {
     const dispatchedRefs: string[] = [];
     const runtime = new BrowserHostRuntimeAdapter({
       executor: new OpenClawBrowserHostExecutor({
@@ -1195,6 +1463,7 @@ if (input.operation === 'listTargets') {
               return { targetId: input.targetId, sessionId: 'session-openclaw-explicit-rebind', url: 'https://hometax.go.kr/openclaw/action/rebind', attached: true, available: true };
             },
             async snapshotTarget(input) {
+              const snapshotContext = { artifact: { artifactId: 'snapshot:openclaw-explicit-rebind', version: 'v2', capturedAt: '2026-03-16T08:10:04.000Z' } };
               return {
                 targetId: input.targetId,
                 sessionId: 'session-openclaw-explicit-rebind',
@@ -1209,7 +1478,26 @@ if (input.operation === 'listTargets') {
                   normalizedUrl: 'https://hometax.go.kr/openclaw/action/rebind',
                   textSnippet: '새 제출 버튼',
                   capturedAt: '2026-03-16T08:10:04.000Z',
-                  snapshotContext: { artifact: { artifactId: 'snapshot:openclaw-explicit-rebind', version: 'v2', capturedAt: '2026-03-16T08:10:04.000Z' } },
+                  snapshotContext,
+                  locatorCandidates: [
+                    createSnapshotDerivedAriaRefCandidate({
+                      ref: 'fresh-e44',
+                      label: 'button: 새 제출',
+                      description: 'Fresh button',
+                      snapshotContext,
+                      inspection: {
+                        source: 'snapshot',
+                        url: 'https://hometax.go.kr/openclaw/action/rebind',
+                        normalizedUrl: 'https://hometax.go.kr/openclaw/action/rebind',
+                        capturedAt: '2026-03-16T08:10:04.000Z',
+                      },
+                      evidence: {
+                        title: 'button: 새 제출',
+                        textSnippet: '새 제출 버튼',
+                        description: 'Fresh button',
+                      },
+                    }),
+                  ],
                 },
               };
             },
@@ -1236,25 +1524,21 @@ if (input.operation === 'listTargets') {
       targetUrl: 'https://hometax.go.kr/openclaw/action/rebind',
       requestedBy: 'openclaw-runtime-test',
     });
+    const selectedCandidate = started.session.runtimeState.inspection?.locatorCandidates?.[0];
+    expect(selectedCandidate).toEqual(expect.objectContaining({
+      kind: 'snapshot-derived',
+      locator: expect.objectContaining({ kind: 'aria-ref', ref: 'fresh-e44' }),
+    }));
 
     const result = await runtime.executeDomAction({
       sessionId: started.session.id,
       runtimeState: started.session.runtimeState,
       locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old button' },
       action: { kind: 'click' },
-      snapshotContext: started.session.runtimeState?.snapshotContext,
-      rebinding: started.session.runtimeState?.snapshotContext ? {
-        snapshotContext: started.session.runtimeState.snapshotContext,
-        locator: {
-          kind: 'aria-ref',
-          ref: 'fresh-e44',
-          description: 'Fresh button',
-          provenance: createSnapshotDerivedAriaRefProvenance({
-            snapshotContext: started.session.runtimeState.snapshotContext,
-            inspection: started.session.runtimeState.inspection,
-            evidence: { description: 'Fresh button' },
-          }),
-        },
+      snapshotContext: selectedCandidate?.snapshotContext ?? started.session.runtimeState?.snapshotContext,
+      rebinding: selectedCandidate ? {
+        snapshotContext: selectedCandidate.snapshotContext,
+        locator: selectedCandidate.locator,
         previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old button' },
       } : undefined,
     });
@@ -1271,6 +1555,115 @@ if (input.operation === 'listTargets') {
           usedLocator: { kind: 'aria-ref', ref: 'fresh-e44' },
         },
         readiness: { rebinding: { status: 'accepted' } },
+      },
+    });
+  });
+
+  it('does not auto-select inspection locator candidates for OpenClaw aria-ref actions', async () => {
+    const dispatchedRefs: string[] = [];
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        transport: new OpenClawBrowserToolTransport({
+          client: {
+            async getCapabilities() {
+              return {
+                hostAvailable: true,
+                activeTarget: true,
+                runtimeInspection: true,
+                snapshotInspection: true,
+                checkpointHandoff: true,
+                domActions: true,
+                actionReadiness: true,
+                snapshotRefLocators: true,
+                explicitSnapshotRebinding: true,
+                supportedDomActionKinds: ['click', 'fill', 'press'],
+                supportedLocatorKinds: ['aria-ref'],
+              };
+            },
+            async listTargets() { return []; },
+            async openTarget(input) {
+              return { targetId: `openclaw-tab:${input.sessionId}`, sessionId: input.sessionId, url: input.url, attached: true, available: true };
+            },
+            async getTarget(input) {
+              return { targetId: input.targetId, sessionId: 'session-openclaw-no-auto-select', url: 'https://hometax.go.kr/openclaw/action/no-auto-select', attached: true, available: true };
+            },
+            async snapshotTarget(input) {
+              const snapshotContext = { artifact: { artifactId: 'snapshot:openclaw-no-auto-select', version: 'v4', capturedAt: '2026-03-16T08:30:04.000Z' } };
+              return {
+                targetId: input.targetId,
+                sessionId: 'session-openclaw-no-auto-select',
+                url: 'https://hometax.go.kr/openclaw/action/no-auto-select',
+                title: 'Action Candidate Ready',
+                attached: true,
+                available: true,
+                inspection: {
+                  source: 'snapshot',
+                  title: 'Action Candidate Ready',
+                  url: 'https://hometax.go.kr/openclaw/action/no-auto-select',
+                  normalizedUrl: 'https://hometax.go.kr/openclaw/action/no-auto-select',
+                  textSnippet: '새 제출 버튼',
+                  capturedAt: '2026-03-16T08:30:04.000Z',
+                  snapshotContext,
+                  locatorCandidates: [
+                    createSnapshotDerivedAriaRefCandidate({
+                      ref: 'fresh-e44',
+                      label: 'button: 새 제출',
+                      description: 'Fresh button',
+                      snapshotContext,
+                      inspection: {
+                        source: 'snapshot',
+                        url: 'https://hometax.go.kr/openclaw/action/no-auto-select',
+                        normalizedUrl: 'https://hometax.go.kr/openclaw/action/no-auto-select',
+                        capturedAt: '2026-03-16T08:30:04.000Z',
+                      },
+                    }),
+                  ],
+                },
+              };
+            },
+            async executeDomAction(input) {
+              dispatchedRefs.push(input.locator.kind === 'aria-ref' ? input.locator.ref : 'non-aria');
+              return {
+                targetId: input.runtimeTargetId,
+                actedAt: '2026-03-16T08:30:05.000Z',
+                hostActionId: 'host-action-no-auto-select-1',
+                metadata: { locatorKind: input.locator.kind, actionKind: input.action.kind },
+              };
+            },
+          },
+        }),
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-no-auto-select', 'checkpoint-auth-openclaw-no-auto-select', 'checkpoint-review-openclaw-no-auto-select']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/action/no-auto-select',
+      requestedBy: 'openclaw-runtime-test',
+    });
+    expect(started.session.runtimeState.inspection?.locatorCandidates?.[0]?.locator.ref).toBe('fresh-e44');
+
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old button' },
+      action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
+    });
+
+    expect(dispatchedRefs).toEqual(['stale-e12']);
+    expect(result).toMatchObject({
+      ok: true,
+      receipt: {
+        locator: { kind: 'aria-ref', ref: 'stale-e12' },
+        requestedLocator: { kind: 'aria-ref', ref: 'stale-e12' },
+        rebinding: {
+          provided: false,
+          accepted: false,
+        },
       },
     });
   });
