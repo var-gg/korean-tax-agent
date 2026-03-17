@@ -464,15 +464,18 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     if (!capabilities.hostAvailable) return this.actionFailure('host_unavailable', 'OpenClaw browser host is unavailable.', input, runtimeTargetId, readiness);
     if (!capabilities.domActions || typeof this.transport.executeDomAction !== 'function') return this.actionFailure('action_unsupported', 'OpenClaw transport does not support DOM actions.', input, runtimeTargetId, readiness);
     if (!capabilities.actionReadiness) return this.actionFailure('action_unsupported', 'OpenClaw transport does not advertise action readiness semantics.', input, runtimeTargetId, readiness);
+    if (!capabilities.explicitSnapshotRebinding && input.rebinding) return this.actionFailure('action_unsupported', 'OpenClaw transport does not advertise explicit snapshot rebinding support.', input, runtimeTargetId, readiness);
     if (!runtimeTargetId) return this.actionFailure('target_not_found', `No OpenClaw target is attached for session ${input.sessionId}.`, input, runtimeTargetId, readiness);
     if (!capabilities.supportedDomActionKinds.includes(input.action.kind)) return this.actionFailure('action_unsupported', `OpenClaw does not support DOM action ${input.action.kind}.`, input, runtimeTargetId, readiness);
     if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return this.actionFailure(input.locator.kind === 'aria-ref' ? 'action_unsupported' : 'locator_unsupported', `OpenClaw does not support locator kind ${input.locator.kind}.`, input, runtimeTargetId, readiness);
+    if (readiness.rebinding.status === 'rejected') return this.actionFailure(readiness.rebinding.rejectionCode ?? 'invalid_rebinding_submission', readiness.rebinding.detail ?? 'Explicit rebinding submission was rejected.', input, runtimeTargetId, readiness);
     if (readiness.inspection === 'missing') return this.actionFailure('missing_inspection_context', 'OpenClaw aria-ref actions require inspection context for the bound target.', input, runtimeTargetId, readiness);
     if (readiness.snapshot === 'missing') return this.actionFailure('missing_snapshot_context', 'OpenClaw aria-ref actions require a current snapshot artifact context before execution.', input, runtimeTargetId, readiness);
     if (readiness.snapshotRef.freshness === 'missing_requested_snapshot') return this.actionFailure('missing_snapshot_context', 'OpenClaw aria-ref actions require explicit snapshot context tied to the aria-ref before execution.', input, runtimeTargetId, readiness);
     if (readiness.snapshotRef.freshness === 'stale') return this.actionFailure('stale_ref', 'OpenClaw aria-ref action expected a different snapshot artifact/version than the bound runtime snapshot.', input, runtimeTargetId, readiness);
+    const resolvedLocator = readiness.rebinding.status === 'accepted' && readiness.rebinding.accepted ? cloneValue(readiness.rebinding.accepted.locator) : cloneValue(input.locator);
     try {
-      const receipt = await this.callRelay('executeDomAction', () => this.transport.executeDomAction!({ ...cloneValue(input), runtimeTargetId }));
+      const receipt = await this.callRelay('executeDomAction', () => this.transport.executeDomAction!({ ...cloneValue(input), locator: cloneValue(resolvedLocator), runtimeTargetId }));
       return {
         ok: true,
         receipt: {
@@ -480,11 +483,21 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
           sessionId: input.sessionId,
           runtimeTargetId,
           action: cloneValue(input.action),
-          locator: cloneValue(input.locator),
+          locator: resolvedLocator,
+          requestedLocator: cloneValue(input.locator),
           snapshotContext: readiness.snapshotRef.current ? cloneValue(readiness.snapshotRef.current) : undefined,
+          rebinding: {
+            provided: readiness.rebinding.status !== 'not-provided',
+            accepted: readiness.rebinding.status === 'accepted',
+            submission: readiness.rebinding.submitted ? cloneValue(readiness.rebinding.submitted) : undefined,
+            usedLocator: readiness.rebinding.status === 'accepted' ? cloneValue(resolvedLocator) : undefined,
+            usedSnapshotContext: readiness.rebinding.status === 'accepted' ? cloneValue(readiness.rebinding.accepted?.snapshotContext) : undefined,
+            rejectionCode: undefined,
+            detail: readiness.rebinding.detail,
+          },
           readiness,
           actedAt: receipt.actedAt ?? this.now(),
-          targetDescription: input.locator.description,
+          targetDescription: resolvedLocator.description ?? input.locator.description,
           confirmation: { host: this.transportLabel, metadata: cloneValue(receipt.metadata ?? {}) },
         },
       };
@@ -514,6 +527,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       domActions: typeof this.transport.executeDomAction === 'function',
       actionReadiness: typeof this.transport.executeDomAction === 'function',
       snapshotRefLocators: typeof this.transport.executeDomAction === 'function',
+      explicitSnapshotRebinding: typeof this.transport.executeDomAction === 'function',
       supportedDomActionKinds: typeof this.transport.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [],
       supportedLocatorKinds: typeof this.transport.executeDomAction === 'function' ? ['aria-ref'] satisfies BrowserHostLocatorKind[] : [],
     });
@@ -646,6 +660,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     const inspectionPresent = Boolean(input.runtimeState?.inspection ?? binding?.inspection);
     const currentSnapshotContext = normalizeSnapshotContext(input.runtimeState?.snapshotContext ?? input.runtimeState?.inspection?.snapshotContext ?? binding?.snapshotContext);
     const requestedSnapshotContext = normalizeSnapshotContext(input.snapshotContext);
+    const rebinding = createRebindingReadiness(input, currentSnapshotContext, requestedSnapshotContext);
     return {
       preconditions: {
         target: input.readiness?.target ?? 'required',
@@ -657,10 +672,11 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       inspection: inspectionRequired === 'none' ? 'not-required' : inspectionPresent ? 'present' : 'missing',
       snapshot: snapshotRequired === 'none' ? 'not-required' : currentSnapshotContext ? 'present' : 'missing',
       snapshotRef: createSnapshotRefReadiness(snapshotRequired, currentSnapshotContext, requestedSnapshotContext),
+      rebinding,
     };
   }
 
-  private actionFailure(code: 'action_unsupported' | 'locator_unsupported' | 'target_not_found' | 'ambiguous_target' | 'ambiguous_ref' | 'host_unavailable' | 'session_mismatch' | 'missing_inspection_context' | 'missing_snapshot_context' | 'stale_ref' | 'timeout' | 'transport_failure' | 'action_rejected', message: string, input: BrowserHostDomActionRequest, runtimeTargetId?: string, readiness?: BrowserHostActionReadiness, retryable?: boolean): BrowserHostDomActionResult {
+  private actionFailure(code: 'action_unsupported' | 'locator_unsupported' | 'target_not_found' | 'ambiguous_target' | 'ambiguous_ref' | 'host_unavailable' | 'session_mismatch' | 'missing_inspection_context' | 'missing_snapshot_context' | 'invalid_rebinding_submission' | 'rebinding_artifact_mismatch' | 'rebound_locator_not_snapshot_derived' | 'stale_ref' | 'timeout' | 'transport_failure' | 'action_rejected', message: string, input: BrowserHostDomActionRequest, runtimeTargetId?: string, readiness?: BrowserHostActionReadiness, retryable?: boolean): BrowserHostDomActionResult {
     const resolvedReadiness = readiness ?? this.createActionReadiness(input, runtimeTargetId);
     const recoveryAdvice = createSnapshotBoundActionRecoveryAdvice({
       code,
@@ -678,11 +694,21 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
         sessionId: input.sessionId,
         runtimeTargetId,
         action: cloneValue(input.action),
-        locator: cloneValue(input.locator),
+        locator: cloneValue(resolvedReadiness.rebinding.status === 'accepted' && resolvedReadiness.rebinding.accepted ? resolvedReadiness.rebinding.accepted.locator : input.locator),
+        requestedLocator: cloneValue(input.locator),
         snapshotContext: resolvedReadiness.snapshotRef.current ? cloneValue(resolvedReadiness.snapshotRef.current) : undefined,
+        rebinding: {
+          provided: resolvedReadiness.rebinding.status !== 'not-provided',
+          accepted: resolvedReadiness.rebinding.status === 'accepted',
+          submission: resolvedReadiness.rebinding.submitted ? cloneValue(resolvedReadiness.rebinding.submitted) : undefined,
+          usedLocator: resolvedReadiness.rebinding.status === 'accepted' && resolvedReadiness.rebinding.accepted ? cloneValue(resolvedReadiness.rebinding.accepted.locator) : undefined,
+          usedSnapshotContext: resolvedReadiness.rebinding.status === 'accepted' ? cloneValue(resolvedReadiness.rebinding.accepted?.snapshotContext) : undefined,
+          rejectionCode: resolvedReadiness.rebinding.status === 'rejected' ? resolvedReadiness.rebinding.rejectionCode : undefined,
+          detail: resolvedReadiness.rebinding.detail,
+        },
         readiness: cloneValue(resolvedReadiness),
         actedAt: input.requestedAt ?? this.now(),
-        targetDescription: input.locator.description,
+        targetDescription: (resolvedReadiness.rebinding.status === 'accepted' && resolvedReadiness.rebinding.accepted ? resolvedReadiness.rebinding.accepted.locator.description : input.locator.description),
       },
     };
   }
@@ -730,9 +756,10 @@ export class OpenClawBrowserToolTransport implements OpenClawBrowserTransport {
       domActions: reported?.domActions ?? (typeof this.client.executeDomAction === 'function'),
       actionReadiness: reported?.actionReadiness ?? (typeof this.client.executeDomAction === 'function'),
       snapshotRefLocators: reported?.snapshotRefLocators ?? (typeof this.client.executeDomAction === 'function'),
+      explicitSnapshotRebinding: reported?.explicitSnapshotRebinding ?? (typeof this.client.executeDomAction === 'function'),
       supportedDomActionKinds: reported?.supportedDomActionKinds ?? (typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : []),
       supportedLocatorKinds: reported?.supportedLocatorKinds ?? (typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : []),
-    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
+    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', explicitSnapshotRebinding: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
   }
 
   async open(input: OpenClawRelayOpenRequest): Promise<OpenClawRelayTarget> {
@@ -987,13 +1014,14 @@ function normalizeOpenClawCapabilities(input: Partial<OpenClawBrowserTransportCa
     domActions: input?.domActions ?? fallback.domActions,
     actionReadiness: input?.actionReadiness ?? fallback.actionReadiness,
     snapshotRefLocators: input?.snapshotRefLocators ?? fallback.snapshotRefLocators,
+    explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? fallback.explicitSnapshotRebinding,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [...fallback.supportedDomActionKinds],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [...fallback.supportedLocatorKinds],
   };
 }
 
 function defaultOpenClawCapabilities(overrides: Partial<OpenClawBrowserTransportCapabilities> = {}): OpenClawBrowserTransportCapabilities {
-  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
+  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, explicitSnapshotRebinding: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
 }
 
 function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: OpenClawRelayAttachRequest): OpenClawRelayTarget | null {
@@ -1191,6 +1219,29 @@ function pushRecoveryAdviceStep(steps: BrowserHostRecoveryAdviceStep[], step: Br
 
 function cloneValue<T>(value: T): T {
   return structuredClone(value);
+}
+
+function normalizeSnapshotLocatorRebinding(rebinding: BrowserHostDomActionRequest['rebinding'] | null | undefined) {
+  if (!rebinding) return undefined;
+  const snapshotContext = normalizeSnapshotContext(rebinding.snapshotContext);
+  const previousSnapshotContext = normalizeSnapshotContext(rebinding.previousSnapshotContext);
+  if (!snapshotContext) return undefined;
+  return {
+    snapshotContext,
+    locator: cloneValue(rebinding.locator),
+    previousSnapshotContext,
+    previousLocator: rebinding.previousLocator ? cloneValue(rebinding.previousLocator) : undefined,
+  };
+}
+
+function createRebindingReadiness(input: BrowserHostDomActionRequest, currentSnapshotContext: BrowserHostSnapshotContext | undefined, requestedSnapshotContext: BrowserHostSnapshotContext | undefined) {
+  const submitted = normalizeSnapshotLocatorRebinding(input.rebinding);
+  if (!submitted) return { status: 'not-provided' as const };
+  if (submitted.locator.kind !== 'aria-ref') return { status: 'rejected' as const, submitted, rejectionCode: 'rebound_locator_not_snapshot_derived' as const, detail: 'Rebinding submissions for snapshot-backed refs must carry an aria-ref locator derived from a snapshot artifact.' };
+  if (!currentSnapshotContext || submitted.snapshotContext.artifact.artifactId != currentSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version != currentSnapshotContext.artifact.version) return { status: 'rejected' as const, submitted, rejectionCode: 'rebinding_artifact_mismatch' as const, detail: 'Submitted rebinding locator was not derived from the currently bound snapshot artifact/version.' };
+  if (!requestedSnapshotContext) return { status: 'rejected' as const, submitted, rejectionCode: 'invalid_rebinding_submission' as const, detail: 'Snapshot-backed rebinding submissions require the action request to name the fresh snapshot artifact/version explicitly.' };
+  if (submitted.snapshotContext.artifact.artifactId != requestedSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version != requestedSnapshotContext.artifact.version) return { status: 'rejected' as const, submitted, rejectionCode: 'rebinding_artifact_mismatch' as const, detail: 'Submitted rebinding locator does not match the explicit snapshot artifact/version requested for the action.' };
+  return { status: 'accepted' as const, submitted, accepted: submitted };
 }
 
 function normalizeSnapshotContext(snapshotContext: BrowserHostSnapshotContext | null | undefined): BrowserHostSnapshotContext | undefined {

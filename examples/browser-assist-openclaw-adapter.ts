@@ -119,6 +119,18 @@ async function main() {
     action: { kind: 'click' },
     snapshotContext: afterAuth.session.runtimeState.snapshotContext,
   });
+  const explicitRebindResult = await runtime.executeDomAction({
+    sessionId: afterAuth.session.id,
+    runtimeState: afterAuth.session.runtimeState,
+    locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old continue button' },
+    action: { kind: 'click' },
+    snapshotContext: afterAuth.session.runtimeState.snapshotContext,
+    rebinding: {
+      snapshotContext: afterAuth.session.runtimeState.snapshotContext!,
+      locator: { kind: 'aria-ref', ref: 'e12', description: 'Fresh continue button' },
+      previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old continue button' },
+    },
+  });
   const staleRefFailure = await runtime.executeDomAction({
     sessionId: afterAuth.session.id,
     runtimeState: afterAuth.session.runtimeState,
@@ -140,6 +152,7 @@ async function main() {
         currentTargetUrl: current.session.runtimeState.currentTargetUrl,
         nextCheckpoint: afterAuth.activeCheckpoint?.code,
         actionResult,
+        explicitRebindResult,
         staleRefFailure,
         executorMethods: executor.executions.map((execution) => execution.method),
         capabilities: await runtime.getCapabilities({

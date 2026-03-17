@@ -22,6 +22,7 @@ async function main() {
               domActions: true,
               actionReadiness: true,
               snapshotRefLocators: true,
+              explicitSnapshotRebinding: true,
               supportedDomActionKinds: ['click', 'fill', 'press'],
               supportedLocatorKinds: ['aria-ref'],
             };
@@ -101,6 +102,34 @@ async function main() {
     action: { kind: 'click' },
     snapshotContext: started.session.runtimeState?.snapshotContext,
   });
+  const explicitRebind = await runtime.executeDomAction({
+    sessionId: started.session.id,
+    runtimeState: started.session.runtimeState,
+    locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+    action: { kind: 'click' },
+    snapshotContext: started.session.runtimeState?.snapshotContext,
+    rebinding: started.session.runtimeState?.snapshotContext
+      ? {
+          snapshotContext: started.session.runtimeState.snapshotContext,
+          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button' },
+          previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+        }
+      : undefined,
+  });
+  const rebindingMismatch = await runtime.executeDomAction({
+    sessionId: started.session.id,
+    runtimeState: started.session.runtimeState,
+    locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+    action: { kind: 'click' },
+    snapshotContext: started.session.runtimeState?.snapshotContext,
+    rebinding: started.session.runtimeState?.snapshotContext
+      ? {
+          snapshotContext: { artifact: { ...started.session.runtimeState.snapshotContext.artifact, version: 'other-v0' } },
+          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button' },
+          previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+        }
+      : undefined,
+  });
   const locatorFailure = await runtime.executeDomAction({
     sessionId: started.session.id,
     runtimeState: started.session.runtimeState,
@@ -118,12 +147,23 @@ async function main() {
   });
 
   assert.equal(success.ok, true);
+  assert.equal(explicitRebind.ok, true);
+  assert.equal(rebindingMismatch.ok, false);
   assert.equal(locatorFailure.ok, false);
   if (!success.ok) throw new Error('expected success receipt');
   assert.equal(success.receipt.runtimeTargetId, 'openclaw-tab:session-openclaw-action-smoke');
+  if (!explicitRebind.ok) throw new Error('expected explicit rebinding success receipt');
+  assert.equal(explicitRebind.receipt.locator.kind, 'aria-ref');
+  assert.equal(explicitRebind.receipt.locator.ref, 'e44');
+  assert.equal(explicitRebind.receipt.requestedLocator.kind, 'aria-ref');
+  assert.equal(explicitRebind.receipt.requestedLocator.ref, 'stale-e12');
+  assert.equal(explicitRebind.receipt.rebinding?.accepted, true);
   assert.equal(success.receipt.readiness.snapshot, 'present');
   assert.equal(success.receipt.readiness.snapshotRef.freshness, 'current');
   assert.equal(success.receipt.snapshotContext?.artifact.artifactId, 'snapshot:action-smoke');
+  if (rebindingMismatch.ok) throw new Error('expected rebinding mismatch failure');
+  assert.equal(rebindingMismatch.code, 'rebinding_artifact_mismatch');
+  assert.equal(rebindingMismatch.receipt?.rebinding?.rejectionCode, 'rebinding_artifact_mismatch');
   assert.equal(locatorFailure.code, 'locator_unsupported');
   assert.equal(staleRefFailure.ok, false);
   if (staleRefFailure.ok) throw new Error('expected stale ref failure');
@@ -136,6 +176,8 @@ async function main() {
     ok: true,
     smoke: 'openclaw-action',
     successReceipt: success.receipt,
+    explicitRebindReceipt: explicitRebind.receipt,
+    rebindingMismatch,
     locatorFailure,
     staleRefFailure,
   }, null, 2));

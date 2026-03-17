@@ -240,6 +240,7 @@ Current implementation note:
 - the first OpenClaw action surface is intentionally narrow: `click`, `fill`, and `press` using `aria-ref` locators only,
 - action execution is capability-gated and returns explicit success/failure receipts rather than silently mutating workflow state,
 - `aria-ref` failures should distinguish `target_not_found`, `missing_snapshot_context`, `stale_ref`, and `ambiguous_ref` instead of collapsing into generic relay failure.
+- Explicit rebinding submissions should remain caller-driven. Hosts may advertise `explicitSnapshotRebinding`, but the core must not reacquire snapshots, invent replacement refs, or retry actions automatically.
 - T12 adds optional, host-agnostic `recoveryAdvice` metadata on relevant explicit failures. That advice is inspectable and narrow: it can say to reinspect the current target, reacquire a fresh snapshot artifact, or reacquire/rebind the locator/ref against that fresh snapshot, including whether the prior snapshot-bound input was missing or obsolete. It is not an executable plan and does not imply automatic recovery.
 
 That keeps the product direction host-agnostic while still letting OpenClaw be the first real implementation.

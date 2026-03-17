@@ -68,6 +68,31 @@ export interface BrowserHostSnapshotRefReadiness {
   requested?: BrowserHostSnapshotContext;
 }
 
+export interface BrowserHostSnapshotLocatorRebinding {
+  snapshotContext: BrowserHostSnapshotContext;
+  locator: BrowserHostLocator;
+  previousSnapshotContext?: BrowserHostSnapshotContext;
+  previousLocator?: BrowserHostLocator;
+}
+
+export type BrowserHostSnapshotLocatorRebindingStatus =
+  | 'not-provided'
+  | 'accepted'
+  | 'rejected';
+
+export type BrowserHostSnapshotLocatorRebindingRejectionCode =
+  | 'invalid_rebinding_submission'
+  | 'rebinding_artifact_mismatch'
+  | 'rebound_locator_not_snapshot_derived';
+
+export interface BrowserHostSnapshotLocatorRebindingReadiness {
+  status: BrowserHostSnapshotLocatorRebindingStatus;
+  submitted?: BrowserHostSnapshotLocatorRebinding;
+  accepted?: BrowserHostSnapshotLocatorRebinding;
+  rejectionCode?: BrowserHostSnapshotLocatorRebindingRejectionCode;
+  detail?: string;
+}
+
 export interface BrowserHostInspectionMetadata {
   source: 'target' | 'snapshot' | 'runtime';
   title?: string;
@@ -109,6 +134,7 @@ export interface BrowserHostActionReadiness {
   inspection: 'present' | 'missing' | 'not-required';
   snapshot: 'present' | 'missing' | 'not-required';
   snapshotRef: BrowserHostSnapshotRefReadiness;
+  rebinding: BrowserHostSnapshotLocatorRebindingReadiness;
 }
 
 export interface BrowserHostDomActionRequest {
@@ -117,6 +143,7 @@ export interface BrowserHostDomActionRequest {
   locator: BrowserHostLocator;
   action: BrowserHostDomAction;
   snapshotContext?: BrowserHostSnapshotContext;
+  rebinding?: BrowserHostSnapshotLocatorRebinding;
   readiness?: Partial<BrowserHostActionPreconditions>;
   timeoutMs?: number;
   requestedAt?: string;
@@ -132,6 +159,9 @@ export type BrowserHostDomActionFailureCode =
   | 'session_mismatch'
   | 'missing_inspection_context'
   | 'missing_snapshot_context'
+  | 'invalid_rebinding_submission'
+  | 'rebinding_artifact_mismatch'
+  | 'rebound_locator_not_snapshot_derived'
   | 'stale_ref'
   | 'timeout'
   | 'transport_failure'
@@ -164,7 +194,17 @@ export interface BrowserHostDomActionReceipt {
   runtimeTargetId?: string;
   action: BrowserHostDomAction;
   locator: BrowserHostLocator;
+  requestedLocator: BrowserHostLocator;
   snapshotContext?: BrowserHostSnapshotContext;
+  rebinding?: {
+    provided: boolean;
+    accepted: boolean;
+    submission?: BrowserHostSnapshotLocatorRebinding;
+    usedLocator?: BrowserHostLocator;
+    usedSnapshotContext?: BrowserHostSnapshotContext;
+    rejectionCode?: BrowserHostSnapshotLocatorRebindingRejectionCode;
+    detail?: string;
+  };
   readiness: BrowserHostActionReadiness;
   actedAt: string;
   targetDescription?: string;
@@ -372,6 +412,7 @@ export interface BrowserHostCapabilities {
   domActions: boolean;
   actionReadiness: boolean;
   snapshotRefLocators: boolean;
+  explicitSnapshotRebinding: boolean;
   supportedDomActionKinds: BrowserHostDomActionKind[];
   supportedLocatorKinds: BrowserHostLocatorKind[];
 }
@@ -1393,6 +1434,48 @@ function createSnapshotRefReadiness(
   };
 }
 
+function normalizeSnapshotLocatorRebinding(
+  rebinding: BrowserHostSnapshotLocatorRebinding | null | undefined,
+): BrowserHostSnapshotLocatorRebinding | undefined {
+  if (!rebinding) return undefined;
+  const snapshotContext = normalizeSnapshotContext(rebinding.snapshotContext);
+  const previousSnapshotContext = normalizeSnapshotContext(rebinding.previousSnapshotContext);
+  if (!snapshotContext) return undefined;
+  return {
+    snapshotContext,
+    locator: cloneValue(rebinding.locator),
+    previousSnapshotContext,
+    previousLocator: rebinding.previousLocator ? cloneValue(rebinding.previousLocator) : undefined,
+  };
+}
+
+function resolveActionLocator(input: BrowserHostDomActionRequest): BrowserHostLocator {
+  const rebinding = normalizeSnapshotLocatorRebinding(input.rebinding);
+  return cloneValue(rebinding?.locator ?? input.locator);
+}
+
+function createRebindingReadiness(
+  input: BrowserHostDomActionRequest,
+  currentSnapshotContext: BrowserHostSnapshotContext | undefined,
+  requestedSnapshotContext: BrowserHostSnapshotContext | undefined,
+): BrowserHostSnapshotLocatorRebindingReadiness {
+  const submitted = normalizeSnapshotLocatorRebinding(input.rebinding);
+  if (!submitted) return { status: 'not-provided' };
+  if (submitted.locator.kind !== 'aria-ref') {
+    return { status: 'rejected', submitted, rejectionCode: 'rebound_locator_not_snapshot_derived', detail: 'Rebinding submissions for snapshot-backed refs must carry an aria-ref locator derived from a snapshot artifact.' };
+  }
+  if (!currentSnapshotContext || submitted.snapshotContext.artifact.artifactId !== currentSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version !== currentSnapshotContext.artifact.version) {
+    return { status: 'rejected', submitted, rejectionCode: 'rebinding_artifact_mismatch', detail: 'Submitted rebinding locator was not derived from the currently bound snapshot artifact/version.' };
+  }
+  if (!requestedSnapshotContext) {
+    return { status: 'rejected', submitted, rejectionCode: 'invalid_rebinding_submission', detail: 'Snapshot-backed rebinding submissions require the action request to name the fresh snapshot artifact/version explicitly.' };
+  }
+  if (submitted.snapshotContext.artifact.artifactId !== requestedSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version !== requestedSnapshotContext.artifact.version) {
+    return { status: 'rejected', submitted, rejectionCode: 'rebinding_artifact_mismatch', detail: 'Submitted rebinding locator does not match the explicit snapshot artifact/version requested for the action.' };
+  }
+  return { status: 'accepted', submitted, accepted: submitted };
+}
+
 function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabilities> = {}): BrowserHostCapabilities {
   return {
     hostAvailable: true,
@@ -1404,6 +1487,7 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     domActions: false,
     actionReadiness: false,
     snapshotRefLocators: false,
+    explicitSnapshotRebinding: false,
     supportedDomActionKinds: [],
     supportedLocatorKinds: [],
     ...cloneValue(overrides),
@@ -1421,6 +1505,7 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     domActions: input?.domActions ?? false,
     actionReadiness: input?.actionReadiness ?? false,
     snapshotRefLocators: input?.snapshotRefLocators ?? false,
+    explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? false,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [],
   };
@@ -1444,29 +1529,43 @@ function createActionReadiness(
   const preconditions = resolveActionPreconditions(input);
   const currentSnapshotContext = resolveRuntimeSnapshotContext(runtimeState);
   const requestedSnapshotContext = normalizeSnapshotContext(input.snapshotContext);
+  const rebinding = createRebindingReadiness(input, currentSnapshotContext, requestedSnapshotContext);
   return {
     preconditions,
     target: runtimeState?.runtimeTargetId ? 'ready' : 'missing',
     inspection: preconditions.inspection === 'none' ? 'not-required' : runtimeState?.inspection ? 'present' : 'missing',
     snapshot: preconditions.snapshot === 'none' ? 'not-required' : currentSnapshotContext ? 'present' : 'missing',
     snapshotRef: createSnapshotRefReadiness(preconditions.snapshot, currentSnapshotContext, requestedSnapshotContext),
+    rebinding,
     ...cloneValue(overrides),
   };
 }
 
-function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; snapshotContext?: BrowserHostSnapshotContext; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
+function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; snapshotContext?: BrowserHostSnapshotContext; locator?: BrowserHostLocator; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
   const runtimeSnapshotContext = normalizeSnapshotContext(
     details.snapshotContext
       ?? details.readiness?.snapshotRef.current
       ?? resolveRuntimeSnapshotContext(input.runtimeState ?? null),
   );
+  const resolvedLocator = cloneValue(details.locator ?? resolveActionLocator(input));
+  const rebinding = details.readiness?.rebinding ?? createActionReadiness(input, input.runtimeState ?? null).rebinding;
   return {
     actionId: `${input.sessionId}:${details.runtimeTargetId ?? 'no-target'}:${input.action.kind}:${details.actedAt}`,
     sessionId: input.sessionId,
     runtimeTargetId: details.runtimeTargetId,
     action: cloneValue(input.action),
-    locator: cloneValue(input.locator),
+    locator: resolvedLocator,
+    requestedLocator: cloneValue(input.locator),
     snapshotContext: runtimeSnapshotContext,
+    rebinding: {
+      provided: rebinding.status !== 'not-provided',
+      accepted: rebinding.status === 'accepted',
+      submission: rebinding.submitted ? cloneValue(rebinding.submitted) : undefined,
+      usedLocator: rebinding.status === 'accepted' ? resolvedLocator : undefined,
+      usedSnapshotContext: rebinding.status === 'accepted' ? cloneValue(rebinding.accepted?.snapshotContext) : undefined,
+      rejectionCode: rebinding.status === 'rejected' ? rebinding.rejectionCode : undefined,
+      detail: rebinding.detail,
+    },
     readiness: cloneValue(details.readiness ?? createActionReadiness(input, input.runtimeState ?? null)),
     actedAt: details.actedAt,
     targetDescription: input.locator.description,

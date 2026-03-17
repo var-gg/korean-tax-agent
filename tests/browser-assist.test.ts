@@ -913,6 +913,57 @@ if (input.operation === 'listTargets') {
     });
   });
 
+
+  it('records accepted explicit snapshot rebinding submissions in generic action receipts', async () => {
+    const executor = new InMemoryBrowserHostExecutor({
+      now: sequence(['2026-03-16T07:20:00.500Z', '2026-03-16T07:20:01.500Z']),
+      transport: 'browser-host',
+      runtimeTargetPrefix: 'browser-target',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({ executor });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-dom-action-rebind', 'checkpoint-auth-dom-action-rebind', 'checkpoint-review-dom-action-rebind']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/dom-action-rebind',
+      requestedBy: 'dom-action-test',
+    });
+
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+      action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
+      rebinding: started.session.runtimeState?.snapshotContext ? {
+        snapshotContext: started.session.runtimeState.snapshotContext,
+        locator: { kind: 'aria-ref', ref: 'fresh-e44', description: 'Fresh submit button' },
+        previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+      } : undefined,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      receipt: {
+        locator: { kind: 'aria-ref', ref: 'fresh-e44' },
+        requestedLocator: { kind: 'aria-ref', ref: 'stale-e12' },
+        rebinding: {
+          provided: true,
+          accepted: true,
+          usedLocator: { kind: 'aria-ref', ref: 'fresh-e44' },
+        },
+        readiness: {
+          rebinding: {
+            status: 'accepted',
+          },
+        },
+      },
+    });
+  });
+
   it('adds host-agnostic recovery advice to generic snapshot-bound action failures', async () => {
     const executor = new InMemoryBrowserHostExecutor({
       now: sequence(['2026-03-16T07:10:00.500Z', '2026-03-16T07:10:01.500Z']),
@@ -1070,6 +1121,163 @@ if (input.operation === 'listTargets') {
       },
     });
     expect(unsupportedLocator).toEqual(expect.objectContaining({ ok: false, code: 'locator_unsupported' }));
+  });
+
+
+  it('uses explicit rebinding submissions for OpenClaw aria-ref actions without hidden fallback', async () => {
+    const dispatchedRefs: string[] = [];
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        transport: new OpenClawBrowserToolTransport({
+          client: {
+            async getCapabilities() {
+              return {
+                hostAvailable: true,
+                activeTarget: true,
+                runtimeInspection: true,
+                snapshotInspection: true,
+                checkpointHandoff: true,
+                domActions: true,
+                actionReadiness: true,
+                snapshotRefLocators: true,
+                explicitSnapshotRebinding: true,
+                supportedDomActionKinds: ['click', 'fill', 'press'],
+                supportedLocatorKinds: ['aria-ref'],
+              };
+            },
+            async listTargets() { return []; },
+            async openTarget(input) {
+              return { targetId: `openclaw-tab:${input.sessionId}`, sessionId: input.sessionId, url: input.url, attached: true, available: true };
+            },
+            async getTarget(input) {
+              return { targetId: input.targetId, sessionId: 'session-openclaw-explicit-rebind', url: 'https://hometax.go.kr/openclaw/action/rebind', attached: true, available: true };
+            },
+            async snapshotTarget(input) {
+              return {
+                targetId: input.targetId,
+                sessionId: 'session-openclaw-explicit-rebind',
+                url: 'https://hometax.go.kr/openclaw/action/rebind',
+                title: 'Action Rebind Ready',
+                attached: true,
+                available: true,
+                inspection: {
+                  source: 'snapshot',
+                  title: 'Action Rebind Ready',
+                  url: 'https://hometax.go.kr/openclaw/action/rebind',
+                  normalizedUrl: 'https://hometax.go.kr/openclaw/action/rebind',
+                  textSnippet: '새 제출 버튼',
+                  capturedAt: '2026-03-16T08:10:04.000Z',
+                  snapshotContext: { artifact: { artifactId: 'snapshot:openclaw-explicit-rebind', version: 'v2', capturedAt: '2026-03-16T08:10:04.000Z' } },
+                },
+              };
+            },
+            async executeDomAction(input) {
+              dispatchedRefs.push(input.locator.kind === 'aria-ref' ? input.locator.ref : 'non-aria');
+              return {
+                targetId: input.runtimeTargetId,
+                actedAt: '2026-03-16T08:10:05.000Z',
+                hostActionId: 'host-action-rebind-1',
+                metadata: { locatorKind: input.locator.kind, actionKind: input.action.kind },
+              };
+            },
+          },
+        }),
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-explicit-rebind', 'checkpoint-auth-openclaw-explicit-rebind', 'checkpoint-review-openclaw-explicit-rebind']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/action/rebind',
+      requestedBy: 'openclaw-runtime-test',
+    });
+
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old button' },
+      action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
+      rebinding: started.session.runtimeState?.snapshotContext ? {
+        snapshotContext: started.session.runtimeState.snapshotContext,
+        locator: { kind: 'aria-ref', ref: 'fresh-e44', description: 'Fresh button' },
+        previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old button' },
+      } : undefined,
+    });
+
+    expect(dispatchedRefs).toEqual(['fresh-e44']);
+    expect(result).toMatchObject({
+      ok: true,
+      receipt: {
+        locator: { kind: 'aria-ref', ref: 'fresh-e44' },
+        requestedLocator: { kind: 'aria-ref', ref: 'stale-e12' },
+        rebinding: {
+          provided: true,
+          accepted: true,
+          usedLocator: { kind: 'aria-ref', ref: 'fresh-e44' },
+        },
+        readiness: { rebinding: { status: 'accepted' } },
+      },
+    });
+  });
+
+  it('rejects mismatched explicit rebinding submissions for OpenClaw aria-ref actions', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        relay: new InMemoryOpenClawBrowserRelay({ targetPrefix: 'openclaw-tab' }),
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-rebind-mismatch', 'checkpoint-auth-openclaw-rebind-mismatch', 'checkpoint-review-openclaw-rebind-mismatch']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/action',
+      requestedBy: 'openclaw-runtime-test',
+    });
+
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'stale-e12' },
+      action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
+      rebinding: started.session.runtimeState?.snapshotContext ? {
+        snapshotContext: {
+          artifact: {
+            ...started.session.runtimeState.snapshotContext.artifact,
+            version: 'other-v999',
+          },
+        },
+        locator: { kind: 'aria-ref', ref: 'fresh-e44' },
+        previousLocator: { kind: 'aria-ref', ref: 'stale-e12' },
+      } : undefined,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'rebinding_artifact_mismatch',
+      receipt: {
+        locator: { kind: 'aria-ref', ref: 'stale-e12' },
+        requestedLocator: { kind: 'aria-ref', ref: 'stale-e12' },
+        rebinding: {
+          provided: true,
+          accepted: false,
+          rejectionCode: 'rebinding_artifact_mismatch',
+        },
+        readiness: {
+          rebinding: {
+            status: 'rejected',
+            rejectionCode: 'rebinding_artifact_mismatch',
+          },
+        },
+      },
+    });
   });
 
   it('refuses aria-ref actions when inspection and runtime snapshot context are absent', async () => {

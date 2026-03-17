@@ -198,6 +198,7 @@ export class OpenClawBrowserControlServerClient {
     }
     const currentSnapshotContext = resolveRuntimeSnapshotContext(input.runtimeState);
     const requestedSnapshotContext = normalizeSnapshotContext(input.snapshotContext);
+    const submittedRebinding = normalizeSnapshotLocatorRebinding(input.rebinding);
     if (!currentSnapshotContext) {
       throw createError('OPENCLAW_MISSING_SNAPSHOT_CONTEXT', 'OpenClaw aria-ref actions require a current snapshot artifact context before execution.');
     }
@@ -210,9 +211,16 @@ export class OpenClawBrowserControlServerClient {
     ) {
       throw createError('OPENCLAW_STALE_REF', `OpenClaw aria-ref ${input.locator.ref} is stale for snapshot ${currentSnapshotContext.artifact.artifactId}@${currentSnapshotContext.artifact.version}.`);
     }
+    if (submittedRebinding) {
+      if (submittedRebinding.locator.kind !== 'aria-ref') throw createError('OPENCLAW_REBOUND_LOCATOR_NOT_SNAPSHOT_DERIVED', 'Explicit rebinding submissions must carry an aria-ref locator.');
+      if (submittedRebinding.snapshotContext.artifact.artifactId !== requestedSnapshotContext.artifact.artifactId || submittedRebinding.snapshotContext.artifact.version !== requestedSnapshotContext.artifact.version) {
+        throw createError('OPENCLAW_REBINDING_ARTIFACT_MISMATCH', 'Explicit rebinding submission did not match the requested snapshot artifact/version.');
+      }
+    }
+    const effectiveLocator = submittedRebinding?.locator.kind === 'aria-ref' ? submittedRebinding.locator : input.locator;
     const body: Record<string, unknown> = {
       targetId: input.runtimeTargetId,
-      ref: input.locator.ref,
+      ref: effectiveLocator.ref,
       timeoutMs: input.timeoutMs,
     };
     switch (input.action.kind) {
@@ -239,7 +247,7 @@ export class OpenClawBrowserControlServerClient {
       actedAt: new Date().toISOString(),
       hostActionId: typeof response?.id === 'string' && response.id.trim() ? response.id.trim() : undefined,
       metadata: {
-        locatorKind: input.locator.kind,
+        locatorKind: effectiveLocator.kind,
         actionKind: input.action.kind,
         serverAction: 'act',
       },
@@ -341,6 +349,18 @@ function createOpenClawSnapshotContext(snapshot: any, targetId: string, captured
       version,
       capturedAt,
     },
+  };
+}
+
+function normalizeSnapshotLocatorRebinding(rebinding: BrowserHostDomActionRequest['rebinding'] | null | undefined) {
+  if (!rebinding) return undefined;
+  const snapshotContext = normalizeSnapshotContext(rebinding.snapshotContext);
+  if (!snapshotContext) return undefined;
+  return {
+    snapshotContext,
+    locator: structuredClone(rebinding.locator),
+    previousSnapshotContext: normalizeSnapshotContext(rebinding.previousSnapshotContext),
+    previousLocator: rebinding.previousLocator ? structuredClone(rebinding.previousLocator) : undefined,
   };
 }
 
