@@ -528,6 +528,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       actionReadiness: typeof this.transport.executeDomAction === 'function',
       snapshotRefLocators: typeof this.transport.executeDomAction === 'function',
       explicitSnapshotRebinding: typeof this.transport.executeDomAction === 'function',
+      snapshotLocatorProvenance: typeof this.transport.executeDomAction === 'function',
       supportedDomActionKinds: typeof this.transport.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [],
       supportedLocatorKinds: typeof this.transport.executeDomAction === 'function' ? ['aria-ref'] satisfies BrowserHostLocatorKind[] : [],
     });
@@ -757,9 +758,10 @@ export class OpenClawBrowserToolTransport implements OpenClawBrowserTransport {
       actionReadiness: reported?.actionReadiness ?? (typeof this.client.executeDomAction === 'function'),
       snapshotRefLocators: reported?.snapshotRefLocators ?? (typeof this.client.executeDomAction === 'function'),
       explicitSnapshotRebinding: reported?.explicitSnapshotRebinding ?? (typeof this.client.executeDomAction === 'function'),
+      snapshotLocatorProvenance: reported?.snapshotLocatorProvenance ?? (typeof this.client.executeDomAction === 'function'),
       supportedDomActionKinds: reported?.supportedDomActionKinds ?? (typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : []),
       supportedLocatorKinds: reported?.supportedLocatorKinds ?? (typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : []),
-    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', explicitSnapshotRebinding: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
+    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', explicitSnapshotRebinding: typeof this.client.executeDomAction === 'function', snapshotLocatorProvenance: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
   }
 
   async open(input: OpenClawRelayOpenRequest): Promise<OpenClawRelayTarget> {
@@ -837,6 +839,7 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
       domActions: true,
       actionReadiness: true,
       snapshotRefLocators: true,
+      snapshotLocatorProvenance: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
@@ -1015,13 +1018,14 @@ function normalizeOpenClawCapabilities(input: Partial<OpenClawBrowserTransportCa
     actionReadiness: input?.actionReadiness ?? fallback.actionReadiness,
     snapshotRefLocators: input?.snapshotRefLocators ?? fallback.snapshotRefLocators,
     explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? fallback.explicitSnapshotRebinding,
+    snapshotLocatorProvenance: input?.snapshotLocatorProvenance ?? fallback.snapshotLocatorProvenance,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [...fallback.supportedDomActionKinds],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [...fallback.supportedLocatorKinds],
   };
 }
 
 function defaultOpenClawCapabilities(overrides: Partial<OpenClawBrowserTransportCapabilities> = {}): OpenClawBrowserTransportCapabilities {
-  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, explicitSnapshotRebinding: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
+  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, explicitSnapshotRebinding: false, snapshotLocatorProvenance: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
 }
 
 function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: OpenClawRelayAttachRequest): OpenClawRelayTarget | null {
@@ -1228,7 +1232,7 @@ function normalizeSnapshotLocatorRebinding(rebinding: BrowserHostDomActionReques
   if (!snapshotContext) return undefined;
   return {
     snapshotContext,
-    locator: cloneValue(rebinding.locator),
+    locator: normalizeBrowserHostLocator(rebinding.locator),
     previousSnapshotContext,
     previousLocator: rebinding.previousLocator ? cloneValue(rebinding.previousLocator) : undefined,
   };
@@ -1239,9 +1243,53 @@ function createRebindingReadiness(input: BrowserHostDomActionRequest, currentSna
   if (!submitted) return { status: 'not-provided' as const };
   if (submitted.locator.kind !== 'aria-ref') return { status: 'rejected' as const, submitted, rejectionCode: 'rebound_locator_not_snapshot_derived' as const, detail: 'Rebinding submissions for snapshot-backed refs must carry an aria-ref locator derived from a snapshot artifact.' };
   if (!currentSnapshotContext || submitted.snapshotContext.artifact.artifactId != currentSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version != currentSnapshotContext.artifact.version) return { status: 'rejected' as const, submitted, rejectionCode: 'rebinding_artifact_mismatch' as const, detail: 'Submitted rebinding locator was not derived from the currently bound snapshot artifact/version.' };
+  const provenance = submitted.locator.provenance;
+  if (!provenance) return { status: 'rejected' as const, submitted, rejectionCode: 'invalid_rebinding_submission' as const, detail: 'Snapshot-backed rebinding submissions must carry snapshot-derived locator provenance/evidence.' };
   if (!requestedSnapshotContext) return { status: 'rejected' as const, submitted, rejectionCode: 'invalid_rebinding_submission' as const, detail: 'Snapshot-backed rebinding submissions require the action request to name the fresh snapshot artifact/version explicitly.' };
   if (submitted.snapshotContext.artifact.artifactId != requestedSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version != requestedSnapshotContext.artifact.version) return { status: 'rejected' as const, submitted, rejectionCode: 'rebinding_artifact_mismatch' as const, detail: 'Submitted rebinding locator does not match the explicit snapshot artifact/version requested for the action.' };
+  if (provenance.snapshotContext.artifact.artifactId !== submitted.snapshotContext.artifact.artifactId || provenance.snapshotContext.artifact.version !== submitted.snapshotContext.artifact.version) return { status: 'rejected' as const, submitted, rejectionCode: 'rebinding_artifact_mismatch' as const, detail: 'Submitted rebinding locator provenance does not match the submitted fresh snapshot artifact/version.' };
+  const runtimeInspection = normalizeInspectionMetadata(input.runtimeState?.inspection, { url: input.runtimeState?.currentTargetUrl ?? undefined, title: undefined, updatedAt: undefined }, () => new Date().toISOString());
+  const runtimeUrl = runtimeInspection?.normalizedUrl ?? runtimeInspection?.url;
+  const provenanceUrl = provenance.inspection.normalizedUrl ?? provenance.inspection.url;
+  if (runtimeUrl && provenanceUrl && runtimeUrl !== provenanceUrl) return { status: 'rejected' as const, submitted, rejectionCode: 'invalid_rebinding_submission' as const, detail: 'Submitted rebinding locator provenance does not match the current inspection context for the bound target.' };
   return { status: 'accepted' as const, submitted, accepted: submitted };
+}
+
+function normalizeSnapshotLocatorProvenance(
+  provenance: any,
+) {
+  if (!provenance || provenance.kind !== 'snapshot-derived') return undefined;
+  const snapshotContext = normalizeSnapshotContext(provenance.snapshotContext);
+  if (!snapshotContext) return undefined;
+  return {
+    kind: 'snapshot-derived',
+    inspection: {
+      source: provenance.inspection.source,
+      capturedAt: provenance.inspection.capturedAt,
+      url: provenance.inspection.url,
+      normalizedUrl: provenance.inspection.normalizedUrl,
+    },
+    snapshotContext,
+    derivation: {
+      locatorKind: 'aria-ref',
+      basis: provenance.derivation.basis,
+    },
+    evidence: provenance.evidence
+      ? {
+          title: provenance.evidence.title,
+          textSnippet: provenance.evidence.textSnippet,
+          description: provenance.evidence.description,
+        }
+      : undefined,
+  };
+}
+
+function normalizeBrowserHostLocator(locator: any) {
+  if (locator.kind !== 'aria-ref') return structuredClone(locator);
+  return {
+    ...structuredClone(locator),
+    provenance: normalizeSnapshotLocatorProvenance(locator.provenance),
+  };
 }
 
 function normalizeSnapshotContext(snapshotContext: BrowserHostSnapshotContext | null | undefined): BrowserHostSnapshotContext | undefined {

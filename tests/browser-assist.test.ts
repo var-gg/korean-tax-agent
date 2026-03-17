@@ -23,6 +23,28 @@ function sequence<T>(values: T[]) {
   return () => values[Math.min(index++, values.length - 1)] as T;
 }
 
+function createSnapshotDerivedAriaRefProvenance(input: {
+  snapshotContext: { artifact: { artifactId: string; version: string; capturedAt?: string } };
+  inspection?: { source?: 'target' | 'snapshot' | 'runtime'; url?: string; normalizedUrl?: string; capturedAt?: string };
+  evidence?: { title?: string; textSnippet?: string; description?: string };
+}) {
+  return {
+    kind: 'snapshot-derived' as const,
+    inspection: {
+      source: input.inspection?.source ?? 'snapshot',
+      url: input.inspection?.url,
+      normalizedUrl: input.inspection?.normalizedUrl,
+      capturedAt: input.inspection?.capturedAt,
+    },
+    snapshotContext: input.snapshotContext,
+    derivation: {
+      locatorKind: 'aria-ref' as const,
+      basis: 'snapshot-ref' as const,
+    },
+    evidence: input.evidence,
+  };
+}
+
 async function canSpawnNodeSubprocess(): Promise<boolean> {
   return await new Promise((resolve) => {
     try {
@@ -940,7 +962,16 @@ if (input.operation === 'listTargets') {
       snapshotContext: started.session.runtimeState?.snapshotContext,
       rebinding: started.session.runtimeState?.snapshotContext ? {
         snapshotContext: started.session.runtimeState.snapshotContext,
-        locator: { kind: 'aria-ref', ref: 'fresh-e44', description: 'Fresh submit button' },
+        locator: {
+          kind: 'aria-ref',
+          ref: 'fresh-e44',
+          description: 'Fresh submit button',
+          provenance: createSnapshotDerivedAriaRefProvenance({
+            snapshotContext: started.session.runtimeState.snapshotContext,
+            inspection: started.session.runtimeState.inspection,
+            evidence: { description: 'Fresh submit button' },
+          }),
+        },
         previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
       } : undefined,
     });
@@ -953,7 +984,18 @@ if (input.operation === 'listTargets') {
         rebinding: {
           provided: true,
           accepted: true,
-          usedLocator: { kind: 'aria-ref', ref: 'fresh-e44' },
+          usedLocator: {
+            kind: 'aria-ref',
+            ref: 'fresh-e44',
+            provenance: { kind: 'snapshot-derived', derivation: { basis: 'snapshot-ref' } },
+          },
+          submission: {
+            locator: {
+              kind: 'aria-ref',
+              ref: 'fresh-e44',
+              provenance: { kind: 'snapshot-derived', derivation: { basis: 'snapshot-ref' } },
+            },
+          },
         },
         readiness: {
           rebinding: {
@@ -1203,7 +1245,16 @@ if (input.operation === 'listTargets') {
       snapshotContext: started.session.runtimeState?.snapshotContext,
       rebinding: started.session.runtimeState?.snapshotContext ? {
         snapshotContext: started.session.runtimeState.snapshotContext,
-        locator: { kind: 'aria-ref', ref: 'fresh-e44', description: 'Fresh button' },
+        locator: {
+          kind: 'aria-ref',
+          ref: 'fresh-e44',
+          description: 'Fresh button',
+          provenance: createSnapshotDerivedAriaRefProvenance({
+            snapshotContext: started.session.runtimeState.snapshotContext,
+            inspection: started.session.runtimeState.inspection,
+            evidence: { description: 'Fresh button' },
+          }),
+        },
         previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old button' },
       } : undefined,
     });
@@ -1254,7 +1305,19 @@ if (input.operation === 'listTargets') {
             version: 'other-v999',
           },
         },
-        locator: { kind: 'aria-ref', ref: 'fresh-e44' },
+        locator: {
+          kind: 'aria-ref',
+          ref: 'fresh-e44',
+          provenance: createSnapshotDerivedAriaRefProvenance({
+            snapshotContext: {
+              artifact: {
+                ...started.session.runtimeState.snapshotContext.artifact,
+                version: 'other-v999',
+              },
+            },
+            inspection: started.session.runtimeState.inspection,
+          }),
+        },
         previousLocator: { kind: 'aria-ref', ref: 'stale-e12' },
       } : undefined,
     });
@@ -1263,7 +1326,7 @@ if (input.operation === 'listTargets') {
       ok: false,
       code: 'rebinding_artifact_mismatch',
       receipt: {
-        locator: { kind: 'aria-ref', ref: 'stale-e12' },
+        locator: { kind: 'aria-ref', ref: 'fresh-e44' },
         requestedLocator: { kind: 'aria-ref', ref: 'stale-e12' },
         rebinding: {
           provided: true,
@@ -1275,6 +1338,102 @@ if (input.operation === 'listTargets') {
             status: 'rejected',
             rejectionCode: 'rebinding_artifact_mismatch',
           },
+        },
+      },
+    });
+  });
+
+  it('rejects explicit rebinding submissions when locator provenance/evidence is missing', async () => {
+    const executor = new InMemoryBrowserHostExecutor({
+      now: sequence(['2026-03-16T07:25:00.500Z', '2026-03-16T07:25:01.500Z']),
+      transport: 'browser-host',
+      runtimeTargetPrefix: 'browser-target',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({ executor });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-dom-action-rebind-missing-provenance', 'checkpoint-auth-dom-action-rebind-missing-provenance', 'checkpoint-review-dom-action-rebind-missing-provenance']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/dom-action-rebind',
+      requestedBy: 'dom-action-test',
+    });
+
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+      action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
+      rebinding: started.session.runtimeState?.snapshotContext ? {
+        snapshotContext: started.session.runtimeState.snapshotContext,
+        locator: { kind: 'aria-ref', ref: 'fresh-e44', description: 'Fresh submit button' },
+      } : undefined,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'invalid_rebinding_submission',
+      receipt: {
+        rebinding: {
+          provided: true,
+          accepted: false,
+          rejectionCode: 'invalid_rebinding_submission',
+          detail: 'Snapshot-backed rebinding submissions must carry snapshot-derived locator provenance/evidence.',
+        },
+      },
+    });
+  });
+
+  it('rejects explicit rebinding submissions when locator provenance mismatches the bound inspection context', async () => {
+    const executor = new InMemoryBrowserHostExecutor({
+      now: sequence(['2026-03-16T07:26:00.500Z', '2026-03-16T07:26:01.500Z']),
+      transport: 'browser-host',
+      runtimeTargetPrefix: 'browser-target',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({ executor });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-dom-action-rebind-inspection-mismatch', 'checkpoint-auth-dom-action-rebind-inspection-mismatch', 'checkpoint-review-dom-action-rebind-inspection-mismatch']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/dom-action-rebind',
+      requestedBy: 'dom-action-test',
+    });
+
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
+      action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
+      rebinding: started.session.runtimeState?.snapshotContext ? {
+        snapshotContext: started.session.runtimeState.snapshotContext,
+        locator: {
+          kind: 'aria-ref',
+          ref: 'fresh-e44',
+          description: 'Fresh submit button',
+          provenance: createSnapshotDerivedAriaRefProvenance({
+            snapshotContext: started.session.runtimeState.snapshotContext,
+            inspection: { source: 'snapshot', normalizedUrl: 'https://example.com/other' },
+          }),
+        },
+      } : undefined,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'invalid_rebinding_submission',
+      receipt: {
+        rebinding: {
+          provided: true,
+          accepted: false,
+          rejectionCode: 'invalid_rebinding_submission',
+          detail: 'Submitted rebinding locator provenance does not match the current inspection context for the bound target.',
         },
       },
     });

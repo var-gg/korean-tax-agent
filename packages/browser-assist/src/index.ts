@@ -103,10 +103,32 @@ export interface BrowserHostInspectionMetadata {
   snapshotContext?: BrowserHostSnapshotContext;
 }
 
+export type BrowserHostLocatorDerivationBasis = 'snapshot-ref';
+
+export interface BrowserHostSnapshotLocatorProvenance {
+  kind: 'snapshot-derived';
+  inspection: {
+    source: BrowserHostInspectionMetadata['source'];
+    capturedAt?: string;
+    url?: string;
+    normalizedUrl?: string;
+  };
+  snapshotContext: BrowserHostSnapshotContext;
+  derivation: {
+    locatorKind: 'aria-ref';
+    basis: BrowserHostLocatorDerivationBasis;
+  };
+  evidence?: {
+    title?: string;
+    textSnippet?: string;
+    description?: string;
+  };
+}
+
 export type BrowserHostLocatorKind = 'aria-ref' | 'role-name' | 'css';
 
 export type BrowserHostLocator =
-  | { kind: 'aria-ref'; ref: string; description?: string }
+  | { kind: 'aria-ref'; ref: string; description?: string; provenance?: BrowserHostSnapshotLocatorProvenance }
   | { kind: 'role-name'; role: string; name: string; exact?: boolean; description?: string }
   | { kind: 'css'; selector: string; description?: string };
 
@@ -186,6 +208,16 @@ export interface BrowserHostDomActionRecoveryAdvice {
   kind: 'snapshot-bound-action';
   autoRecovery: 'none';
   steps: BrowserHostRecoveryAdviceStep[];
+  expectedLocatorProvenance?: {
+    kind: 'snapshot-derived';
+    derivationBasis: BrowserHostLocatorDerivationBasis;
+    snapshotContext?: BrowserHostSnapshotContext;
+    inspection?: {
+      source?: BrowserHostInspectionMetadata['source'];
+      url?: string;
+      normalizedUrl?: string;
+    };
+  };
 }
 
 export interface BrowserHostDomActionReceipt {
@@ -413,6 +445,7 @@ export interface BrowserHostCapabilities {
   actionReadiness: boolean;
   snapshotRefLocators: boolean;
   explicitSnapshotRebinding: boolean;
+  snapshotLocatorProvenance: boolean;
   supportedDomActionKinds: BrowserHostDomActionKind[];
   supportedLocatorKinds: BrowserHostLocatorKind[];
 }
@@ -708,6 +741,8 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
       domActions: true,
       actionReadiness: true,
       snapshotRefLocators: true,
+      explicitSnapshotRebinding: true,
+      snapshotLocatorProvenance: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     });
@@ -921,6 +956,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
     if (readiness.target === 'missing') return createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     if (readiness.inspection === 'missing') return createDomActionFailure({ code: 'missing_inspection_context', message: `Action ${input.action.kind} requires inspection context before it can run.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     if (readiness.snapshot === 'missing') return createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires a current snapshot artifact context before it can run.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (readiness.rebinding.status === 'rejected') return createDomActionFailure({ code: readiness.rebinding.rejectionCode ?? 'invalid_rebinding_submission', message: readiness.rebinding.detail ?? 'Explicit rebinding submission was rejected.', input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     if (readiness.snapshotRef.freshness === 'missing_requested_snapshot') return createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires explicit snapshot context for its snapshot-backed locator ref.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     if (readiness.snapshotRef.freshness === 'stale') return createDomActionFailure({ code: 'stale_ref', message: `Action ${input.action.kind} targets a stale snapshot artifact/version for session ${input.sessionId}.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     return cloneValue(await this.client.executeDomAction(cloneValue({ ...input, runtimeState: previousState })));
@@ -1365,6 +1401,43 @@ function normalizeBrowserHostInspectionMetadata(
   };
 }
 
+function normalizeSnapshotLocatorProvenance(
+  provenance: BrowserHostSnapshotLocatorProvenance | null | undefined,
+): BrowserHostSnapshotLocatorProvenance | undefined {
+  if (!provenance || provenance.kind !== 'snapshot-derived') return undefined;
+  const snapshotContext = normalizeSnapshotContext(provenance.snapshotContext);
+  if (!snapshotContext) return undefined;
+  return {
+    kind: 'snapshot-derived',
+    inspection: {
+      source: provenance.inspection.source,
+      capturedAt: provenance.inspection.capturedAt,
+      url: provenance.inspection.url,
+      normalizedUrl: provenance.inspection.normalizedUrl,
+    },
+    snapshotContext,
+    derivation: {
+      locatorKind: 'aria-ref',
+      basis: provenance.derivation.basis,
+    },
+    evidence: provenance.evidence
+      ? {
+          title: provenance.evidence.title,
+          textSnippet: provenance.evidence.textSnippet,
+          description: provenance.evidence.description,
+        }
+      : undefined,
+  };
+}
+
+function normalizeBrowserHostLocator(locator: BrowserHostLocator): BrowserHostLocator {
+  if (locator.kind !== 'aria-ref') return cloneValue(locator);
+  return {
+    ...cloneValue(locator),
+    provenance: normalizeSnapshotLocatorProvenance(locator.provenance),
+  };
+}
+
 function createSnapshotContext(input: {
   artifactId: string;
   version: string;
@@ -1443,7 +1516,7 @@ function normalizeSnapshotLocatorRebinding(
   if (!snapshotContext) return undefined;
   return {
     snapshotContext,
-    locator: cloneValue(rebinding.locator),
+    locator: normalizeBrowserHostLocator(rebinding.locator),
     previousSnapshotContext,
     previousLocator: rebinding.previousLocator ? cloneValue(rebinding.previousLocator) : undefined,
   };
@@ -1451,7 +1524,7 @@ function normalizeSnapshotLocatorRebinding(
 
 function resolveActionLocator(input: BrowserHostDomActionRequest): BrowserHostLocator {
   const rebinding = normalizeSnapshotLocatorRebinding(input.rebinding);
-  return cloneValue(rebinding?.locator ?? input.locator);
+  return normalizeBrowserHostLocator(rebinding?.locator ?? input.locator);
 }
 
 function createRebindingReadiness(
@@ -1467,11 +1540,24 @@ function createRebindingReadiness(
   if (!currentSnapshotContext || submitted.snapshotContext.artifact.artifactId !== currentSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version !== currentSnapshotContext.artifact.version) {
     return { status: 'rejected', submitted, rejectionCode: 'rebinding_artifact_mismatch', detail: 'Submitted rebinding locator was not derived from the currently bound snapshot artifact/version.' };
   }
+  const provenance = submitted.locator.provenance;
+  if (!provenance) {
+    return { status: 'rejected', submitted, rejectionCode: 'invalid_rebinding_submission', detail: 'Snapshot-backed rebinding submissions must carry snapshot-derived locator provenance/evidence.' };
+  }
   if (!requestedSnapshotContext) {
     return { status: 'rejected', submitted, rejectionCode: 'invalid_rebinding_submission', detail: 'Snapshot-backed rebinding submissions require the action request to name the fresh snapshot artifact/version explicitly.' };
   }
   if (submitted.snapshotContext.artifact.artifactId !== requestedSnapshotContext.artifact.artifactId || submitted.snapshotContext.artifact.version !== requestedSnapshotContext.artifact.version) {
     return { status: 'rejected', submitted, rejectionCode: 'rebinding_artifact_mismatch', detail: 'Submitted rebinding locator does not match the explicit snapshot artifact/version requested for the action.' };
+  }
+  if (provenance.snapshotContext.artifact.artifactId !== submitted.snapshotContext.artifact.artifactId || provenance.snapshotContext.artifact.version !== submitted.snapshotContext.artifact.version) {
+    return { status: 'rejected', submitted, rejectionCode: 'rebinding_artifact_mismatch', detail: 'Submitted rebinding locator provenance does not match the submitted fresh snapshot artifact/version.' };
+  }
+  const runtimeInspection = normalizeBrowserHostInspectionMetadata(input.runtimeState?.inspection);
+  const runtimeUrl = runtimeInspection?.normalizedUrl ?? runtimeInspection?.url;
+  const provenanceUrl = provenance.inspection.normalizedUrl ?? provenance.inspection.url;
+  if (runtimeUrl && provenanceUrl && runtimeUrl !== provenanceUrl) {
+    return { status: 'rejected', submitted, rejectionCode: 'invalid_rebinding_submission', detail: 'Submitted rebinding locator provenance does not match the current inspection context for the bound target.' };
   }
   return { status: 'accepted', submitted, accepted: submitted };
 }
@@ -1488,6 +1574,7 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     actionReadiness: false,
     snapshotRefLocators: false,
     explicitSnapshotRebinding: false,
+    snapshotLocatorProvenance: false,
     supportedDomActionKinds: [],
     supportedLocatorKinds: [],
     ...cloneValue(overrides),
@@ -1506,6 +1593,7 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     actionReadiness: input?.actionReadiness ?? false,
     snapshotRefLocators: input?.snapshotRefLocators ?? false,
     explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? false,
+    snapshotLocatorProvenance: input?.snapshotLocatorProvenance ?? false,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [],
   };
@@ -1687,6 +1775,18 @@ function createSnapshotBoundActionRecoveryAdvice(input: {
     kind: 'snapshot-bound-action',
     autoRecovery: 'none',
     steps,
+    expectedLocatorProvenance: {
+      kind: 'snapshot-derived',
+      derivationBasis: 'snapshot-ref',
+      snapshotContext: input.readiness.snapshotRef.current ?? input.readiness.snapshotRef.requested,
+      inspection: input.actionRequest.runtimeState?.inspection
+        ? {
+            source: input.actionRequest.runtimeState.inspection.source,
+            url: input.actionRequest.runtimeState.inspection.url,
+            normalizedUrl: input.actionRequest.runtimeState.inspection.normalizedUrl,
+          }
+        : undefined,
+    },
   };
 }
 

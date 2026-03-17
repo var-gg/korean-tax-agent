@@ -120,6 +120,7 @@ export class OpenClawBrowserControlServerClient {
       domActions: true,
       actionReadiness: true,
       snapshotRefLocators: true,
+      snapshotLocatorProvenance: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
@@ -213,8 +214,17 @@ export class OpenClawBrowserControlServerClient {
     }
     if (submittedRebinding) {
       if (submittedRebinding.locator.kind !== 'aria-ref') throw createError('OPENCLAW_REBOUND_LOCATOR_NOT_SNAPSHOT_DERIVED', 'Explicit rebinding submissions must carry an aria-ref locator.');
+      if (!submittedRebinding.locator.provenance) throw createError('OPENCLAW_INVALID_REBINDING_SUBMISSION', 'Explicit rebinding submissions must carry snapshot-derived locator provenance/evidence.');
       if (submittedRebinding.snapshotContext.artifact.artifactId !== requestedSnapshotContext.artifact.artifactId || submittedRebinding.snapshotContext.artifact.version !== requestedSnapshotContext.artifact.version) {
         throw createError('OPENCLAW_REBINDING_ARTIFACT_MISMATCH', 'Explicit rebinding submission did not match the requested snapshot artifact/version.');
+      }
+      if (submittedRebinding.locator.provenance.snapshotContext.artifact.artifactId !== submittedRebinding.snapshotContext.artifact.artifactId || submittedRebinding.locator.provenance.snapshotContext.artifact.version !== submittedRebinding.snapshotContext.artifact.version) {
+        throw createError('OPENCLAW_REBINDING_ARTIFACT_MISMATCH', 'Explicit rebinding locator provenance did not match the submitted snapshot artifact/version.');
+      }
+      const runtimeUrl = input.runtimeState?.inspection?.normalizedUrl ?? input.runtimeState?.inspection?.url;
+      const provenanceUrl = submittedRebinding.locator.provenance.inspection.normalizedUrl ?? submittedRebinding.locator.provenance.inspection.url;
+      if (runtimeUrl && provenanceUrl && runtimeUrl !== provenanceUrl) {
+        throw createError('OPENCLAW_INVALID_REBINDING_SUBMISSION', 'Explicit rebinding locator provenance did not match the current inspection context for the bound target.');
       }
     }
     const effectiveLocator = submittedRebinding?.locator.kind === 'aria-ref' ? submittedRebinding.locator : input.locator;
@@ -358,9 +368,46 @@ function normalizeSnapshotLocatorRebinding(rebinding: BrowserHostDomActionReques
   if (!snapshotContext) return undefined;
   return {
     snapshotContext,
-    locator: structuredClone(rebinding.locator),
+    locator: normalizeBrowserHostLocator(rebinding.locator),
     previousSnapshotContext: normalizeSnapshotContext(rebinding.previousSnapshotContext),
     previousLocator: rebinding.previousLocator ? structuredClone(rebinding.previousLocator) : undefined,
+  };
+}
+
+function normalizeSnapshotLocatorProvenance(
+  provenance: any,
+) {
+  if (!provenance || provenance.kind !== 'snapshot-derived') return undefined;
+  const snapshotContext = normalizeSnapshotContext(provenance.snapshotContext);
+  if (!snapshotContext) return undefined;
+  return {
+    kind: 'snapshot-derived',
+    inspection: {
+      source: provenance.inspection.source,
+      capturedAt: provenance.inspection.capturedAt,
+      url: provenance.inspection.url,
+      normalizedUrl: provenance.inspection.normalizedUrl,
+    },
+    snapshotContext,
+    derivation: {
+      locatorKind: 'aria-ref',
+      basis: provenance.derivation.basis,
+    },
+    evidence: provenance.evidence
+      ? {
+          title: provenance.evidence.title,
+          textSnippet: provenance.evidence.textSnippet,
+          description: provenance.evidence.description,
+        }
+      : undefined,
+  };
+}
+
+function normalizeBrowserHostLocator(locator: any) {
+  if (locator.kind !== 'aria-ref') return structuredClone(locator);
+  return {
+    ...structuredClone(locator),
+    provenance: normalizeSnapshotLocatorProvenance(locator.provenance),
   };
 }
 

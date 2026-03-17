@@ -6,6 +6,25 @@ import {
   createBrowserAssistService,
 } from '../packages/browser-assist/src/index.js';
 
+function createSnapshotDerivedAriaRefProvenance(input: {
+  snapshotContext: { artifact: { artifactId: string; version: string; capturedAt?: string } };
+  inspection?: { source?: 'target' | 'snapshot' | 'runtime'; url?: string; normalizedUrl?: string; capturedAt?: string };
+  evidence?: { title?: string; textSnippet?: string; description?: string };
+}) {
+  return {
+    kind: 'snapshot-derived' as const,
+    inspection: {
+      source: input.inspection?.source ?? 'snapshot',
+      url: input.inspection?.url,
+      normalizedUrl: input.inspection?.normalizedUrl,
+      capturedAt: input.inspection?.capturedAt,
+    },
+    snapshotContext: input.snapshotContext,
+    derivation: { locatorKind: 'aria-ref' as const, basis: 'snapshot-ref' as const },
+    evidence: input.evidence,
+  };
+}
+
 async function main() {
   const transport = new OpenClawBrowserToolTransport({
     client: {

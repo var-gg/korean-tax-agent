@@ -7,6 +7,25 @@ import {
   createBrowserAssistService,
 } from '../packages/browser-assist/src/index.js';
 
+function createSnapshotDerivedAriaRefProvenance(input: {
+  snapshotContext: { artifact: { artifactId: string; version: string; capturedAt?: string } };
+  inspection?: { source?: 'target' | 'snapshot' | 'runtime'; url?: string; normalizedUrl?: string; capturedAt?: string };
+  evidence?: { title?: string; textSnippet?: string; description?: string };
+}) {
+  return {
+    kind: 'snapshot-derived' as const,
+    inspection: {
+      source: input.inspection?.source ?? 'snapshot',
+      url: input.inspection?.url,
+      normalizedUrl: input.inspection?.normalizedUrl,
+      capturedAt: input.inspection?.capturedAt,
+    },
+    snapshotContext: input.snapshotContext,
+    derivation: { locatorKind: 'aria-ref' as const, basis: 'snapshot-ref' as const },
+    evidence: input.evidence,
+  };
+}
+
 async function main() {
   const runtime = new BrowserHostRuntimeAdapter({
     executor: new OpenClawBrowserHostExecutor({
@@ -111,7 +130,7 @@ async function main() {
     rebinding: started.session.runtimeState?.snapshotContext
       ? {
           snapshotContext: started.session.runtimeState.snapshotContext,
-          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button' },
+          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button', provenance: createSnapshotDerivedAriaRefProvenance({ snapshotContext: started.session.runtimeState.snapshotContext, inspection: started.session.runtimeState.inspection, evidence: { description: 'Fresh submit button' } }) },
           previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
         }
       : undefined,
@@ -125,7 +144,7 @@ async function main() {
     rebinding: started.session.runtimeState?.snapshotContext
       ? {
           snapshotContext: { artifact: { ...started.session.runtimeState.snapshotContext.artifact, version: 'other-v0' } },
-          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button' },
+          locator: { kind: 'aria-ref', ref: 'e44', description: 'Fresh submit button', provenance: createSnapshotDerivedAriaRefProvenance({ snapshotContext: started.session.runtimeState.snapshotContext, inspection: started.session.runtimeState.inspection, evidence: { description: 'Fresh submit button' } }) },
           previousLocator: { kind: 'aria-ref', ref: 'stale-e12', description: 'Old submit button' },
         }
       : undefined,
