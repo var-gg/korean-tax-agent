@@ -133,6 +133,7 @@ These are useful but should remain optional until a host proves them stable:
   - richer page metadata such as title, load state, or visible DOM summary
 - `act`
   - controlled browser actions such as click/type/select with audit-friendly wrapping
+  - T9 now formalizes a first narrow audited action contract with explicit locators, receipts, and failure results
 - `navigate`
   - explicit post-open navigation or redirect-following control
 - `targetResolution`
@@ -231,6 +232,8 @@ Current implementation note:
 - the repo now includes `OpenClawBrowserHostExecutor` for exactly this slice,
 - `OpenClawBrowserToolTransport` is the first production-style transport behind that executor, with a narrow external runtime/client binding seam,
 - `InMemoryOpenClawBrowserRelay` remains for tests/examples/smoke coverage,
-- no DOM mutation or field-level automation is part of this tranche.
+- T9 adds a generic audited DOM action contract on top of the read/inspect seam,
+- the first OpenClaw action surface is intentionally narrow: `click`, `fill`, and `press` using `aria-ref` locators only,
+- action execution is capability-gated and returns explicit success/failure receipts rather than silently mutating workflow state.
 
 That keeps the product direction host-agnostic while still letting OpenClaw be the first real implementation.

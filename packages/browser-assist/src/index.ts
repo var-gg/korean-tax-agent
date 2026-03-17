@@ -51,6 +51,69 @@ export interface BrowserHostInspectionMetadata {
   capturedAt?: string;
 }
 
+export type BrowserHostLocatorKind = 'aria-ref' | 'role-name' | 'css';
+
+export type BrowserHostLocator =
+  | { kind: 'aria-ref'; ref: string; description?: string }
+  | { kind: 'role-name'; role: string; name: string; exact?: boolean; description?: string }
+  | { kind: 'css'; selector: string; description?: string };
+
+export type BrowserHostDomActionKind = 'click' | 'fill' | 'press';
+
+export type BrowserHostDomAction =
+  | { kind: 'click'; doubleClick?: boolean; button?: 'left' | 'middle' | 'right'; modifiers?: string[] }
+  | { kind: 'fill'; text: string; submit?: boolean }
+  | { kind: 'press'; key: string; modifiers?: string[] };
+
+export interface BrowserHostDomActionRequest {
+  sessionId: string;
+  runtimeState: BrowserAssistRuntimeState | null;
+  locator: BrowserHostLocator;
+  action: BrowserHostDomAction;
+  timeoutMs?: number;
+  requestedAt?: string;
+}
+
+export type BrowserHostDomActionFailureCode =
+  | 'action_unsupported'
+  | 'locator_unsupported'
+  | 'target_not_found'
+  | 'ambiguous_target'
+  | 'host_unavailable'
+  | 'session_mismatch'
+  | 'timeout'
+  | 'transport_failure'
+  | 'action_rejected';
+
+export interface BrowserHostDomActionReceipt {
+  actionId: string;
+  sessionId: string;
+  runtimeTargetId?: string;
+  action: BrowserHostDomAction;
+  locator: BrowserHostLocator;
+  actedAt: string;
+  targetDescription?: string;
+  confirmation?: {
+    host: string;
+    metadata?: Record<string, string>;
+  };
+}
+
+export interface BrowserHostDomActionSuccess {
+  ok: true;
+  receipt: BrowserHostDomActionReceipt;
+}
+
+export interface BrowserHostDomActionFailure {
+  ok: false;
+  code: BrowserHostDomActionFailureCode;
+  message: string;
+  retryable?: boolean;
+  receipt?: BrowserHostDomActionReceipt;
+}
+
+export type BrowserHostDomActionResult = BrowserHostDomActionSuccess | BrowserHostDomActionFailure;
+
 export type BrowserHostTargetResolutionReason =
   | 'boundTarget'
   | 'sameSession'
@@ -229,6 +292,9 @@ export interface BrowserHostCapabilities {
   snapshotInspection: boolean;
   targetResolution: boolean;
   checkpointHandoff: boolean;
+  domActions: boolean;
+  supportedDomActionKinds: BrowserHostDomActionKind[];
+  supportedLocatorKinds: BrowserHostLocatorKind[];
 }
 
 export interface BrowserHostRuntimeClient {
@@ -244,7 +310,7 @@ export interface BrowserHostRuntimeClient {
   }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
   handoffCheckpoint?(input: BrowserRuntimeCheckpointHandoffRequest & {
     runtimeState: BrowserAssistRuntimeState | null;
-  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;  executeDomAction?(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> | BrowserHostDomActionResult;
 }
 
 export interface BrowserHostExecutor {
@@ -260,7 +326,7 @@ export interface BrowserHostExecutor {
   }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
   handoffCheckpoint?(input: BrowserRuntimeCheckpointHandoffRequest & {
     runtimeState: BrowserAssistRuntimeState | null;
-  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;
+  }): Promise<Partial<BrowserAssistRuntimeState> | null> | Partial<BrowserAssistRuntimeState> | null;  executeDomAction?(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> | BrowserHostDomActionResult;
 }
 
 export interface ExecutorBackedBrowserHostClientOptions {
@@ -274,12 +340,13 @@ export interface InMemoryBrowserHostExecutorOptions {
 }
 
 export interface BrowserHostExecutionRecord {
-  method: 'openTarget' | 'handoffCheckpoint' | 'getRuntimeState';
+  method: 'openTarget' | 'handoffCheckpoint' | 'getRuntimeState' | 'executeDomAction';
   input:
     | BrowserRuntimeOpenRequest
     | (BrowserRuntimeCheckpointHandoffRequest & { runtimeState: BrowserAssistRuntimeState | null })
-    | { sessionId: string; target: BrowserAssistTarget; runtimeState: BrowserAssistRuntimeState | null };
-  output: Partial<BrowserAssistOpenReceipt> | Partial<BrowserAssistRuntimeState> | null;
+    | { sessionId: string; target: BrowserAssistTarget; runtimeState: BrowserAssistRuntimeState | null }
+    | BrowserHostDomActionRequest;
+  output: Partial<BrowserAssistOpenReceipt> | Partial<BrowserAssistRuntimeState> | BrowserHostDomActionResult | null;
 }
 
 export interface BrowserHostRuntimeAdapterOptions {
@@ -486,6 +553,13 @@ export class ExecutorBackedBrowserHostClient implements BrowserHostRuntimeClient
     const runtimeState = await this.executor.getRuntimeState(cloneValue(input));
     return runtimeState ? cloneValue(runtimeState) : null;
   }
+
+  async executeDomAction(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> {
+    if (typeof this.executor.executeDomAction !== 'function') {
+      return createDomActionFailure({ code: 'action_unsupported', message: 'Browser host executor does not support DOM actions.', input });
+    }
+    return cloneValue(await this.executor.executeDomAction(cloneValue(input)));
+  }
 }
 
 export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
@@ -507,6 +581,9 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
       activeTarget: null,
       runtimeInspection: true,
       checkpointHandoff: true,
+      domActions: true,
+      supportedDomActionKinds: ['click', 'fill', 'press'],
+      supportedLocatorKinds: ['aria-ref'],
     });
   }
 
@@ -569,6 +646,23 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
     });
     return runtimeState ? cloneValue(runtimeState) : null;
   }
+
+  async executeDomAction(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> {
+    const state = this.stateBySessionId.get(input.sessionId) ?? input.runtimeState ?? null;
+    let result: BrowserHostDomActionResult;
+    if (!state?.runtimeTargetId) {
+      result = createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: state?.runtimeTargetId });
+    } else if (input.locator.kind !== 'aria-ref') {
+      result = createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is unsupported by the in-memory executor.`, input, runtimeTargetId: state.runtimeTargetId });
+    } else {
+      result = {
+        ok: true,
+        receipt: createDomActionReceipt(input, { runtimeTargetId: state.runtimeTargetId, actedAt: this.now(), confirmation: { host: this.transport, metadata: { simulated: 'true' } } }),
+      };
+    }
+    this.executions.push({ method: 'executeDomAction', input: cloneValue(input), output: cloneValue(result) });
+    return result;
+  }
 }
 
 export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
@@ -594,6 +688,9 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
         runtimeInspection: typeof this.client.getRuntimeState === 'function',
         snapshotInspection: false,
         checkpointHandoff: typeof this.client.handoffCheckpoint === 'function',
+        domActions: typeof this.client.executeDomAction === 'function',
+        supportedDomActionKinds: [],
+        supportedLocatorKinds: [],
       });
     }
 
@@ -657,6 +754,16 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
 
     this.stateBySessionId.set(request.sessionId, cloneValue(nextState));
     return cloneValue(nextState);
+  }
+
+  async executeDomAction(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> {
+    const previousState = this.stateBySessionId.get(input.sessionId) ?? input.runtimeState ?? null;
+    const capabilities = await this.getCapabilities({ sessionId: input.sessionId, runtimeState: previousState });
+    if (!capabilities.hostAvailable) return createDomActionFailure({ code: 'host_unavailable', message: 'Browser host is unavailable.', input, runtimeTargetId: previousState?.runtimeTargetId });
+    if (!capabilities.domActions || typeof this.client.executeDomAction !== 'function') return createDomActionFailure({ code: 'action_unsupported', message: 'Browser host does not advertise DOM action support.', input, runtimeTargetId: previousState?.runtimeTargetId });
+    if (!capabilities.supportedDomActionKinds.includes(input.action.kind)) return createDomActionFailure({ code: 'action_unsupported', message: `DOM action ${input.action.kind} is not supported by the active host.`, input, runtimeTargetId: previousState?.runtimeTargetId });
+    if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is not supported by the active host.`, input, runtimeTargetId: previousState?.runtimeTargetId });
+    return cloneValue(await this.client.executeDomAction(cloneValue({ ...input, runtimeState: previousState })));
   }
 
   async getRuntimeState(input: { sessionId: string; target: BrowserAssistTarget }): Promise<BrowserAssistRuntimeState | null> {
@@ -1077,6 +1184,9 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     snapshotInspection: false,
     targetResolution: false,
     checkpointHandoff: false,
+    domActions: false,
+    supportedDomActionKinds: [],
+    supportedLocatorKinds: [],
     ...cloneValue(overrides),
   };
 }
@@ -1089,6 +1199,32 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     snapshotInspection: input?.snapshotInspection ?? false,
     targetResolution: input?.targetResolution ?? false,
     checkpointHandoff: input?.checkpointHandoff ?? false,
+    domActions: input?.domActions ?? false,
+    supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [],
+    supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [],
+  };
+}
+
+function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
+  return {
+    actionId: `${input.sessionId}:${details.runtimeTargetId ?? 'no-target'}:${input.action.kind}:${details.actedAt}`,
+    sessionId: input.sessionId,
+    runtimeTargetId: details.runtimeTargetId,
+    action: cloneValue(input.action),
+    locator: cloneValue(input.locator),
+    actedAt: details.actedAt,
+    targetDescription: input.locator.description,
+    confirmation: details.confirmation ? cloneValue(details.confirmation) : undefined,
+  };
+}
+
+function createDomActionFailure(input: { code: BrowserHostDomActionFailureCode; message: string; input: BrowserHostDomActionRequest; runtimeTargetId?: string; retryable?: boolean }): BrowserHostDomActionFailure {
+  return {
+    ok: false,
+    code: input.code,
+    message: input.message,
+    retryable: input.retryable,
+    receipt: createDomActionReceipt(input.input, { runtimeTargetId: input.runtimeTargetId, actedAt: input.input.requestedAt ?? new Date().toISOString() }),
   };
 }
 

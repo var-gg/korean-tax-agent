@@ -526,12 +526,14 @@ if (input.operation === 'listTargets') {
       },
     });
 
-    await expect(client.getCapabilities({ runtimeTargetId: 'target-live' })).resolves.toEqual({
+    await expect(client.getCapabilities({ runtimeTargetId: 'target-live' })).resolves.toMatchObject({
       hostAvailable: true,
       activeTarget: true,
       runtimeInspection: true,
       snapshotInspection: true,
       checkpointHandoff: true,
+      domActions: true,
+      supportedLocatorKinds: ['aria-ref'],
     });
     await expect(client.openTarget({
       sessionId: 'session-live',
@@ -799,5 +801,117 @@ if (input.operation === 'listTargets') {
       code: 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED',
       operation: 'getRuntimeState',
     });
+  });
+
+  it('returns audited DOM action receipts through the generic in-memory host seam', async () => {
+    const executor = new InMemoryBrowserHostExecutor({
+      now: sequence(['2026-03-16T07:00:00.500Z', '2026-03-16T07:00:01.500Z']),
+      transport: 'browser-host',
+      runtimeTargetPrefix: 'browser-target',
+    });
+    const runtime = new BrowserHostRuntimeAdapter({ executor });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-dom-action', 'checkpoint-auth-dom-action', 'checkpoint-review-dom-action']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/dom-action',
+      requestedBy: 'dom-action-test',
+    });
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'e12', description: 'Submit button' },
+      action: { kind: 'click' },
+      requestedAt: '2026-03-16T07:00:02.000Z',
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      receipt: {
+        sessionId: started.session.id,
+        runtimeTargetId: 'browser-target:session-dom-action',
+        locator: { kind: 'aria-ref', ref: 'e12' },
+        action: { kind: 'click' },
+        confirmation: { host: 'browser-host', metadata: { simulated: 'true' } },
+      },
+    });
+  });
+
+  it('capability-gates DOM actions before dispatch', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      client: {
+        async openTarget(input) {
+          return {
+            runtimeTargetId: `browser-target:${input.sessionId}`,
+            currentTargetUrl: input.target.entryUrl,
+          };
+        },
+      },
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-dom-gated', 'checkpoint-auth-dom-gated', 'checkpoint-review-dom-gated']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/dom-gated',
+      requestedBy: 'dom-action-test',
+    });
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'e12' },
+      action: { kind: 'click' },
+    });
+
+    expect(result).toEqual(expect.objectContaining({ ok: false, code: 'action_unsupported' }));
+  });
+
+  it('maps the narrow OpenClaw DOM action slice with explicit success and locator failures', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        relay: new InMemoryOpenClawBrowserRelay({ targetPrefix: 'openclaw-tab' }),
+        now: sequence(['2026-03-16T08:00:00.500Z', '2026-03-16T08:00:01.500Z', '2026-03-16T08:00:02.500Z']),
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-action', 'checkpoint-auth-openclaw-action', 'checkpoint-review-openclaw-action']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/action',
+      requestedBy: 'openclaw-runtime-test',
+    });
+
+    const success = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'e44', description: 'Ready button' },
+      action: { kind: 'press', key: 'Enter' },
+    });
+    const unsupportedLocator = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'role-name', role: 'button', name: 'Ready' },
+      action: { kind: 'click' },
+    });
+
+    expect(success).toMatchObject({
+      ok: true,
+      receipt: {
+        sessionId: started.session.id,
+        runtimeTargetId: 'openclaw-tab:session-openclaw-action',
+        locator: { kind: 'aria-ref', ref: 'e44' },
+        action: { kind: 'press', key: 'Enter' },
+        confirmation: { host: 'openclaw-browser-tool', metadata: { locatorKind: 'aria-ref', actionKind: 'press' } },
+      },
+    });
+    expect(unsupportedLocator).toEqual(expect.objectContaining({ ok: false, code: 'locator_unsupported' }));
   });
 });

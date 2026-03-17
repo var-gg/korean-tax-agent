@@ -5,9 +5,11 @@ import type {
   OpenClawBrowserRuntimeCommandSuccess,
   OpenClawBrowserToolClientTarget,
   OpenClawBrowserTransportCapabilities,
+  OpenClawRelayActionReceipt,
   OpenClawRelayCheckpointHandoffRequest,
   OpenClawRelayOpenRequest,
 } from './openclaw.js';
+import type { BrowserHostDomActionRequest } from './index.js';
 
 export interface OpenClawBrowserControlServerClientOptions {
   baseUrl: string;
@@ -26,6 +28,7 @@ export interface OpenClawBrowserRuntimeHandlerOptions {
     getTarget?(input: { targetId: string }): Promise<OpenClawBrowserToolClientTarget | null> | OpenClawBrowserToolClientTarget | null;
     snapshotTarget?(input: { targetId: string }): Promise<OpenClawBrowserToolClientTarget | null> | OpenClawBrowserToolClientTarget | null;
     handoffCheckpoint?(input: OpenClawRelayCheckpointHandoffRequest): Promise<OpenClawBrowserToolClientTarget | null> | OpenClawBrowserToolClientTarget | null;
+    executeDomAction?(input: BrowserHostDomActionRequest & { runtimeTargetId: string }): Promise<OpenClawRelayActionReceipt> | OpenClawRelayActionReceipt;
   };
 }
 
@@ -62,6 +65,11 @@ export async function handleOpenClawBrowserRuntimeCommand(
           return unsupported(request.operation);
         }
         return { ok: true, result: await options.client.handoffCheckpoint(request.input as OpenClawRelayCheckpointHandoffRequest) };
+      case 'executeDomAction':
+        if (typeof options.client.executeDomAction !== 'function') {
+          return unsupported(request.operation);
+        }
+        return { ok: true, result: await options.client.executeDomAction(request.input as BrowserHostDomActionRequest & { runtimeTargetId: string }) };
       default:
         return unsupported((request as { operation?: string }).operation);
     }
@@ -109,6 +117,9 @@ export class OpenClawBrowserControlServerClient {
       runtimeInspection: true,
       snapshotInspection: true,
       checkpointHandoff: true,
+      domActions: true,
+      supportedDomActionKinds: ['click', 'fill', 'press'],
+      supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
   }
 
@@ -175,6 +186,46 @@ export class OpenClawBrowserControlServerClient {
 
   async handoffCheckpoint(input: OpenClawRelayCheckpointHandoffRequest) {
     return this.getTarget({ targetId: input.targetId });
+  }
+
+  async executeDomAction(input: BrowserHostDomActionRequest & { runtimeTargetId: string }) {
+    if (input.locator.kind !== 'aria-ref') {
+      throw createError('OPENCLAW_LOCATOR_UNSUPPORTED', `OpenClaw browser control server action bridge only supports aria-ref locators, not ${input.locator.kind}.`);
+    }
+    const body: Record<string, unknown> = {
+      targetId: input.runtimeTargetId,
+      ref: input.locator.ref,
+      timeoutMs: input.timeoutMs,
+    };
+    switch (input.action.kind) {
+      case 'click':
+        body.kind = 'click';
+        if (input.action.doubleClick !== undefined) body.doubleClick = input.action.doubleClick;
+        if (input.action.button) body.button = input.action.button;
+        if (input.action.modifiers?.length) body.modifiers = input.action.modifiers;
+        break;
+      case 'fill':
+        body.kind = 'fill';
+        body.text = input.action.text;
+        if (input.action.submit !== undefined) body.submit = input.action.submit;
+        break;
+      case 'press':
+        body.kind = 'press';
+        body.key = input.action.key;
+        if (input.action.modifiers?.length) body.modifiers = input.action.modifiers;
+        break;
+    }
+    const response = await this.call<any>('act', body);
+    return {
+      targetId: input.runtimeTargetId,
+      actedAt: new Date().toISOString(),
+      hostActionId: typeof response?.id === 'string' && response.id.trim() ? response.id.trim() : undefined,
+      metadata: {
+        locatorKind: input.locator.kind,
+        actionKind: input.action.kind,
+        serverAction: 'act',
+      },
+    } satisfies OpenClawRelayActionReceipt;
   }
 
   private async call<TResult>(action: string, body: Record<string, unknown>): Promise<TResult> {

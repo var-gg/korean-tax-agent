@@ -15,6 +15,7 @@
     "smoke:openclaw-runtime": "tsx scripts/smoke-openclaw-runtime.ts",
     "smoke:openclaw-bridge": "tsx scripts/smoke-openclaw-bridge.ts",
     "smoke:openclaw-reconnect-snapshot": "tsx scripts/smoke-openclaw-reconnect-snapshot.ts",
+    "smoke:openclaw-action": "tsx scripts/smoke-openclaw-action.ts",
     "example:browser-assist": "tsx examples/browser-assist-hometax.ts",
     "example:openclaw-browser-assist": "tsx examples/browser-assist-openclaw-adapter.ts",
     "example:openclaw-live-bridge": "tsx examples/browser-assist-openclaw-live-bridge.ts"

@@ -15,6 +15,9 @@ async function main() {
           activeTarget: null,
           runtimeInspection: true,
           checkpointHandoff: true,
+          domActions: true,
+          supportedDomActionKinds: ['click', 'fill', 'press'],
+          supportedLocatorKinds: ['aria-ref'],
         };
       },
       async listTargets() {
@@ -53,6 +56,14 @@ async function main() {
           available: true,
         };
       },
+      async executeDomAction(input) {
+        return {
+          targetId: input.runtimeTargetId,
+          actedAt: '2026-03-16T00:00:05.000Z',
+          hostActionId: 'example-action-1',
+          metadata: { locatorKind: input.locator.kind, actionKind: input.action.kind },
+        };
+      },
     },
   });
   const executor = new OpenClawBrowserHostExecutor({
@@ -81,6 +92,13 @@ async function main() {
     note: 'Authentication complete.',
   });
 
+  const actionResult = await runtime.executeDomAction({
+    sessionId: afterAuth.session.id,
+    runtimeState: afterAuth.session.runtimeState,
+    locator: { kind: 'aria-ref', ref: 'e12', description: 'Example continue button' },
+    action: { kind: 'click' },
+  });
+
   console.log(
     JSON.stringify(
       {
@@ -88,6 +106,7 @@ async function main() {
         runtimeTargetId: afterAuth.session.runtimeState.runtimeTargetId,
         currentTargetUrl: current.session.runtimeState.currentTargetUrl,
         nextCheckpoint: afterAuth.activeCheckpoint?.code,
+        actionResult,
         executorMethods: executor.executions.map((execution) => execution.method),
         capabilities: await runtime.getCapabilities({
           sessionId: afterAuth.session.id,

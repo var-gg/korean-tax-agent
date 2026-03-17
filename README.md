@@ -99,6 +99,7 @@ For runnable examples, use:
 - `npm run smoke:openclaw-runtime`
 - `npm run smoke:openclaw-bridge`
 - `npm run smoke:openclaw-reconnect-snapshot`
+- `npm run smoke:openclaw-action`
 - `npm run example:browser-assist`
 - `npm run example:openclaw-browser-assist`
 - `npm run example:openclaw-live-bridge`

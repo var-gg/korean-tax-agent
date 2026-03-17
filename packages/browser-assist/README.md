@@ -71,7 +71,9 @@ First concrete host adapter implementation behind the generic browser-host seam.
 - Implements the minimum stable surface for `openTarget()`, `getRuntimeState()`, and `handoffCheckpoint()`.
 - Delegates to a transport/provider object so the executor stays capability-aware and host-agnostic above the OpenClaw layer.
 - Surfaces explicit failure codes for transport unavailability, browser-host unavailability, missing/unavailable targets, ambiguous reconnects, session mismatch, unsupported runtime inspection, and snapshot failures.
-- Works with both `InMemoryOpenClawBrowserRelay` and `OpenClawBrowserToolTransport` while keeping DOM automation out of scope.
+- Works with both `InMemoryOpenClawBrowserRelay` and `OpenClawBrowserToolTransport` while keeping broad DOM automation out of scope.
+- T9 adds a narrow audited action slice: `click`, `fill`, and `press` against generic locators, capability-gated and returned as explicit action results instead of hidden side effects.
+- The first honest OpenClaw action mapping only supports `aria-ref` locators; broader locator support remains deferred.
 
 ### `OpenClawBrowserToolTransport`
 
