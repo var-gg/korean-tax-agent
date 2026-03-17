@@ -121,6 +121,7 @@ export class OpenClawBrowserControlServerClient {
       actionReadiness: true,
       snapshotRefLocators: true,
       snapshotLocatorProvenance: true,
+      inspectionCandidateGuidance: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
@@ -378,10 +379,25 @@ function extractSnapshotLocatorCandidates(
           ?? normalizeCandidateText(node?.label),
         description,
       };
+      const labelKind = label.includes(':') ? 'role-name' as const : label.trim() === ref.trim() ? 'ref' as const : 'text' as const;
+      const evidenceFields = [evidence.title ? 'title' : undefined, evidence.textSnippet ? 'textSnippet' : undefined, evidence.description ? 'description' : undefined].filter(Boolean) as Array<'title' | 'textSnippet' | 'description'>;
       return [{
         kind: 'snapshot-derived' as const,
         label,
         snapshotContext: inspection.snapshotContext,
+        guidance: {
+          manualSelectionOnly: true as const,
+          ranking: {
+            ordinal: 1,
+            sortKey: [labelKind === 'role-name' ? '0' : labelKind === 'text' ? '1' : '2', String(9 - evidenceFields.length), label.toLocaleLowerCase('en-US'), ref.toLocaleLowerCase('en-US')].join('|'),
+            criteria: ['label-kind', 'evidence-fields', 'label', 'ref'] as const,
+          },
+          signals: {
+            labelKind,
+            evidenceFields,
+          },
+          rationale: `Manual choice metadata only: sorted by ${labelKind === 'role-name' ? 'role and name' : labelKind === 'text' ? 'descriptive text' : 'ref only'}, then ${evidenceFields.length > 0 ? `${evidenceFields.length} evidence field${evidenceFields.length === 1 ? '' : 's'}` : 'no extra evidence fields'}.`,
+        },
         locator: {
           kind: 'aria-ref' as const,
           ref,
@@ -404,7 +420,23 @@ function extractSnapshotLocatorCandidates(
         },
       }];
     });
-  return candidates.length > 0 ? candidates : undefined;
+  if (candidates.length < 1) return undefined;
+  const rankingOrder = [...candidates].sort((left, right) => {
+    const sortKeyCompare = left.guidance.ranking.sortKey.localeCompare(right.guidance.ranking.sortKey, 'en-US');
+    if (sortKeyCompare !== 0) return sortKeyCompare;
+    return left.locator.ref.localeCompare(right.locator.ref, 'en-US');
+  });
+  const ordinals = new Map(rankingOrder.map((candidate, index) => [candidate.locator.ref, index + 1]));
+  return candidates.map((candidate) => ({
+    ...candidate,
+    guidance: {
+      ...candidate.guidance,
+      ranking: {
+        ...candidate.guidance.ranking,
+        ordinal: ordinals.get(candidate.locator.ref) ?? candidate.guidance.ranking.ordinal,
+      },
+    },
+  }));
 }
 
 function collectSnapshotCandidateNodes(snapshot: any): any[] {

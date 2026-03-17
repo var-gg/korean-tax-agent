@@ -11,7 +11,10 @@ import type {
   BrowserHostDomActionResult,
   BrowserHostExecutor,
   BrowserHostInspectionMetadata,
+  BrowserHostInspectionCandidateEvidenceField,
+  BrowserHostInspectionCandidateLabelKind,
   BrowserHostInspectionLocatorCandidate,
+  BrowserHostInspectionLocatorCandidateGuidance,
   BrowserHostLocatorKind,
   BrowserHostRecoveryAdviceStep,
   BrowserHostSnapshotContext,
@@ -530,6 +533,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       snapshotRefLocators: typeof this.transport.executeDomAction === 'function',
       explicitSnapshotRebinding: typeof this.transport.executeDomAction === 'function',
       snapshotLocatorProvenance: typeof this.transport.executeDomAction === 'function',
+      inspectionCandidateGuidance: typeof this.transport.executeDomAction === 'function',
       supportedDomActionKinds: typeof this.transport.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [],
       supportedLocatorKinds: typeof this.transport.executeDomAction === 'function' ? ['aria-ref'] satisfies BrowserHostLocatorKind[] : [],
     });
@@ -760,9 +764,10 @@ export class OpenClawBrowserToolTransport implements OpenClawBrowserTransport {
       snapshotRefLocators: reported?.snapshotRefLocators ?? (typeof this.client.executeDomAction === 'function'),
       explicitSnapshotRebinding: reported?.explicitSnapshotRebinding ?? (typeof this.client.executeDomAction === 'function'),
       snapshotLocatorProvenance: reported?.snapshotLocatorProvenance ?? (typeof this.client.executeDomAction === 'function'),
+      inspectionCandidateGuidance: reported?.inspectionCandidateGuidance ?? (typeof this.client.executeDomAction === 'function'),
       supportedDomActionKinds: reported?.supportedDomActionKinds ?? (typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : []),
       supportedLocatorKinds: reported?.supportedLocatorKinds ?? (typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : []),
-    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', explicitSnapshotRebinding: typeof this.client.executeDomAction === 'function', snapshotLocatorProvenance: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
+    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', explicitSnapshotRebinding: typeof this.client.executeDomAction === 'function', snapshotLocatorProvenance: typeof this.client.executeDomAction === 'function', inspectionCandidateGuidance: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
   }
 
   async open(input: OpenClawRelayOpenRequest): Promise<OpenClawRelayTarget> {
@@ -841,6 +846,7 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
       actionReadiness: true,
       snapshotRefLocators: true,
       snapshotLocatorProvenance: true,
+      inspectionCandidateGuidance: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
@@ -1022,13 +1028,14 @@ function normalizeOpenClawCapabilities(input: Partial<OpenClawBrowserTransportCa
     snapshotRefLocators: input?.snapshotRefLocators ?? fallback.snapshotRefLocators,
     explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? fallback.explicitSnapshotRebinding,
     snapshotLocatorProvenance: input?.snapshotLocatorProvenance ?? fallback.snapshotLocatorProvenance,
+    inspectionCandidateGuidance: input?.inspectionCandidateGuidance ?? fallback.inspectionCandidateGuidance,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [...fallback.supportedDomActionKinds],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [...fallback.supportedLocatorKinds],
   };
 }
 
 function defaultOpenClawCapabilities(overrides: Partial<OpenClawBrowserTransportCapabilities> = {}): OpenClawBrowserTransportCapabilities {
-  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, explicitSnapshotRebinding: false, snapshotLocatorProvenance: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
+  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, explicitSnapshotRebinding: false, snapshotLocatorProvenance: false, inspectionCandidateGuidance: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
 }
 
 function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: OpenClawRelayAttachRequest): OpenClawRelayTarget | null {
@@ -1385,7 +1392,19 @@ function normalizeInspectionLocatorCandidates(
   const normalized = (Array.isArray(candidates) ? candidates : [])
     .map((candidate) => normalizeInspectionLocatorCandidate(candidate, inspection))
     .filter((candidate): candidate is BrowserHostInspectionLocatorCandidate => Boolean(candidate));
-  return normalized.length > 0 ? normalized : undefined;
+  if (normalized.length < 1) return undefined;
+  const rankingOrder = [...normalized].sort((left, right) => compareInspectionLocatorCandidates(left, right));
+  const ordinals = new Map(rankingOrder.map((candidate, index) => [candidate.locator.ref, index + 1]));
+  return normalized.map((candidate) => ({
+    ...candidate,
+    guidance: {
+      ...candidate.guidance,
+      ranking: {
+        ...candidate.guidance.ranking,
+        ordinal: ordinals.get(candidate.locator.ref) ?? candidate.guidance.ranking.ordinal,
+      },
+    },
+  }));
 }
 
 function normalizeInspectionLocatorCandidate(
@@ -1428,7 +1447,58 @@ function normalizeInspectionLocatorCandidate(
         snapshotContext,
       },
     },
+    guidance: normalizeInspectionLocatorCandidateGuidance(candidate.guidance, label, locator),
   };
+}
+
+function normalizeInspectionLocatorCandidateGuidance(
+  guidance: BrowserHostInspectionLocatorCandidateGuidance | null | undefined,
+  label: string,
+  locator: Extract<BrowserHostInspectionLocatorCandidate['locator'], { kind: 'aria-ref' }>,
+): BrowserHostInspectionLocatorCandidateGuidance {
+  const evidenceFields = Array.from(new Set((guidance?.signals?.evidenceFields ?? deriveInspectionCandidateEvidenceFields(locator)).filter((value): value is BrowserHostInspectionCandidateEvidenceField => value === 'title' || value === 'textSnippet' || value === 'description')));
+  const labelKind = guidance?.signals?.labelKind === 'role-name' || guidance?.signals?.labelKind === 'text' || guidance?.signals?.labelKind === 'ref'
+    ? guidance.signals.labelKind
+    : deriveInspectionCandidateLabelKind(label, locator);
+  const providedSortKey = typeof guidance?.ranking?.sortKey === 'string' ? guidance.ranking.sortKey.trim() : '';
+  const sortKey = providedSortKey || createInspectionCandidateSortKey(labelKind, evidenceFields, label, locator.ref);
+  const providedOrdinal = guidance?.ranking?.ordinal;
+  const ordinal = typeof providedOrdinal === 'number' && Number.isInteger(providedOrdinal) && providedOrdinal > 0
+    ? providedOrdinal
+    : 1;
+  const rationale = typeof guidance?.rationale === 'string' && guidance.rationale.trim()
+    ? guidance.rationale.trim()
+    : createInspectionCandidateRationale(labelKind, evidenceFields);
+  return { manualSelectionOnly: true, ranking: { ordinal, sortKey, criteria: ['label-kind', 'evidence-fields', 'label', 'ref'] }, signals: { labelKind, evidenceFields }, rationale };
+}
+
+function deriveInspectionCandidateEvidenceFields(locator: Extract<BrowserHostInspectionLocatorCandidate['locator'], { kind: 'aria-ref' }>): BrowserHostInspectionCandidateEvidenceField[] {
+  const evidence = locator.provenance?.evidence;
+  return [evidence?.title ? 'title' : undefined, evidence?.textSnippet ? 'textSnippet' : undefined, evidence?.description ? 'description' : undefined].filter((value): value is BrowserHostInspectionCandidateEvidenceField => Boolean(value));
+}
+
+function deriveInspectionCandidateLabelKind(label: string, locator: Extract<BrowserHostInspectionLocatorCandidate['locator'], { kind: 'aria-ref' }>): BrowserHostInspectionCandidateLabelKind {
+  if (label.includes(':')) return 'role-name';
+  if (label.trim() === locator.ref.trim()) return 'ref';
+  return 'text';
+}
+
+function createInspectionCandidateSortKey(labelKind: BrowserHostInspectionCandidateLabelKind, evidenceFields: BrowserHostInspectionCandidateEvidenceField[], label: string, ref: string): string {
+  const labelRank = labelKind === 'role-name' ? '0' : labelKind === 'text' ? '1' : '2';
+  const evidenceRank = String(9 - evidenceFields.length);
+  return [labelRank, evidenceRank, label.toLocaleLowerCase('en-US'), ref.toLocaleLowerCase('en-US')].join('|');
+}
+
+function createInspectionCandidateRationale(labelKind: BrowserHostInspectionCandidateLabelKind, evidenceFields: BrowserHostInspectionCandidateEvidenceField[]): string {
+  const labelDetail = labelKind === 'role-name' ? 'role and name' : labelKind === 'text' ? 'descriptive text' : 'ref only';
+  const evidenceDetail = evidenceFields.length > 0 ? `${evidenceFields.length} evidence field${evidenceFields.length === 1 ? '' : 's'}` : 'no extra evidence fields';
+  return `Manual choice metadata only: sorted by ${labelDetail}, then ${evidenceDetail}.`;
+}
+
+function compareInspectionLocatorCandidates(left: BrowserHostInspectionLocatorCandidate, right: BrowserHostInspectionLocatorCandidate): number {
+  const sortKeyCompare = left.guidance.ranking.sortKey.localeCompare(right.guidance.ranking.sortKey, 'en-US');
+  if (sortKeyCompare !== 0) return sortKeyCompare;
+  return left.locator.ref.localeCompare(right.locator.ref, 'en-US');
 }
 
 function normalizeInspectionLocatorCandidateLabel(...inputs: Array<string | undefined>): string {

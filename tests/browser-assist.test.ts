@@ -54,10 +54,24 @@ function createSnapshotDerivedAriaRefCandidate(input: {
   evidence?: { title?: string; textSnippet?: string; description?: string };
 }) {
   const description = input.description ?? input.evidence?.description ?? input.label ?? input.ref;
+  const label = input.label ?? description;
   return {
     kind: 'snapshot-derived' as const,
-    label: input.label ?? description,
+    label,
     snapshotContext: input.snapshotContext,
+    guidance: {
+      manualSelectionOnly: true as const,
+      ranking: {
+        ordinal: 1,
+        sortKey: ['1', '6', label.toLocaleLowerCase('en-US'), input.ref.toLocaleLowerCase('en-US')].join('|'),
+        criteria: ['label-kind', 'evidence-fields', 'label', 'ref'] as const,
+      },
+      signals: {
+        labelKind: label.includes(':') ? 'role-name' as const : label.trim() === input.ref.trim() ? 'ref' as const : 'text' as const,
+        evidenceFields: [input.evidence?.title ? 'title' : undefined, input.evidence?.textSnippet ? 'textSnippet' : undefined, (input.evidence?.description ?? description) ? 'description' : undefined].filter(Boolean) as Array<'title' | 'textSnippet' | 'description'>,
+      },
+      rationale: 'Manual choice metadata only.',
+    },
     locator: {
       kind: 'aria-ref' as const,
       ref: input.ref,
@@ -678,6 +692,11 @@ if (input.operation === 'listTargets') {
                 evidence: expect.objectContaining({ description: '신고서 제출' }),
               }),
             }),
+            guidance: expect.objectContaining({
+              manualSelectionOnly: true,
+              ranking: expect.objectContaining({ ordinal: 1, criteria: ['label-kind', 'evidence-fields', 'label', 'ref'] }),
+              signals: expect.objectContaining({ labelKind: 'role-name', evidenceFields: ['title', 'textSnippet', 'description'] }),
+            }),
           }),
           expect.objectContaining({
             kind: 'snapshot-derived',
@@ -1006,6 +1025,74 @@ if (input.operation === 'listTargets') {
       code: 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED',
       operation: 'getRuntimeState',
     });
+  });
+
+  it('derives deterministic candidate guidance metadata without auto-selecting a locator', async () => {
+    const snapshotContext = {
+      artifact: {
+        artifactId: 'snapshot:guidance',
+        version: 'v1',
+        capturedAt: '2026-03-16T09:00:00.000Z',
+      },
+    };
+    const runtime = new BrowserHostRuntimeAdapter({
+      client: {
+        async openTarget(input) {
+          return {
+            transport: 'browser-host',
+            runtimeTargetId: `browser-target:${input.sessionId}`,
+            targetUrl: input.target.entryUrl,
+            currentTargetUrl: input.target.entryUrl,
+            lastOpenedUrl: input.target.entryUrl,
+            snapshotContext,
+            activeCheckpointId: input.activeCheckpoint.id,
+            inspection: {
+              source: 'snapshot',
+              url: input.target.entryUrl,
+              normalizedUrl: input.target.entryUrl,
+              capturedAt: '2026-03-16T09:00:00.000Z',
+              snapshotContext,
+              locatorCandidates: [
+                createSnapshotDerivedAriaRefCandidate({
+                  ref: 'z-ref',
+                  label: 'z-ref',
+                  snapshotContext,
+                  inspection: { source: 'snapshot', url: input.target.entryUrl, normalizedUrl: input.target.entryUrl, capturedAt: '2026-03-16T09:00:00.000Z' },
+                  evidence: {},
+                }),
+                createSnapshotDerivedAriaRefCandidate({
+                  ref: 'a-submit',
+                  label: 'button: 제출',
+                  description: '제출 버튼',
+                  snapshotContext,
+                  inspection: { source: 'snapshot', url: input.target.entryUrl, normalizedUrl: input.target.entryUrl, capturedAt: '2026-03-16T09:00:00.000Z' },
+                  evidence: { title: '제출', textSnippet: '제출', description: '제출 버튼' },
+                }),
+              ],
+            },
+          };
+        },
+      },
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-guidance', 'checkpoint-auth-guidance', 'checkpoint-review-guidance']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/guidance',
+      requestedBy: 'guidance-test',
+    });
+    const candidates = started.session.runtimeState.inspection?.locatorCandidates ?? [];
+
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]?.locator.ref).toBe('z-ref');
+    expect(candidates[0]?.guidance.manualSelectionOnly).toBe(true);
+    expect(candidates[0]?.guidance.ranking.ordinal).toBe(2);
+    expect(candidates[1]?.guidance.ranking.ordinal).toBe(1);
+    expect(candidates[1]?.guidance.signals.labelKind).toBe('role-name');
+    expect(candidates[1]?.guidance.ranking.sortKey < candidates[0]?.guidance.ranking.sortKey).toBe(true);
   });
 
   it('propagates coherent snapshot-derived inspection locator candidates through generic runtime state normalization', async () => {

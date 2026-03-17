@@ -35,10 +35,24 @@ function createSnapshotDerivedAriaRefCandidate(input: {
   evidence?: { title?: string; textSnippet?: string; description?: string };
 }) {
   const description = input.description ?? input.evidence?.description ?? input.label ?? input.ref;
+  const label = input.label ?? description;
   return {
     kind: 'snapshot-derived' as const,
-    label: input.label ?? description,
+    label,
     snapshotContext: input.snapshotContext,
+    guidance: {
+      manualSelectionOnly: true as const,
+      ranking: {
+        ordinal: 1,
+        sortKey: ['1', '6', label.toLocaleLowerCase('en-US'), input.ref.toLocaleLowerCase('en-US')].join('|'),
+        criteria: ['label-kind', 'evidence-fields', 'label', 'ref'] as const,
+      },
+      signals: {
+        labelKind: label.includes(':') ? 'role-name' as const : label.trim() === input.ref.trim() ? 'ref' as const : 'text' as const,
+        evidenceFields: [input.evidence?.title ? 'title' : undefined, input.evidence?.textSnippet ? 'textSnippet' : undefined, (input.evidence?.description ?? description) ? 'description' : undefined].filter(Boolean) as Array<'title' | 'textSnippet' | 'description'>,
+      },
+      rationale: 'Manual choice metadata only.',
+    },
     locator: {
       kind: 'aria-ref' as const,
       ref: input.ref,
@@ -159,7 +173,7 @@ async function main() {
     targetUrl: 'https://hometax.go.kr/openclaw/action',
     requestedBy: 'smoke-openclaw-action',
   });
-  const selectedCandidate = started.session.runtimeState.inspection?.locatorCandidates?.[0];
+  const selectedCandidate = [...(started.session.runtimeState.inspection?.locatorCandidates ?? [])].sort((left, right) => left.guidance.ranking.ordinal - right.guidance.ranking.ordinal)[0];
   if (!selectedCandidate) throw new Error('expected inspection locator candidate');
 
   const success = await runtime.executeDomAction({

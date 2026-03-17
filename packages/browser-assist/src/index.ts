@@ -135,11 +135,29 @@ export type BrowserHostLocator =
 
 export type BrowserHostSnapshotRefLocator = Extract<BrowserHostLocator, { kind: 'aria-ref' }>;
 
+export type BrowserHostInspectionCandidateLabelKind = 'role-name' | 'text' | 'ref';
+export type BrowserHostInspectionCandidateEvidenceField = 'title' | 'textSnippet' | 'description';
+
+export interface BrowserHostInspectionLocatorCandidateGuidance {
+  manualSelectionOnly: true;
+  ranking: {
+    ordinal: number;
+    sortKey: string;
+    criteria: readonly ['label-kind', 'evidence-fields', 'label', 'ref'];
+  };
+  signals: {
+    labelKind: BrowserHostInspectionCandidateLabelKind;
+    evidenceFields: BrowserHostInspectionCandidateEvidenceField[];
+  };
+  rationale?: string;
+}
+
 export interface BrowserHostInspectionLocatorCandidate {
   kind: 'snapshot-derived';
   label: string;
   locator: BrowserHostSnapshotRefLocator;
   snapshotContext: BrowserHostSnapshotContext;
+  guidance: BrowserHostInspectionLocatorCandidateGuidance;
 }
 
 export type BrowserHostDomActionKind = 'click' | 'fill' | 'press';
@@ -456,6 +474,7 @@ export interface BrowserHostCapabilities {
   snapshotRefLocators: boolean;
   explicitSnapshotRebinding: boolean;
   snapshotLocatorProvenance: boolean;
+  inspectionCandidateGuidance: boolean;
   supportedDomActionKinds: BrowserHostDomActionKind[];
   supportedLocatorKinds: BrowserHostLocatorKind[];
 }
@@ -1461,7 +1480,19 @@ function normalizeBrowserHostInspectionLocatorCandidates(
   const normalized = (Array.isArray(candidates) ? candidates : [])
     .map((candidate) => normalizeBrowserHostInspectionLocatorCandidate(candidate, inspection))
     .filter((candidate): candidate is BrowserHostInspectionLocatorCandidate => Boolean(candidate));
-  return normalized.length > 0 ? normalized : undefined;
+  if (normalized.length < 1) return undefined;
+  const rankingOrder = [...normalized].sort((left, right) => compareInspectionLocatorCandidates(left, right));
+  const ordinals = new Map(rankingOrder.map((candidate, index) => [candidate.locator.ref, index + 1]));
+  return normalized.map((candidate) => ({
+    ...candidate,
+    guidance: {
+      ...candidate.guidance,
+      ranking: {
+        ...candidate.guidance.ranking,
+        ordinal: ordinals.get(candidate.locator.ref) ?? candidate.guidance.ranking.ordinal,
+      },
+    },
+  }));
 }
 
 function normalizeBrowserHostInspectionLocatorCandidate(
@@ -1504,7 +1535,74 @@ function normalizeBrowserHostInspectionLocatorCandidate(
         snapshotContext,
       },
     },
+    guidance: normalizeInspectionLocatorCandidateGuidance(candidate.guidance, label, locator),
   };
+}
+
+function normalizeInspectionLocatorCandidateGuidance(
+  guidance: BrowserHostInspectionLocatorCandidateGuidance | null | undefined,
+  label: string,
+  locator: BrowserHostSnapshotRefLocator,
+): BrowserHostInspectionLocatorCandidateGuidance {
+  const evidenceFields = Array.from(new Set((guidance?.signals?.evidenceFields ?? deriveInspectionCandidateEvidenceFields(locator)).filter((value): value is BrowserHostInspectionCandidateEvidenceField => value === 'title' || value === 'textSnippet' || value === 'description')));
+  const labelKind = guidance?.signals?.labelKind === 'role-name' || guidance?.signals?.labelKind === 'text' || guidance?.signals?.labelKind === 'ref'
+    ? guidance.signals.labelKind
+    : deriveInspectionCandidateLabelKind(label, locator);
+  const providedSortKey = typeof guidance?.ranking?.sortKey === 'string' ? guidance.ranking.sortKey.trim() : '';
+  const sortKey = providedSortKey || createInspectionCandidateSortKey(labelKind, evidenceFields, label, locator.ref);
+  const providedOrdinal = guidance?.ranking?.ordinal;
+  const ordinal = typeof providedOrdinal === 'number' && Number.isInteger(providedOrdinal) && providedOrdinal > 0
+    ? providedOrdinal
+    : 1;
+  const rationale = typeof guidance?.rationale === 'string' && guidance.rationale.trim()
+    ? guidance.rationale.trim()
+    : createInspectionCandidateRationale(labelKind, evidenceFields);
+  return {
+    manualSelectionOnly: true,
+    ranking: {
+      ordinal,
+      sortKey,
+      criteria: ['label-kind', 'evidence-fields', 'label', 'ref'],
+    },
+    signals: {
+      labelKind,
+      evidenceFields,
+    },
+    rationale,
+  };
+}
+
+function deriveInspectionCandidateEvidenceFields(locator: BrowserHostSnapshotRefLocator): BrowserHostInspectionCandidateEvidenceField[] {
+  const evidence = locator.provenance?.evidence;
+  return [
+    evidence?.title ? 'title' : undefined,
+    evidence?.textSnippet ? 'textSnippet' : undefined,
+    evidence?.description ? 'description' : undefined,
+  ].filter((value): value is BrowserHostInspectionCandidateEvidenceField => Boolean(value));
+}
+
+function deriveInspectionCandidateLabelKind(label: string, locator: BrowserHostSnapshotRefLocator): BrowserHostInspectionCandidateLabelKind {
+  if (label.includes(':')) return 'role-name';
+  if (label.trim() === locator.ref.trim()) return 'ref';
+  return 'text';
+}
+
+function createInspectionCandidateSortKey(labelKind: BrowserHostInspectionCandidateLabelKind, evidenceFields: BrowserHostInspectionCandidateEvidenceField[], label: string, ref: string): string {
+  const labelRank = labelKind === 'role-name' ? '0' : labelKind === 'text' ? '1' : '2';
+  const evidenceRank = String(9 - evidenceFields.length);
+  return [labelRank, evidenceRank, label.toLocaleLowerCase('en-US'), ref.toLocaleLowerCase('en-US')].join('|');
+}
+
+function createInspectionCandidateRationale(labelKind: BrowserHostInspectionCandidateLabelKind, evidenceFields: BrowserHostInspectionCandidateEvidenceField[]): string {
+  const labelDetail = labelKind === 'role-name' ? 'role and name' : labelKind === 'text' ? 'descriptive text' : 'ref only';
+  const evidenceDetail = evidenceFields.length > 0 ? `${evidenceFields.length} evidence field${evidenceFields.length === 1 ? '' : 's'}` : 'no extra evidence fields';
+  return `Manual choice metadata only: sorted by ${labelDetail}, then ${evidenceDetail}.`;
+}
+
+function compareInspectionLocatorCandidates(left: BrowserHostInspectionLocatorCandidate, right: BrowserHostInspectionLocatorCandidate): number {
+  const sortKeyCompare = left.guidance.ranking.sortKey.localeCompare(right.guidance.ranking.sortKey, 'en-US');
+  if (sortKeyCompare !== 0) return sortKeyCompare;
+  return left.locator.ref.localeCompare(right.locator.ref, 'en-US');
 }
 
 function normalizeInspectionLocatorCandidateLabel(...inputs: Array<string | undefined>): string {
@@ -1665,6 +1763,7 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     snapshotRefLocators: false,
     explicitSnapshotRebinding: false,
     snapshotLocatorProvenance: false,
+    inspectionCandidateGuidance: false,
     supportedDomActionKinds: [],
     supportedLocatorKinds: [],
     ...cloneValue(overrides),
@@ -1684,6 +1783,7 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     snapshotRefLocators: input?.snapshotRefLocators ?? false,
     explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? false,
     snapshotLocatorProvenance: input?.snapshotLocatorProvenance ?? false,
+    inspectionCandidateGuidance: input?.inspectionCandidateGuidance ?? false,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [],
   };
