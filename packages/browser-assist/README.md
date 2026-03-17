@@ -73,7 +73,8 @@ First concrete host adapter implementation behind the generic browser-host seam.
 - Surfaces explicit failure codes for transport unavailability, browser-host unavailability, missing/unavailable targets, ambiguous reconnects, session mismatch, unsupported runtime inspection, and snapshot failures.
 - Works with both `InMemoryOpenClawBrowserRelay` and `OpenClawBrowserToolTransport` while keeping broad DOM automation out of scope.
 - T9 adds a narrow audited action slice: `click`, `fill`, and `press` against generic locators, capability-gated and returned as explicit action results instead of hidden side effects.
-- The first honest OpenClaw action mapping only supports `aria-ref` locators; broader locator support remains deferred.
+- T10 adds explicit host-agnostic action readiness/precondition reporting so action requests and receipts can say whether target, inspection, and snapshot-ref context were required, present, or missing.
+- The first honest OpenClaw action mapping only supports `aria-ref` locators; those actions now explicitly require snapshot-backed ref readiness and distinguish `missing_snapshot_context`, `stale_ref`, and `ambiguous_ref` from broader transport failures.
 
 ### `OpenClawBrowserToolTransport`
 

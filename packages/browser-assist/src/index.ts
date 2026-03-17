@@ -65,11 +65,30 @@ export type BrowserHostDomAction =
   | { kind: 'fill'; text: string; submit?: boolean }
   | { kind: 'press'; key: string; modifiers?: string[] };
 
+export type BrowserHostActionInspectionRequirement = 'required' | 'optional' | 'none';
+export type BrowserHostActionSnapshotRequirement = 'required' | 'optional' | 'none';
+export type BrowserHostActionTargetRequirement = 'required';
+
+export interface BrowserHostActionPreconditions {
+  target: BrowserHostActionTargetRequirement;
+  inspection: BrowserHostActionInspectionRequirement;
+  snapshot: BrowserHostActionSnapshotRequirement;
+  locatorNeedsSnapshotRef: boolean;
+}
+
+export interface BrowserHostActionReadiness {
+  preconditions: BrowserHostActionPreconditions;
+  target: 'ready' | 'missing' | 'ambiguous';
+  inspection: 'present' | 'missing' | 'not-required';
+  snapshot: 'present' | 'missing' | 'not-required';
+}
+
 export interface BrowserHostDomActionRequest {
   sessionId: string;
   runtimeState: BrowserAssistRuntimeState | null;
   locator: BrowserHostLocator;
   action: BrowserHostDomAction;
+  readiness?: Partial<BrowserHostActionPreconditions>;
   timeoutMs?: number;
   requestedAt?: string;
 }
@@ -79,8 +98,12 @@ export type BrowserHostDomActionFailureCode =
   | 'locator_unsupported'
   | 'target_not_found'
   | 'ambiguous_target'
+  | 'ambiguous_ref'
   | 'host_unavailable'
   | 'session_mismatch'
+  | 'missing_inspection_context'
+  | 'missing_snapshot_context'
+  | 'stale_ref'
   | 'timeout'
   | 'transport_failure'
   | 'action_rejected';
@@ -91,6 +114,7 @@ export interface BrowserHostDomActionReceipt {
   runtimeTargetId?: string;
   action: BrowserHostDomAction;
   locator: BrowserHostLocator;
+  readiness: BrowserHostActionReadiness;
   actedAt: string;
   targetDescription?: string;
   confirmation?: {
@@ -293,6 +317,8 @@ export interface BrowserHostCapabilities {
   targetResolution: boolean;
   checkpointHandoff: boolean;
   domActions: boolean;
+  actionReadiness: boolean;
+  snapshotRefLocators: boolean;
   supportedDomActionKinds: BrowserHostDomActionKind[];
   supportedLocatorKinds: BrowserHostLocatorKind[];
 }
@@ -582,6 +608,8 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
       runtimeInspection: true,
       checkpointHandoff: true,
       domActions: true,
+      actionReadiness: true,
+      snapshotRefLocators: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     });
@@ -599,6 +627,14 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
       currentTargetUrl: input.target.entryUrl,
       lastOpenedUrl: input.target.entryUrl,
       activeCheckpointId: input.activeCheckpoint.id,
+      inspection: {
+        source: 'snapshot',
+        title: input.target.label,
+        url: input.target.entryUrl,
+        normalizedUrl: input.target.entryUrl,
+        textSnippet: `snapshot:${input.target.label}`,
+        capturedAt: openedAt,
+      },
     });
 
     this.stateBySessionId.set(input.sessionId, cloneValue(receipt));
@@ -649,15 +685,18 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
 
   async executeDomAction(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> {
     const state = this.stateBySessionId.get(input.sessionId) ?? input.runtimeState ?? null;
+    const preconditions = resolveActionPreconditions(input);
     let result: BrowserHostDomActionResult;
     if (!state?.runtimeTargetId) {
-      result = createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: state?.runtimeTargetId });
+      result = createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: state?.runtimeTargetId, readiness: createActionReadiness(input, state) });
     } else if (input.locator.kind !== 'aria-ref') {
-      result = createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is unsupported by the in-memory executor.`, input, runtimeTargetId: state.runtimeTargetId });
+      result = createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is unsupported by the in-memory executor.`, input, runtimeTargetId: state.runtimeTargetId, readiness: createActionReadiness(input, state) });
+    } else if (preconditions.snapshot === 'required' && !state.inspection) {
+      result = createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires snapshot-backed locator context before it can run.`, input, runtimeTargetId: state.runtimeTargetId, readiness: createActionReadiness(input, state) });
     } else {
       result = {
         ok: true,
-        receipt: createDomActionReceipt(input, { runtimeTargetId: state.runtimeTargetId, actedAt: this.now(), confirmation: { host: this.transport, metadata: { simulated: 'true' } } }),
+        receipt: createDomActionReceipt(input, { runtimeTargetId: state.runtimeTargetId, readiness: createActionReadiness(input, state, { snapshot: 'present' }), actedAt: this.now(), confirmation: { host: this.transport, metadata: { simulated: 'true' } } }),
       };
     }
     this.executions.push({ method: 'executeDomAction', input: cloneValue(input), output: cloneValue(result) });
@@ -759,10 +798,15 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
   async executeDomAction(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> {
     const previousState = this.stateBySessionId.get(input.sessionId) ?? input.runtimeState ?? null;
     const capabilities = await this.getCapabilities({ sessionId: input.sessionId, runtimeState: previousState });
-    if (!capabilities.hostAvailable) return createDomActionFailure({ code: 'host_unavailable', message: 'Browser host is unavailable.', input, runtimeTargetId: previousState?.runtimeTargetId });
-    if (!capabilities.domActions || typeof this.client.executeDomAction !== 'function') return createDomActionFailure({ code: 'action_unsupported', message: 'Browser host does not advertise DOM action support.', input, runtimeTargetId: previousState?.runtimeTargetId });
-    if (!capabilities.supportedDomActionKinds.includes(input.action.kind)) return createDomActionFailure({ code: 'action_unsupported', message: `DOM action ${input.action.kind} is not supported by the active host.`, input, runtimeTargetId: previousState?.runtimeTargetId });
-    if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is not supported by the active host.`, input, runtimeTargetId: previousState?.runtimeTargetId });
+    const readiness = createActionReadiness(input, previousState);
+    if (!capabilities.hostAvailable) return createDomActionFailure({ code: 'host_unavailable', message: 'Browser host is unavailable.', input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (!capabilities.domActions || typeof this.client.executeDomAction !== 'function') return createDomActionFailure({ code: 'action_unsupported', message: 'Browser host does not advertise DOM action support.', input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (!capabilities.actionReadiness) return createDomActionFailure({ code: 'action_unsupported', message: 'Browser host does not advertise action readiness semantics.', input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (!capabilities.supportedDomActionKinds.includes(input.action.kind)) return createDomActionFailure({ code: 'action_unsupported', message: `DOM action ${input.action.kind} is not supported by the active host.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is not supported by the active host.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (readiness.target === 'missing') return createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (readiness.inspection === 'missing') return createDomActionFailure({ code: 'missing_inspection_context', message: `Action ${input.action.kind} requires inspection context before it can run.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (readiness.snapshot === 'missing') return createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires snapshot-backed locator context before it can run.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     return cloneValue(await this.client.executeDomAction(cloneValue({ ...input, runtimeState: previousState })));
   }
 
@@ -1185,6 +1229,8 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     targetResolution: false,
     checkpointHandoff: false,
     domActions: false,
+    actionReadiness: false,
+    snapshotRefLocators: false,
     supportedDomActionKinds: [],
     supportedLocatorKinds: [],
     ...cloneValue(overrides),
@@ -1200,31 +1246,59 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     targetResolution: input?.targetResolution ?? false,
     checkpointHandoff: input?.checkpointHandoff ?? false,
     domActions: input?.domActions ?? false,
+    actionReadiness: input?.actionReadiness ?? false,
+    snapshotRefLocators: input?.snapshotRefLocators ?? false,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [],
   };
 }
 
-function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
+function resolveActionPreconditions(input: BrowserHostDomActionRequest): BrowserHostActionPreconditions {
+  const locatorNeedsSnapshotRef = input.locator.kind === 'aria-ref';
+  return {
+    target: input.readiness?.target ?? 'required',
+    inspection: input.readiness?.inspection ?? (locatorNeedsSnapshotRef ? 'optional' : 'none'),
+    snapshot: input.readiness?.snapshot ?? (locatorNeedsSnapshotRef ? 'required' : 'none'),
+    locatorNeedsSnapshotRef,
+  };
+}
+
+function createActionReadiness(
+  input: BrowserHostDomActionRequest,
+  runtimeState: BrowserAssistRuntimeState | null,
+  overrides: Partial<BrowserHostActionReadiness> = {},
+): BrowserHostActionReadiness {
+  const preconditions = resolveActionPreconditions(input);
+  return {
+    preconditions,
+    target: runtimeState?.runtimeTargetId ? 'ready' : 'missing',
+    inspection: preconditions.inspection === 'none' ? 'not-required' : runtimeState?.inspection ? 'present' : 'missing',
+    snapshot: preconditions.snapshot === 'none' ? 'not-required' : runtimeState?.inspection ? 'present' : 'missing',
+    ...cloneValue(overrides),
+  };
+}
+
+function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
   return {
     actionId: `${input.sessionId}:${details.runtimeTargetId ?? 'no-target'}:${input.action.kind}:${details.actedAt}`,
     sessionId: input.sessionId,
     runtimeTargetId: details.runtimeTargetId,
     action: cloneValue(input.action),
     locator: cloneValue(input.locator),
+    readiness: cloneValue(details.readiness ?? createActionReadiness(input, input.runtimeState ?? null)),
     actedAt: details.actedAt,
     targetDescription: input.locator.description,
     confirmation: details.confirmation ? cloneValue(details.confirmation) : undefined,
   };
 }
 
-function createDomActionFailure(input: { code: BrowserHostDomActionFailureCode; message: string; input: BrowserHostDomActionRequest; runtimeTargetId?: string; retryable?: boolean }): BrowserHostDomActionFailure {
+function createDomActionFailure(input: { code: BrowserHostDomActionFailureCode; message: string; input: BrowserHostDomActionRequest; runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; retryable?: boolean }): BrowserHostDomActionFailure {
   return {
     ok: false,
     code: input.code,
     message: input.message,
     retryable: input.retryable,
-    receipt: createDomActionReceipt(input.input, { runtimeTargetId: input.runtimeTargetId, actedAt: input.input.requestedAt ?? new Date().toISOString() }),
+    receipt: createDomActionReceipt(input.input, { runtimeTargetId: input.runtimeTargetId, readiness: input.readiness, actedAt: input.input.requestedAt ?? new Date().toISOString() }),
   };
 }
 

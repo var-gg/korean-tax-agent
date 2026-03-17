@@ -20,6 +20,8 @@ async function main() {
               snapshotInspection: true,
               checkpointHandoff: true,
               domActions: true,
+              actionReadiness: true,
+              snapshotRefLocators: true,
               supportedDomActionKinds: ['click', 'fill', 'press'],
               supportedLocatorKinds: ['aria-ref'],
             };
@@ -90,6 +92,7 @@ async function main() {
   assert.equal(locatorFailure.ok, false);
   if (!success.ok) throw new Error('expected success receipt');
   assert.equal(success.receipt.runtimeTargetId, 'openclaw-tab:session-openclaw-action-smoke');
+  assert.equal(success.receipt.readiness.snapshot, 'present');
   assert.equal(locatorFailure.code, 'locator_unsupported');
 
   console.log(JSON.stringify({

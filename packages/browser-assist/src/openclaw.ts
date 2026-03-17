@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import type {
   BrowserAssistOpenReceipt,
   BrowserAssistRuntimeState,
+  BrowserHostActionReadiness,
   BrowserHostCapabilities,
   BrowserHostDomActionRequest,
   BrowserHostDomActionResult,
@@ -28,7 +29,11 @@ export type OpenClawBrowserHostErrorCode =
   | 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED'
   | 'OPENCLAW_ACTION_REJECTED'
   | 'OPENCLAW_ACTION_TIMEOUT'
-  | 'OPENCLAW_LOCATOR_UNSUPPORTED';
+  | 'OPENCLAW_LOCATOR_UNSUPPORTED'
+  | 'OPENCLAW_MISSING_INSPECTION_CONTEXT'
+  | 'OPENCLAW_MISSING_SNAPSHOT_CONTEXT'
+  | 'OPENCLAW_STALE_REF'
+  | 'OPENCLAW_AMBIGUOUS_REF';
 
 export interface OpenClawRelayTarget {
   targetId: string;
@@ -348,23 +353,30 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       throw new OpenClawBrowserHostError('OPENCLAW_BROWSER_UNAVAILABLE', 'openTarget', 'OpenClaw browser host is unavailable.');
     }
     const opened = await this.openOrAttachTarget(input);
-    const currentTargetUrl = opened.target.url ?? input.target.entryUrl;
-    const openedAt = opened.target.updatedAt ?? this.now();
-    this.bindingBySessionId.set(input.sessionId, {
+    const enrichedTarget = capabilities.snapshotInspection ? await this.enrichWithSnapshotInspection('openTarget', opened.target, {
       sessionId: input.sessionId,
       runtimeTargetId: opened.target.targetId,
       lastOpenedUrl: input.target.entryUrl,
-      currentTargetUrl,
+      currentTargetUrl: opened.target.url ?? input.target.entryUrl,
       inspection: opened.target.inspection,
+    }) : opened.target;
+    const currentTargetUrl = enrichedTarget.url ?? input.target.entryUrl;
+    const openedAt = enrichedTarget.updatedAt ?? this.now();
+    this.bindingBySessionId.set(input.sessionId, {
+      sessionId: input.sessionId,
+      runtimeTargetId: enrichedTarget.targetId,
+      lastOpenedUrl: input.target.entryUrl,
+      currentTargetUrl,
+      inspection: enrichedTarget.inspection,
     });
-    this.executions.push({ method: 'openTarget', sessionId: input.sessionId, runtimeTargetId: opened.target.targetId, usedAttachedTarget: opened.usedAttachedTarget });
+    this.executions.push({ method: 'openTarget', sessionId: input.sessionId, runtimeTargetId: enrichedTarget.targetId, usedAttachedTarget: opened.usedAttachedTarget });
     return {
       transport: this.transportLabel,
-      runtimeTargetId: opened.target.targetId,
+      runtimeTargetId: enrichedTarget.targetId,
       targetUrl: input.target.entryUrl,
       currentTargetUrl,
       lastOpenedUrl: input.target.entryUrl,
-      inspection: opened.target.inspection,
+      inspection: enrichedTarget.inspection,
       activeCheckpointId: input.activeCheckpoint.id,
       openedAt,
       updatedAt: openedAt,
@@ -435,11 +447,15 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
   async executeDomAction(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> {
     const capabilities = await this.readCapabilities('executeDomAction', { sessionId: input.sessionId, runtimeState: input.runtimeState });
     const runtimeTargetId = input.runtimeState?.runtimeTargetId ?? this.bindingBySessionId.get(input.sessionId)?.runtimeTargetId;
-    if (!capabilities.hostAvailable) return this.actionFailure('host_unavailable', 'OpenClaw browser host is unavailable.', input, runtimeTargetId);
-    if (!capabilities.domActions || typeof this.transport.executeDomAction !== 'function') return this.actionFailure('action_unsupported', 'OpenClaw transport does not support DOM actions.', input, runtimeTargetId);
-    if (!runtimeTargetId) return this.actionFailure('target_not_found', `No OpenClaw target is attached for session ${input.sessionId}.`, input, runtimeTargetId);
-    if (!capabilities.supportedDomActionKinds.includes(input.action.kind)) return this.actionFailure('action_unsupported', `OpenClaw does not support DOM action ${input.action.kind}.`, input, runtimeTargetId);
-    if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return this.actionFailure(input.locator.kind === 'aria-ref' ? 'action_unsupported' : 'locator_unsupported', `OpenClaw does not support locator kind ${input.locator.kind}.`, input, runtimeTargetId);
+    const readiness = this.createActionReadiness(input, runtimeTargetId);
+    if (!capabilities.hostAvailable) return this.actionFailure('host_unavailable', 'OpenClaw browser host is unavailable.', input, runtimeTargetId, readiness);
+    if (!capabilities.domActions || typeof this.transport.executeDomAction !== 'function') return this.actionFailure('action_unsupported', 'OpenClaw transport does not support DOM actions.', input, runtimeTargetId, readiness);
+    if (!capabilities.actionReadiness) return this.actionFailure('action_unsupported', 'OpenClaw transport does not advertise action readiness semantics.', input, runtimeTargetId, readiness);
+    if (!runtimeTargetId) return this.actionFailure('target_not_found', `No OpenClaw target is attached for session ${input.sessionId}.`, input, runtimeTargetId, readiness);
+    if (!capabilities.supportedDomActionKinds.includes(input.action.kind)) return this.actionFailure('action_unsupported', `OpenClaw does not support DOM action ${input.action.kind}.`, input, runtimeTargetId, readiness);
+    if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return this.actionFailure(input.locator.kind === 'aria-ref' ? 'action_unsupported' : 'locator_unsupported', `OpenClaw does not support locator kind ${input.locator.kind}.`, input, runtimeTargetId, readiness);
+    if (readiness.inspection === 'missing') return this.actionFailure('missing_inspection_context', 'OpenClaw aria-ref actions require inspection context for the bound target.', input, runtimeTargetId, readiness);
+    if (readiness.snapshot === 'missing') return this.actionFailure('missing_snapshot_context', 'OpenClaw aria-ref actions require snapshot-backed ref context before execution.', input, runtimeTargetId, readiness);
     try {
       const receipt = await this.callRelay('executeDomAction', () => this.transport.executeDomAction!({ ...cloneValue(input), runtimeTargetId }));
       return {
@@ -450,6 +466,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
           runtimeTargetId,
           action: cloneValue(input.action),
           locator: cloneValue(input.locator),
+          readiness,
           actedAt: receipt.actedAt ?? this.now(),
           targetDescription: input.locator.description,
           confirmation: { host: this.transportLabel, metadata: cloneValue(receipt.metadata ?? {}) },
@@ -457,13 +474,17 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       };
     } catch (error) {
       const mapped = mapOpenClawHostError(error, 'executeDomAction');
-      if (mapped?.code === 'OPENCLAW_TARGET_NOT_FOUND') return this.actionFailure('target_not_found', mapped.message, input, runtimeTargetId);
-      if (mapped?.code == 'OPENCLAW_TARGET_AMBIGUOUS') return this.actionFailure('ambiguous_target', mapped.message, input, runtimeTargetId);
-      if (mapped?.code == 'OPENCLAW_SESSION_MISMATCH') return this.actionFailure('session_mismatch', mapped.message, input, runtimeTargetId);
-      if (mapped?.code == 'OPENCLAW_ACTION_TIMEOUT') return this.actionFailure('timeout', mapped.message, input, runtimeTargetId, true);
-      if (mapped?.code === 'OPENCLAW_LOCATOR_UNSUPPORTED' || mapped?.code === 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED') return this.actionFailure('locator_unsupported', mapped.message, input, runtimeTargetId);
-      if (mapped?.code == 'OPENCLAW_ACTION_REJECTED') return this.actionFailure('action_rejected', mapped.message, input, runtimeTargetId);
-      return this.actionFailure('transport_failure', error instanceof Error ? error.message : String(error), input, runtimeTargetId, true);
+      if (mapped?.code === 'OPENCLAW_TARGET_NOT_FOUND') return this.actionFailure('target_not_found', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_TARGET_AMBIGUOUS') return this.actionFailure('ambiguous_target', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_SESSION_MISMATCH') return this.actionFailure('session_mismatch', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_MISSING_INSPECTION_CONTEXT') return this.actionFailure('missing_inspection_context', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_MISSING_SNAPSHOT_CONTEXT') return this.actionFailure('missing_snapshot_context', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_STALE_REF') return this.actionFailure('stale_ref', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_AMBIGUOUS_REF') return this.actionFailure('ambiguous_ref', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_ACTION_TIMEOUT') return this.actionFailure('timeout', mapped.message, input, runtimeTargetId, readiness, true);
+      if (mapped?.code === 'OPENCLAW_LOCATOR_UNSUPPORTED' || mapped?.code === 'OPENCLAW_RUNTIME_OPERATION_UNSUPPORTED') return this.actionFailure('locator_unsupported', mapped.message, input, runtimeTargetId, readiness);
+      if (mapped?.code == 'OPENCLAW_ACTION_REJECTED') return this.actionFailure('action_rejected', mapped.message, input, runtimeTargetId, readiness);
+      return this.actionFailure('transport_failure', error instanceof Error ? error.message : String(error), input, runtimeTargetId, readiness, true);
     }
   }
 
@@ -475,6 +496,8 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       targetResolution: typeof this.transport.listTargets === 'function',
       checkpointHandoff: typeof this.transport.handoffCheckpoint === 'function',
       domActions: typeof this.transport.executeDomAction === 'function',
+      actionReadiness: typeof this.transport.executeDomAction === 'function',
+      snapshotRefLocators: typeof this.transport.executeDomAction === 'function',
       supportedDomActionKinds: typeof this.transport.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [],
       supportedLocatorKinds: typeof this.transport.executeDomAction === 'function' ? ['aria-ref'] satisfies BrowserHostLocatorKind[] : [],
     });
@@ -593,7 +616,24 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     return cloneValue(input.target);
   }
 
-  private actionFailure(code: 'action_unsupported' | 'locator_unsupported' | 'target_not_found' | 'ambiguous_target' | 'host_unavailable' | 'session_mismatch' | 'timeout' | 'transport_failure' | 'action_rejected', message: string, input: BrowserHostDomActionRequest, runtimeTargetId?: string, retryable?: boolean): BrowserHostDomActionResult {
+  private createActionReadiness(input: BrowserHostDomActionRequest, runtimeTargetId?: string): BrowserHostActionReadiness {
+    const inspectionRequired = input.readiness?.inspection ?? (input.locator.kind === 'aria-ref' ? 'required' : 'none');
+    const snapshotRequired = input.readiness?.snapshot ?? (input.locator.kind === 'aria-ref' ? 'required' : 'none');
+    const inspectionPresent = Boolean(input.runtimeState?.inspection ?? this.bindingBySessionId.get(input.sessionId)?.inspection);
+    return {
+      preconditions: {
+        target: input.readiness?.target ?? 'required',
+        inspection: inspectionRequired,
+        snapshot: snapshotRequired,
+        locatorNeedsSnapshotRef: input.locator.kind === 'aria-ref',
+      },
+      target: runtimeTargetId ? 'ready' : 'missing',
+      inspection: inspectionRequired === 'none' ? 'not-required' : inspectionPresent ? 'present' : 'missing',
+      snapshot: snapshotRequired === 'none' ? 'not-required' : inspectionPresent ? 'present' : 'missing',
+    };
+  }
+
+  private actionFailure(code: 'action_unsupported' | 'locator_unsupported' | 'target_not_found' | 'ambiguous_target' | 'ambiguous_ref' | 'host_unavailable' | 'session_mismatch' | 'missing_inspection_context' | 'missing_snapshot_context' | 'stale_ref' | 'timeout' | 'transport_failure' | 'action_rejected', message: string, input: BrowserHostDomActionRequest, runtimeTargetId?: string, readiness?: BrowserHostActionReadiness, retryable?: boolean): BrowserHostDomActionResult {
     return {
       ok: false,
       code,
@@ -605,6 +645,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
         runtimeTargetId,
         action: cloneValue(input.action),
         locator: cloneValue(input.locator),
+        readiness: cloneValue(readiness ?? this.createActionReadiness(input, runtimeTargetId)),
         actedAt: input.requestedAt ?? this.now(),
         targetDescription: input.locator.description,
       },
@@ -652,9 +693,11 @@ export class OpenClawBrowserToolTransport implements OpenClawBrowserTransport {
       targetResolution: reported?.targetResolution ?? (typeof this.client.listTargets === 'function'),
       checkpointHandoff: reported?.checkpointHandoff ?? (typeof this.client.handoffCheckpoint === 'function'),
       domActions: reported?.domActions ?? (typeof this.client.executeDomAction === 'function'),
+      actionReadiness: reported?.actionReadiness ?? (typeof this.client.executeDomAction === 'function'),
+      snapshotRefLocators: reported?.snapshotRefLocators ?? (typeof this.client.executeDomAction === 'function'),
       supportedDomActionKinds: reported?.supportedDomActionKinds ?? (typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : []),
       supportedLocatorKinds: reported?.supportedLocatorKinds ?? (typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : []),
-    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
+    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
   }
 
   async open(input: OpenClawRelayOpenRequest): Promise<OpenClawRelayTarget> {
@@ -730,6 +773,8 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
       targetResolution: true,
       checkpointHandoff: true,
       domActions: true,
+      actionReadiness: true,
+      snapshotRefLocators: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
@@ -781,6 +826,9 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
     if (input.locator.kind !== 'aria-ref') {
       throw createOpenClawCodeError('OPENCLAW_LOCATOR_UNSUPPORTED', `OpenClaw relay only supports aria-ref locators, not ${input.locator.kind}.`);
     }
+    if ((input.readiness?.snapshot ?? 'required') === 'required' && !input.runtimeState?.inspection) {
+      throw createOpenClawCodeError('OPENCLAW_MISSING_SNAPSHOT_CONTEXT', 'OpenClaw aria-ref actions require snapshot-backed ref context before execution.');
+    }
     const target = this.targetById.get(input.runtimeTargetId);
     if (!target) {
       throw createOpenClawCodeError('OPENCLAW_TARGET_NOT_FOUND', `OpenClaw target ${input.runtimeTargetId} was not found.`);
@@ -788,6 +836,12 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
     const targetSessionId = normalizeSessionId(target.sessionId);
     if (targetSessionId && targetSessionId !== input.sessionId) {
       throw createOpenClawCodeError('OPENCLAW_SESSION_MISMATCH', `OpenClaw target ${input.runtimeTargetId} belongs to session ${targetSessionId}, not ${input.sessionId}.`);
+    }
+    if (input.locator.ref === 'stale-ref') {
+      throw createOpenClawCodeError('OPENCLAW_STALE_REF', `OpenClaw aria-ref ${input.locator.ref} is stale for target ${input.runtimeTargetId}.`);
+    }
+    if (input.locator.ref === 'ambiguous-ref') {
+      throw createOpenClawCodeError('OPENCLAW_AMBIGUOUS_REF', `OpenClaw aria-ref ${input.locator.ref} resolved ambiguously for target ${input.runtimeTargetId}.`);
     }
     return {
       targetId: input.runtimeTargetId,
@@ -867,13 +921,15 @@ function normalizeOpenClawCapabilities(input: Partial<OpenClawBrowserTransportCa
     targetResolution: input?.targetResolution ?? fallback.targetResolution,
     checkpointHandoff: input?.checkpointHandoff ?? fallback.checkpointHandoff,
     domActions: input?.domActions ?? fallback.domActions,
+    actionReadiness: input?.actionReadiness ?? fallback.actionReadiness,
+    snapshotRefLocators: input?.snapshotRefLocators ?? fallback.snapshotRefLocators,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [...fallback.supportedDomActionKinds],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [...fallback.supportedLocatorKinds],
   };
 }
 
 function defaultOpenClawCapabilities(overrides: Partial<OpenClawBrowserTransportCapabilities> = {}): OpenClawBrowserTransportCapabilities {
-  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
+  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
 }
 
 function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: OpenClawRelayAttachRequest): OpenClawRelayTarget | null {
@@ -953,6 +1009,10 @@ function normalizeOpenClawHostErrorCode(value: unknown): OpenClawBrowserHostErro
     case 'OPENCLAW_ACTION_REJECTED':
     case 'OPENCLAW_ACTION_TIMEOUT':
     case 'OPENCLAW_LOCATOR_UNSUPPORTED':
+    case 'OPENCLAW_MISSING_INSPECTION_CONTEXT':
+    case 'OPENCLAW_MISSING_SNAPSHOT_CONTEXT':
+    case 'OPENCLAW_STALE_REF':
+    case 'OPENCLAW_AMBIGUOUS_REF':
       return value;
     default:
       return null;
