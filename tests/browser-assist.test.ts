@@ -825,6 +825,7 @@ if (input.operation === 'listTargets') {
       runtimeState: started.session.runtimeState,
       locator: { kind: 'aria-ref', ref: 'e12', description: 'Submit button' },
       action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
       requestedAt: '2026-03-16T07:00:02.000Z',
     });
 
@@ -900,6 +901,7 @@ if (input.operation === 'listTargets') {
       runtimeState: started.session.runtimeState,
       locator: { kind: 'aria-ref', ref: 'e44', description: 'Ready button' },
       action: { kind: 'press', key: 'Enter' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
     });
     const unsupportedLocator = await runtime.executeDomAction({
       sessionId: started.session.id,
@@ -984,12 +986,14 @@ if (input.operation === 'listTargets') {
       runtimeState: started.session.runtimeState,
       locator: { kind: 'aria-ref', ref: 'stale-ref' },
       action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
     });
     const ambiguous = await runtime.executeDomAction({
       sessionId: started.session.id,
       runtimeState: started.session.runtimeState,
       locator: { kind: 'aria-ref', ref: 'ambiguous-ref' },
       action: { kind: 'click' },
+      snapshotContext: started.session.runtimeState?.snapshotContext,
     });
 
     expect(stale).toEqual(expect.objectContaining({ ok: false, code: 'stale_ref' }));

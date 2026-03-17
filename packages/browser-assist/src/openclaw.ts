@@ -5,11 +5,14 @@ import type {
   BrowserAssistRuntimeState,
   BrowserHostActionReadiness,
   BrowserHostCapabilities,
+  BrowserHostExpectedSnapshotArtifact,
+  BrowserHostSnapshotArtifact,
   BrowserHostDomActionRequest,
   BrowserHostDomActionResult,
   BrowserHostExecutor,
   BrowserHostInspectionMetadata,
   BrowserHostLocatorKind,
+  BrowserHostSnapshotContext,
   BrowserHostTargetResolutionEvidence,
   BrowserHostTargetResolutionResult,
   BrowserRuntimeCheckpointHandoffRequest,
@@ -193,6 +196,7 @@ interface OpenClawSessionBinding {
   lastOpenedUrl: string;
   currentTargetUrl: string;
   inspection?: BrowserHostInspectionMetadata;
+  snapshotContext?: BrowserHostSnapshotContext;
 }
 
 export class OpenClawBrowserHostError extends Error {
@@ -359,15 +363,18 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       lastOpenedUrl: input.target.entryUrl,
       currentTargetUrl: opened.target.url ?? input.target.entryUrl,
       inspection: opened.target.inspection,
+      snapshotContext: resolveSnapshotContextFromTarget(opened.target),
     }) : opened.target;
     const currentTargetUrl = enrichedTarget.url ?? input.target.entryUrl;
     const openedAt = enrichedTarget.updatedAt ?? this.now();
+    const snapshotContext = resolveSnapshotContextFromTarget(enrichedTarget);
     this.bindingBySessionId.set(input.sessionId, {
       sessionId: input.sessionId,
       runtimeTargetId: enrichedTarget.targetId,
       lastOpenedUrl: input.target.entryUrl,
       currentTargetUrl,
       inspection: enrichedTarget.inspection,
+      snapshotContext,
     });
     this.executions.push({ method: 'openTarget', sessionId: input.sessionId, runtimeTargetId: enrichedTarget.targetId, usedAttachedTarget: opened.usedAttachedTarget });
     return {
@@ -377,6 +384,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       currentTargetUrl,
       lastOpenedUrl: input.target.entryUrl,
       inspection: enrichedTarget.inspection,
+      snapshotContext,
       activeCheckpointId: input.activeCheckpoint.id,
       openedAt,
       updatedAt: openedAt,
@@ -389,7 +397,8 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     const currentTargetUrl = inspectedTarget.url ?? binding.currentTargetUrl ?? input.target.entryUrl;
     const lastOpenedUrl = input.runtimeState?.lastOpenedUrl ?? binding.lastOpenedUrl ?? input.target.entryUrl;
     const updatedAt = inspectedTarget.updatedAt ?? this.now();
-    this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: inspectedTarget.targetId, currentTargetUrl, lastOpenedUrl, inspection: inspectedTarget.inspection });
+    const snapshotContext = resolveSnapshotContextFromTarget(inspectedTarget) ?? binding.snapshotContext;
+    this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: inspectedTarget.targetId, currentTargetUrl, lastOpenedUrl, inspection: inspectedTarget.inspection, snapshotContext });
     this.executions.push({ method: 'getRuntimeState', sessionId: input.sessionId, runtimeTargetId: inspectedTarget.targetId });
     return {
       transport: this.transportLabel,
@@ -397,6 +406,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       currentTargetUrl,
       lastOpenedUrl,
       inspection: inspectedTarget.inspection,
+      snapshotContext,
       activeCheckpointId: input.runtimeState?.activeCheckpointId ?? null,
       updatedAt,
     };
@@ -430,7 +440,8 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     const inspectedTarget = await this.enrichWithSnapshotInspection('handoffCheckpoint', target, binding);
     const currentTargetUrl = inspectedTarget.url ?? input.targetUrl ?? binding.currentTargetUrl ?? input.target.entryUrl;
     const lastOpenedUrl = input.runtimeState?.lastOpenedUrl ?? binding.lastOpenedUrl ?? input.target.entryUrl;
-    this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: inspectedTarget.targetId, currentTargetUrl, lastOpenedUrl, inspection: inspectedTarget.inspection });
+    const snapshotContext = resolveSnapshotContextFromTarget(inspectedTarget) ?? binding.snapshotContext;
+    this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: inspectedTarget.targetId, currentTargetUrl, lastOpenedUrl, inspection: inspectedTarget.inspection, snapshotContext });
     this.executions.push({ method: 'handoffCheckpoint', sessionId: input.sessionId, runtimeTargetId: inspectedTarget.targetId });
     return {
       transport: this.transportLabel,
@@ -438,6 +449,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       currentTargetUrl,
       lastOpenedUrl,
       inspection: inspectedTarget.inspection,
+      snapshotContext,
       activeCheckpointId: input.nextCheckpoint ? input.nextCheckpoint.id : null,
       updatedAt: inspectedTarget.updatedAt ?? (input.handedOffAt || this.now()),
     };
@@ -455,7 +467,9 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     if (!capabilities.supportedDomActionKinds.includes(input.action.kind)) return this.actionFailure('action_unsupported', `OpenClaw does not support DOM action ${input.action.kind}.`, input, runtimeTargetId, readiness);
     if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return this.actionFailure(input.locator.kind === 'aria-ref' ? 'action_unsupported' : 'locator_unsupported', `OpenClaw does not support locator kind ${input.locator.kind}.`, input, runtimeTargetId, readiness);
     if (readiness.inspection === 'missing') return this.actionFailure('missing_inspection_context', 'OpenClaw aria-ref actions require inspection context for the bound target.', input, runtimeTargetId, readiness);
-    if (readiness.snapshot === 'missing') return this.actionFailure('missing_snapshot_context', 'OpenClaw aria-ref actions require snapshot-backed ref context before execution.', input, runtimeTargetId, readiness);
+    if (readiness.snapshot === 'missing') return this.actionFailure('missing_snapshot_context', 'OpenClaw aria-ref actions require a current snapshot artifact context before execution.', input, runtimeTargetId, readiness);
+    if (readiness.snapshotRef.freshness === 'missing_requested_snapshot') return this.actionFailure('missing_snapshot_context', 'OpenClaw aria-ref actions require explicit snapshot context tied to the aria-ref before execution.', input, runtimeTargetId, readiness);
+    if (readiness.snapshotRef.freshness === 'stale') return this.actionFailure('stale_ref', 'OpenClaw aria-ref action expected a different snapshot artifact/version than the bound runtime snapshot.', input, runtimeTargetId, readiness);
     try {
       const receipt = await this.callRelay('executeDomAction', () => this.transport.executeDomAction!({ ...cloneValue(input), runtimeTargetId }));
       return {
@@ -466,6 +480,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
           runtimeTargetId,
           action: cloneValue(input.action),
           locator: cloneValue(input.locator),
+          snapshotContext: readiness.snapshotRef.current ? cloneValue(readiness.snapshotRef.current) : undefined,
           readiness,
           actedAt: receipt.actedAt ?? this.now(),
           targetDescription: input.locator.description,
@@ -539,7 +554,13 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
     }
     const validated = this.validateTarget({ operation: input.operation, sessionId: input.sessionId, target, expectedTargetId: binding.runtimeTargetId });
     if (validated.targetId !== binding.runtimeTargetId) {
-      this.bindingBySessionId.set(input.sessionId, { ...binding, runtimeTargetId: validated.targetId, currentTargetUrl: validated.url ?? binding.currentTargetUrl, inspection: validated.inspection ?? binding.inspection });
+      this.bindingBySessionId.set(input.sessionId, {
+        ...binding,
+        runtimeTargetId: validated.targetId,
+        currentTargetUrl: validated.url ?? binding.currentTargetUrl,
+        inspection: validated.inspection ?? binding.inspection,
+        snapshotContext: resolveSnapshotContextFromTarget(validated) ?? binding.snapshotContext,
+      });
     }
     return { binding: this.bindingBySessionId.get(input.sessionId) ?? binding, target: validated };
   }
@@ -598,6 +619,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       lastOpenedUrl: input.runtimeState?.lastOpenedUrl ?? existingBinding?.lastOpenedUrl ?? input.entryUrl,
       currentTargetUrl: input.runtimeState?.currentTargetUrl ?? existingBinding?.currentTargetUrl ?? input.entryUrl,
       inspection: input.runtimeState?.inspection ?? existingBinding?.inspection,
+      snapshotContext: resolveSnapshotContextFromRuntimeState(input.runtimeState) ?? existingBinding?.snapshotContext,
     };
   }
 
@@ -619,7 +641,10 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
   private createActionReadiness(input: BrowserHostDomActionRequest, runtimeTargetId?: string): BrowserHostActionReadiness {
     const inspectionRequired = input.readiness?.inspection ?? (input.locator.kind === 'aria-ref' ? 'required' : 'none');
     const snapshotRequired = input.readiness?.snapshot ?? (input.locator.kind === 'aria-ref' ? 'required' : 'none');
-    const inspectionPresent = Boolean(input.runtimeState?.inspection ?? this.bindingBySessionId.get(input.sessionId)?.inspection);
+    const binding = this.bindingBySessionId.get(input.sessionId);
+    const inspectionPresent = Boolean(input.runtimeState?.inspection ?? binding?.inspection);
+    const currentSnapshotContext = normalizeSnapshotContext(input.runtimeState?.snapshotContext ?? input.runtimeState?.inspection?.snapshotContext ?? binding?.snapshotContext);
+    const requestedSnapshotContext = normalizeSnapshotContext(input.snapshotContext);
     return {
       preconditions: {
         target: input.readiness?.target ?? 'required',
@@ -629,11 +654,13 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       },
       target: runtimeTargetId ? 'ready' : 'missing',
       inspection: inspectionRequired === 'none' ? 'not-required' : inspectionPresent ? 'present' : 'missing',
-      snapshot: snapshotRequired === 'none' ? 'not-required' : inspectionPresent ? 'present' : 'missing',
+      snapshot: snapshotRequired === 'none' ? 'not-required' : currentSnapshotContext ? 'present' : 'missing',
+      snapshotRef: createSnapshotRefReadiness(snapshotRequired, currentSnapshotContext, requestedSnapshotContext),
     };
   }
 
   private actionFailure(code: 'action_unsupported' | 'locator_unsupported' | 'target_not_found' | 'ambiguous_target' | 'ambiguous_ref' | 'host_unavailable' | 'session_mismatch' | 'missing_inspection_context' | 'missing_snapshot_context' | 'stale_ref' | 'timeout' | 'transport_failure' | 'action_rejected', message: string, input: BrowserHostDomActionRequest, runtimeTargetId?: string, readiness?: BrowserHostActionReadiness, retryable?: boolean): BrowserHostDomActionResult {
+    const resolvedReadiness = readiness ?? this.createActionReadiness(input, runtimeTargetId);
     return {
       ok: false,
       code,
@@ -645,7 +672,8 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
         runtimeTargetId,
         action: cloneValue(input.action),
         locator: cloneValue(input.locator),
-        readiness: cloneValue(readiness ?? this.createActionReadiness(input, runtimeTargetId)),
+        snapshotContext: resolvedReadiness.snapshotRef.current ? cloneValue(resolvedReadiness.snapshotRef.current) : undefined,
+        readiness: cloneValue(resolvedReadiness),
         actedAt: input.requestedAt ?? this.now(),
         targetDescription: input.locator.description,
       },
@@ -807,10 +835,22 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
   async snapshotTarget(input: { targetId: string }): Promise<OpenClawRelayTarget | null> {
     const target = this.targetById.get(input.targetId);
     if (!target) return null;
-    return {
+    const capturedAt = this.now();
+    const snapshotContext = createOpenClawSnapshotContext(input.targetId, target.updatedAt ?? capturedAt, capturedAt);
+    const snapshotTarget: OpenClawRelayTarget = {
       ...cloneValue(target),
-      inspection: { source: 'snapshot', title: target.title, url: target.url, normalizedUrl: normalizeComparableUrl(target.url) ?? undefined, textSnippet: `snapshot:${target.title ?? target.url ?? target.targetId}`, capturedAt: this.now() },
+      inspection: {
+        source: 'snapshot',
+        title: target.title,
+        url: target.url,
+        normalizedUrl: normalizeComparableUrl(target.url) ?? undefined,
+        textSnippet: `snapshot:${target.title ?? target.url ?? target.targetId}`,
+        capturedAt,
+        snapshotContext,
+      },
     };
+    this.targetById.set(input.targetId, cloneValue(snapshotTarget));
+    return snapshotTarget;
   }
 
   async handoffCheckpoint(input: OpenClawRelayCheckpointHandoffRequest): Promise<OpenClawRelayTarget | null> {
@@ -826,9 +866,6 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
     if (input.locator.kind !== 'aria-ref') {
       throw createOpenClawCodeError('OPENCLAW_LOCATOR_UNSUPPORTED', `OpenClaw relay only supports aria-ref locators, not ${input.locator.kind}.`);
     }
-    if ((input.readiness?.snapshot ?? 'required') === 'required' && !input.runtimeState?.inspection) {
-      throw createOpenClawCodeError('OPENCLAW_MISSING_SNAPSHOT_CONTEXT', 'OpenClaw aria-ref actions require snapshot-backed ref context before execution.');
-    }
     const target = this.targetById.get(input.runtimeTargetId);
     if (!target) {
       throw createOpenClawCodeError('OPENCLAW_TARGET_NOT_FOUND', `OpenClaw target ${input.runtimeTargetId} was not found.`);
@@ -836,6 +873,26 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
     const targetSessionId = normalizeSessionId(target.sessionId);
     if (targetSessionId && targetSessionId !== input.sessionId) {
       throw createOpenClawCodeError('OPENCLAW_SESSION_MISMATCH', `OpenClaw target ${input.runtimeTargetId} belongs to session ${targetSessionId}, not ${input.sessionId}.`);
+    }
+    const snapshotRequired = (input.readiness?.snapshot ?? 'required') === 'required';
+    const currentSnapshotContext = resolveSnapshotContextFromTarget(target) ?? resolveSnapshotContextFromRuntimeState(input.runtimeState);
+    const requestedSnapshotContext = normalizeSnapshotContext(input.snapshotContext);
+    if (snapshotRequired && !currentSnapshotContext) {
+      throw createOpenClawCodeError('OPENCLAW_MISSING_SNAPSHOT_CONTEXT', 'OpenClaw aria-ref actions require a current snapshot artifact context before execution.');
+    }
+    if (snapshotRequired && !requestedSnapshotContext) {
+      throw createOpenClawCodeError('OPENCLAW_MISSING_SNAPSHOT_CONTEXT', 'OpenClaw aria-ref actions require explicit snapshot context tied to the aria-ref before execution.');
+    }
+    if (
+      snapshotRequired
+      && currentSnapshotContext
+      && requestedSnapshotContext
+      && (
+        currentSnapshotContext.artifact.artifactId !== requestedSnapshotContext.artifact.artifactId
+        || currentSnapshotContext.artifact.version !== requestedSnapshotContext.artifact.version
+      )
+    ) {
+      throw createOpenClawCodeError('OPENCLAW_STALE_REF', `OpenClaw aria-ref ${input.locator.ref} is stale for snapshot ${currentSnapshotContext.artifact.artifactId}@${currentSnapshotContext.artifact.version}.`);
     }
     if (input.locator.ref === 'stale-ref') {
       throw createOpenClawCodeError('OPENCLAW_STALE_REF', `OpenClaw aria-ref ${input.locator.ref} is stale for target ${input.runtimeTargetId}.`);
@@ -1023,6 +1080,22 @@ function cloneValue<T>(value: T): T {
   return structuredClone(value);
 }
 
+function normalizeSnapshotContext(snapshotContext: BrowserHostSnapshotContext | null | undefined): BrowserHostSnapshotContext | undefined {
+  const artifactId = String(snapshotContext?.artifact?.artifactId || '').trim();
+  const version = String(snapshotContext?.artifact?.version || '').trim();
+  if (!artifactId || !version) return undefined;
+  const capturedAt = typeof snapshotContext?.artifact?.capturedAt === 'string' && snapshotContext.artifact.capturedAt.trim() ? snapshotContext.artifact.capturedAt.trim() : undefined;
+  return { artifact: { artifactId, version, capturedAt } };
+}
+
+function createSnapshotRefReadiness(snapshotRequirement: 'required' | 'optional' | 'none', currentSnapshotContext: BrowserHostSnapshotContext | undefined, requestedSnapshotContext: BrowserHostSnapshotContext | undefined) {
+  if (snapshotRequirement === 'none') return { freshness: 'not-required' as const };
+  if (!currentSnapshotContext) return { freshness: 'missing_runtime_snapshot' as const, requested: requestedSnapshotContext };
+  if (!requestedSnapshotContext) return { freshness: 'missing_requested_snapshot' as const, current: currentSnapshotContext };
+  if (currentSnapshotContext.artifact.artifactId === requestedSnapshotContext.artifact.artifactId && currentSnapshotContext.artifact.version === requestedSnapshotContext.artifact.version) return { freshness: 'current' as const, current: currentSnapshotContext, requested: requestedSnapshotContext };
+  return { freshness: 'stale' as const, current: currentSnapshotContext, requested: requestedSnapshotContext };
+}
+
 
 function resolveReconnectCandidate(targets: OpenClawRelayTarget[], input: { sessionId: string; boundTargetId: string; entryUrl: string; currentTargetUrl: string; lastOpenedUrl: string }): OpenClawRelayTarget | null {
   const usable = targets.filter(isUsableTarget);
@@ -1048,6 +1121,15 @@ function urlLooksRelated(targetUrl: string | null | undefined, expectedUrl: stri
   return left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
+
+function resolveSnapshotContextFromTarget(target: OpenClawRelayTarget | null | undefined): BrowserHostSnapshotContext | undefined {
+  return normalizeSnapshotContext(target?.inspection?.snapshotContext);
+}
+
+function resolveSnapshotContextFromRuntimeState(runtimeState: BrowserAssistRuntimeState | null | undefined): BrowserHostSnapshotContext | undefined {
+  return normalizeSnapshotContext(runtimeState?.snapshotContext ?? runtimeState?.inspection?.snapshotContext);
+}
+
 function normalizeInspectionMetadata(inspection: BrowserHostInspectionMetadata | null | undefined, target: Pick<OpenClawRelayTarget, 'url' | 'title' | 'updatedAt'>, now: () => string): BrowserHostInspectionMetadata | undefined {
   const source = inspection?.source ?? 'target';
   const url = inspection?.url ?? target.url;
@@ -1055,8 +1137,9 @@ function normalizeInspectionMetadata(inspection: BrowserHostInspectionMetadata |
   const title = inspection?.title ?? target.title;
   const textSnippet = inspection?.textSnippet;
   const capturedAt = inspection?.capturedAt ?? target.updatedAt ?? now();
-  if (!title && !url && !textSnippet && !inspection) return undefined;
-  return { source, title, url, normalizedUrl, textSnippet, capturedAt };
+  const snapshotContext = normalizeSnapshotContext(inspection?.snapshotContext);
+  if (!title && !url && !textSnippet && !inspection && !snapshotContext) return undefined;
+  return { source, title, url, normalizedUrl, textSnippet, capturedAt, snapshotContext };
 }
 
 function mergeInspectionMetadata(current: BrowserHostInspectionMetadata | undefined, incoming: BrowserHostInspectionMetadata | undefined, now: () => string): BrowserHostInspectionMetadata | undefined {
@@ -1069,6 +1152,17 @@ function mergeInspectionMetadata(current: BrowserHostInspectionMetadata | undefi
     normalizedUrl: incoming.normalizedUrl ?? current.normalizedUrl ?? normalizeComparableUrl(incoming.url ?? current.url) ?? undefined,
     textSnippet: incoming.textSnippet ?? current.textSnippet,
     capturedAt: incoming.capturedAt ?? current.capturedAt ?? now(),
+    snapshotContext: normalizeSnapshotContext(incoming.snapshotContext ?? current.snapshotContext),
+  };
+}
+
+function createOpenClawSnapshotContext(targetId: string, versionSeed: string, capturedAt: string): BrowserHostSnapshotContext {
+  return {
+    artifact: {
+      artifactId: `snapshot:${targetId}`,
+      version: versionSeed,
+      capturedAt,
+    },
   };
 }
 

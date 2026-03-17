@@ -47,6 +47,25 @@ async function main() {
               available: true,
             };
           },
+          async snapshotTarget(input) {
+            return {
+              targetId: input.targetId,
+              sessionId: 'session-openclaw-action-smoke',
+              url: 'https://hometax.go.kr/openclaw/action/ready',
+              title: 'Action Ready',
+              attached: true,
+              available: true,
+              inspection: {
+                source: 'snapshot',
+                title: 'Action Ready',
+                url: 'https://hometax.go.kr/openclaw/action/ready',
+                normalizedUrl: 'https://hometax.go.kr/openclaw/action/ready',
+                textSnippet: '제출 버튼',
+                capturedAt: '2026-03-16T00:00:04.000Z',
+                snapshotContext: { artifact: { artifactId: 'snapshot:action-smoke', version: 'v1', capturedAt: '2026-03-16T00:00:04.000Z' } },
+              },
+            };
+          },
           async executeDomAction(input) {
             return {
               targetId: input.runtimeTargetId,
@@ -80,6 +99,7 @@ async function main() {
     runtimeState: started.session.runtimeState,
     locator: { kind: 'aria-ref', ref: 'e12', description: 'Submit button' },
     action: { kind: 'click' },
+    snapshotContext: started.session.runtimeState?.snapshotContext,
   });
   const locatorFailure = await runtime.executeDomAction({
     sessionId: started.session.id,

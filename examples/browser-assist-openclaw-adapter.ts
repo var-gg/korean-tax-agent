@@ -14,6 +14,7 @@ async function main() {
           hostAvailable: true,
           activeTarget: null,
           runtimeInspection: true,
+          snapshotInspection: true,
           checkpointHandoff: true,
           domActions: true,
           supportedDomActionKinds: ['click', 'fill', 'press'],
@@ -45,6 +46,25 @@ async function main() {
           url: 'https://hometax.go.kr/openclaw-live-example/ready',
           attached: true,
           available: true,
+        };
+      },
+      async snapshotTarget(input) {
+        return {
+          targetId: input.targetId,
+          sessionId: 'session-openclaw-live-example',
+          url: 'https://hometax.go.kr/openclaw-live-example/ready',
+          title: 'Example Ready',
+          attached: true,
+          available: true,
+          inspection: {
+            source: 'snapshot',
+            title: 'Example Ready',
+            url: 'https://hometax.go.kr/openclaw-live-example/ready',
+            normalizedUrl: 'https://hometax.go.kr/openclaw-live-example/ready',
+            textSnippet: '예시 제출 버튼',
+            capturedAt: '2026-03-16T00:00:04.000Z',
+            snapshotContext: { artifact: { artifactId: 'snapshot:example-openclaw', version: 'v1', capturedAt: '2026-03-16T00:00:04.000Z' } },
+          },
         };
       },
       async handoffCheckpoint(input) {
@@ -97,6 +117,7 @@ async function main() {
     runtimeState: afterAuth.session.runtimeState,
     locator: { kind: 'aria-ref', ref: 'e12', description: 'Example continue button' },
     action: { kind: 'click' },
+    snapshotContext: afterAuth.session.runtimeState.snapshotContext,
   });
 
   console.log(

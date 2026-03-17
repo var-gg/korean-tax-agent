@@ -42,6 +42,35 @@ export interface BrowserAssistEvent {
   checkpointId?: string;
 }
 
+export interface BrowserHostSnapshotArtifactIdentity {
+  artifactId: string;
+}
+
+export interface BrowserHostSnapshotArtifactVersion extends BrowserHostSnapshotArtifactIdentity {
+  version: string;
+  capturedAt?: string;
+}
+
+export interface BrowserHostSnapshotContext {
+  artifact: BrowserHostSnapshotArtifactVersion;
+}
+
+export type BrowserHostSnapshotArtifact = BrowserHostSnapshotArtifactVersion;
+export type BrowserHostExpectedSnapshotArtifact = BrowserHostSnapshotArtifactVersion;
+
+export type BrowserHostSnapshotRefFreshness =
+  | 'not-required'
+  | 'current'
+  | 'stale'
+  | 'missing_runtime_snapshot'
+  | 'missing_requested_snapshot';
+
+export interface BrowserHostSnapshotRefReadiness {
+  freshness: BrowserHostSnapshotRefFreshness;
+  current?: BrowserHostSnapshotContext;
+  requested?: BrowserHostSnapshotContext;
+}
+
 export interface BrowserHostInspectionMetadata {
   source: 'target' | 'snapshot' | 'runtime';
   title?: string;
@@ -49,6 +78,8 @@ export interface BrowserHostInspectionMetadata {
   normalizedUrl?: string;
   textSnippet?: string;
   capturedAt?: string;
+  snapshotContext?: BrowserHostSnapshotContext;
+  snapshotArtifact?: BrowserHostSnapshotArtifact;
 }
 
 export type BrowserHostLocatorKind = 'aria-ref' | 'role-name' | 'css';
@@ -81,6 +112,9 @@ export interface BrowserHostActionReadiness {
   target: 'ready' | 'missing' | 'ambiguous';
   inspection: 'present' | 'missing' | 'not-required';
   snapshot: 'present' | 'missing' | 'not-required';
+  snapshotRef: BrowserHostSnapshotRefReadiness;
+  snapshotArtifact?: BrowserHostSnapshotArtifact;
+  expectedSnapshotArtifact?: BrowserHostExpectedSnapshotArtifact;
 }
 
 export interface BrowserHostDomActionRequest {
@@ -88,7 +122,9 @@ export interface BrowserHostDomActionRequest {
   runtimeState: BrowserAssistRuntimeState | null;
   locator: BrowserHostLocator;
   action: BrowserHostDomAction;
+  snapshotContext?: BrowserHostSnapshotContext;
   readiness?: Partial<BrowserHostActionPreconditions>;
+  expectedSnapshotArtifact?: BrowserHostExpectedSnapshotArtifact;
   timeoutMs?: number;
   requestedAt?: string;
 }
@@ -103,6 +139,8 @@ export type BrowserHostDomActionFailureCode =
   | 'session_mismatch'
   | 'missing_inspection_context'
   | 'missing_snapshot_context'
+  | 'missing_expected_snapshot_artifact'
+  | 'snapshot_mismatch'
   | 'stale_ref'
   | 'timeout'
   | 'transport_failure'
@@ -114,6 +152,7 @@ export interface BrowserHostDomActionReceipt {
   runtimeTargetId?: string;
   action: BrowserHostDomAction;
   locator: BrowserHostLocator;
+  snapshotContext?: BrowserHostSnapshotContext;
   readiness: BrowserHostActionReadiness;
   actedAt: string;
   targetDescription?: string;
@@ -121,6 +160,8 @@ export interface BrowserHostDomActionReceipt {
     host: string;
     metadata?: Record<string, string>;
   };
+  snapshotArtifact?: BrowserHostSnapshotArtifact;
+  expectedSnapshotArtifact?: BrowserHostExpectedSnapshotArtifact;
 }
 
 export interface BrowserHostDomActionSuccess {
@@ -185,6 +226,8 @@ export interface BrowserAssistRuntimeState {
   currentTargetUrl: string;
   lastOpenedUrl: string;
   inspection?: BrowserHostInspectionMetadata;
+  snapshotContext?: BrowserHostSnapshotContext;
+  snapshotArtifact?: BrowserHostSnapshotArtifact;
   activeCheckpointId: string | null;
   updatedAt: string;
 }
@@ -432,6 +475,7 @@ export class RecordingBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapt
       targetUrl: request.target.entryUrl,
       currentTargetUrl: request.target.entryUrl,
       lastOpenedUrl: request.target.entryUrl,
+      snapshotContext: undefined,
       activeCheckpointId: request.activeCheckpoint.id,
     });
 
@@ -451,6 +495,7 @@ export class RecordingBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapt
       runtimeTargetId: previousState?.runtimeTargetId ?? `recording-target:${request.sessionId}`,
       currentTargetUrl: request.targetUrl || previousState?.currentTargetUrl || request.target.entryUrl,
       lastOpenedUrl: previousState?.lastOpenedUrl || request.target.entryUrl,
+      snapshotContext: previousState?.snapshotContext,
       activeCheckpointId: request.nextCheckpoint ? request.nextCheckpoint.id : null,
       updatedAt: request.handedOffAt || this.now(),
     });
@@ -500,6 +545,7 @@ export class SystemBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter 
       targetUrl: request.target.entryUrl,
       currentTargetUrl: request.target.entryUrl,
       lastOpenedUrl: request.target.entryUrl,
+      snapshotContext: undefined,
       activeCheckpointId: request.activeCheckpoint.id,
     });
 
@@ -515,6 +561,7 @@ export class SystemBrowserRuntimeAdapter implements BrowserAssistRuntimeAdapter 
       runtimeTargetId: previousState?.runtimeTargetId ?? `${this.runtimeTargetPrefix}:${request.sessionId}`,
       currentTargetUrl: request.targetUrl || previousState?.currentTargetUrl || request.target.entryUrl,
       lastOpenedUrl: previousState?.lastOpenedUrl || request.target.entryUrl,
+      snapshotContext: previousState?.snapshotContext,
       activeCheckpointId: request.nextCheckpoint ? request.nextCheckpoint.id : null,
       updatedAt: request.handedOffAt || this.now(),
     });
@@ -617,6 +664,11 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
 
   async openTarget(input: BrowserRuntimeOpenRequest): Promise<Partial<BrowserAssistOpenReceipt>> {
     const openedAt = this.now();
+    const snapshotContext = createSnapshotContext({
+      artifactId: `${this.runtimeTargetPrefix}:${input.sessionId}`,
+      version: openedAt,
+      capturedAt: openedAt,
+    });
     const receipt = createRuntimeReceipt({
       sessionId: input.sessionId,
       openedAt,
@@ -626,6 +678,7 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
       targetUrl: input.target.entryUrl,
       currentTargetUrl: input.target.entryUrl,
       lastOpenedUrl: input.target.entryUrl,
+      snapshotContext,
       activeCheckpointId: input.activeCheckpoint.id,
       inspection: {
         source: 'snapshot',
@@ -634,6 +687,7 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
         normalizedUrl: input.target.entryUrl,
         textSnippet: `snapshot:${input.target.label}`,
         capturedAt: openedAt,
+        snapshotContext,
       },
     });
 
@@ -656,6 +710,8 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
       runtimeTargetId: previousState?.runtimeTargetId ?? `${this.runtimeTargetPrefix}:${input.sessionId}`,
       currentTargetUrl: input.targetUrl || previousState?.currentTargetUrl || input.target.entryUrl,
       lastOpenedUrl: previousState?.lastOpenedUrl || input.target.entryUrl,
+      inspection: previousState?.inspection,
+      snapshotContext: previousState?.snapshotContext,
       activeCheckpointId: input.nextCheckpoint ? input.nextCheckpoint.id : null,
       updatedAt: input.handedOffAt || this.now(),
     });
@@ -685,18 +741,22 @@ export class InMemoryBrowserHostExecutor implements BrowserHostExecutor {
 
   async executeDomAction(input: BrowserHostDomActionRequest): Promise<BrowserHostDomActionResult> {
     const state = this.stateBySessionId.get(input.sessionId) ?? input.runtimeState ?? null;
-    const preconditions = resolveActionPreconditions(input);
+    const readiness = createActionReadiness(input, state);
     let result: BrowserHostDomActionResult;
     if (!state?.runtimeTargetId) {
-      result = createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: state?.runtimeTargetId, readiness: createActionReadiness(input, state) });
+      result = createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: state?.runtimeTargetId, readiness });
     } else if (input.locator.kind !== 'aria-ref') {
-      result = createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is unsupported by the in-memory executor.`, input, runtimeTargetId: state.runtimeTargetId, readiness: createActionReadiness(input, state) });
-    } else if (preconditions.snapshot === 'required' && !state.inspection) {
-      result = createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires snapshot-backed locator context before it can run.`, input, runtimeTargetId: state.runtimeTargetId, readiness: createActionReadiness(input, state) });
+      result = createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is unsupported by the in-memory executor.`, input, runtimeTargetId: state.runtimeTargetId, readiness });
+    } else if (readiness.snapshot === 'missing') {
+      result = createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires a current snapshot artifact context before it can run.`, input, runtimeTargetId: state.runtimeTargetId, readiness });
+    } else if (readiness.snapshotRef.freshness === 'missing_requested_snapshot') {
+      result = createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires explicit snapshot context for its snapshot-backed locator ref.`, input, runtimeTargetId: state.runtimeTargetId, readiness });
+    } else if (readiness.snapshotRef.freshness === 'stale') {
+      result = createDomActionFailure({ code: 'stale_ref', message: `Action ${input.action.kind} targets a stale snapshot artifact/version for session ${input.sessionId}.`, input, runtimeTargetId: state.runtimeTargetId, readiness });
     } else {
       result = {
         ok: true,
-        receipt: createDomActionReceipt(input, { runtimeTargetId: state.runtimeTargetId, readiness: createActionReadiness(input, state, { snapshot: 'present' }), actedAt: this.now(), confirmation: { host: this.transport, metadata: { simulated: 'true' } } }),
+        receipt: createDomActionReceipt(input, { runtimeTargetId: state.runtimeTargetId, readiness, actedAt: this.now(), confirmation: { host: this.transport, metadata: { simulated: 'true' } } }),
       };
     }
     this.executions.push({ method: 'executeDomAction', input: cloneValue(input), output: cloneValue(result) });
@@ -749,6 +809,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
       currentTargetUrl: clientReceipt.currentTargetUrl ?? request.target.entryUrl,
       lastOpenedUrl: clientReceipt.lastOpenedUrl ?? request.target.entryUrl,
       inspection: clientReceipt.inspection,
+      snapshotContext: clientReceipt.snapshotContext,
       activeCheckpointId: clientReceipt.activeCheckpointId ?? request.activeCheckpoint.id,
     });
 
@@ -772,6 +833,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
         currentTargetUrl: clientState?.currentTargetUrl ?? request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
         lastOpenedUrl: clientState?.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? request.target.entryUrl,
         inspection: clientState?.inspection ?? previousState?.inspection,
+        snapshotContext: clientState?.snapshotContext ?? previousState?.snapshotContext,
         activeCheckpointId: clientState?.activeCheckpointId ?? (request.nextCheckpoint ? request.nextCheckpoint.id : null),
         updatedAt: clientState?.updatedAt ?? request.handedOffAt ?? this.now(),
       });
@@ -787,6 +849,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
       currentTargetUrl: request.targetUrl ?? previousState?.currentTargetUrl ?? request.target.entryUrl,
       lastOpenedUrl: previousState?.lastOpenedUrl ?? request.target.entryUrl,
       inspection: previousState?.inspection,
+      snapshotContext: previousState?.snapshotContext,
       activeCheckpointId: request.nextCheckpoint ? request.nextCheckpoint.id : null,
       updatedAt: request.handedOffAt ?? this.now(),
     });
@@ -806,7 +869,9 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
     if (!capabilities.supportedLocatorKinds.includes(input.locator.kind)) return createDomActionFailure({ code: 'locator_unsupported', message: `Locator kind ${input.locator.kind} is not supported by the active host.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     if (readiness.target === 'missing') return createDomActionFailure({ code: 'target_not_found', message: `No runtime target is bound for session ${input.sessionId}.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     if (readiness.inspection === 'missing') return createDomActionFailure({ code: 'missing_inspection_context', message: `Action ${input.action.kind} requires inspection context before it can run.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
-    if (readiness.snapshot === 'missing') return createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires snapshot-backed locator context before it can run.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (readiness.snapshot === 'missing') return createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires a current snapshot artifact context before it can run.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (readiness.snapshotRef.freshness === 'missing_requested_snapshot') return createDomActionFailure({ code: 'missing_snapshot_context', message: `Action ${input.action.kind} requires explicit snapshot context for its snapshot-backed locator ref.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
+    if (readiness.snapshotRef.freshness === 'stale') return createDomActionFailure({ code: 'stale_ref', message: `Action ${input.action.kind} targets a stale snapshot artifact/version for session ${input.sessionId}.`, input, runtimeTargetId: previousState?.runtimeTargetId, readiness });
     return cloneValue(await this.client.executeDomAction(cloneValue({ ...input, runtimeState: previousState })));
   }
 
@@ -828,6 +893,7 @@ export class BrowserHostRuntimeAdapter implements BrowserAssistRuntimeAdapter {
           currentTargetUrl: clientState.currentTargetUrl ?? previousState?.currentTargetUrl ?? input.target.entryUrl,
           lastOpenedUrl: clientState.lastOpenedUrl ?? previousState?.lastOpenedUrl ?? input.target.entryUrl,
           inspection: clientState.inspection ?? previousState?.inspection,
+          snapshotContext: clientState.snapshotContext ?? previousState?.snapshotContext,
           activeCheckpointId: clientState.activeCheckpointId ?? previousState?.activeCheckpointId ?? null,
           updatedAt: clientState.updatedAt ?? previousState?.updatedAt ?? this.now(),
         });
@@ -886,6 +952,8 @@ export function createBrowserAssistService(options: CreateBrowserAssistServiceOp
           runtimeTargetId: openReceipt.runtimeTargetId,
           currentTargetUrl: openReceipt.currentTargetUrl,
           lastOpenedUrl: openReceipt.lastOpenedUrl,
+          inspection: openReceipt.inspection,
+          snapshotContext: openReceipt.snapshotContext,
           activeCheckpointId: activeCheckpoint.id,
           updatedAt: openReceipt.openedAt,
         }),
@@ -1131,6 +1199,8 @@ async function handoffRuntimeCheckpoint(
     currentTargetUrl: previousState.currentTargetUrl || input.session.target.entryUrl,
     lastOpenedUrl: previousState.lastOpenedUrl || input.session.target.entryUrl,
     activeCheckpointId: input.nextCheckpoint ? input.nextCheckpoint.id : null,
+    inspection: previousState.inspection,
+    snapshotContext: previousState.snapshotContext,
     updatedAt: input.handedOffAt,
   });
 }
@@ -1171,6 +1241,7 @@ function normalizeRuntimeReceipt(
     currentTargetUrl: receipt?.currentTargetUrl || context.target.entryUrl,
     lastOpenedUrl: receipt?.lastOpenedUrl || targetUrl,
     inspection: receipt?.inspection,
+    snapshotContext: receipt?.snapshotContext,
     activeCheckpointId: receipt?.activeCheckpointId || context.activeCheckpoint.id,
   });
 }
@@ -1187,12 +1258,15 @@ function normalizeRuntimeState(
     currentTargetUrl: runtimeState?.currentTargetUrl || context.session.target.entryUrl,
     lastOpenedUrl: runtimeState?.lastOpenedUrl || runtimeState?.currentTargetUrl || context.session.target.entryUrl,
     inspection: runtimeState?.inspection,
+    snapshotContext: runtimeState?.snapshotContext,
     activeCheckpointId: activeCheckpoint ? activeCheckpoint.id : null,
     updatedAt: runtimeState?.updatedAt || context.handedOffAt || context.session.updatedAt,
   });
 }
 
 function createRuntimeReceipt(input: BrowserAssistOpenReceipt): BrowserAssistOpenReceipt {
+  const inspection = normalizeBrowserHostInspectionMetadata(input.inspection);
+  const snapshotContext = normalizeSnapshotContext(input.snapshotContext ?? inspection?.snapshotContext);
   return {
     sessionId: input.sessionId,
     targetUrl: input.targetUrl,
@@ -1201,22 +1275,111 @@ function createRuntimeReceipt(input: BrowserAssistOpenReceipt): BrowserAssistOpe
     runtimeTargetId: input.runtimeTargetId,
     currentTargetUrl: input.currentTargetUrl,
     lastOpenedUrl: input.lastOpenedUrl,
-    inspection: input.inspection,
+    inspection: inspection ? { ...inspection, snapshotContext: snapshotContext ?? inspection.snapshotContext } : undefined,
+    snapshotContext,
     activeCheckpointId: input.activeCheckpointId,
     updatedAt: input.updatedAt,
   };
 }
 
 function createRuntimeState(input: BrowserAssistRuntimeState): BrowserAssistRuntimeState {
+  const inspection = normalizeBrowserHostInspectionMetadata(input.inspection);
+  const snapshotContext = normalizeSnapshotContext(input.snapshotContext ?? inspection?.snapshotContext);
   return {
     sessionId: input.sessionId,
     transport: input.transport,
     runtimeTargetId: input.runtimeTargetId,
     currentTargetUrl: input.currentTargetUrl,
     lastOpenedUrl: input.lastOpenedUrl,
-    inspection: input.inspection,
+    inspection: inspection ? { ...inspection, snapshotContext: snapshotContext ?? inspection.snapshotContext } : undefined,
+    snapshotContext,
     activeCheckpointId: input.activeCheckpointId ?? null,
     updatedAt: input.updatedAt,
+  };
+}
+
+function normalizeBrowserHostInspectionMetadata(
+  inspection: BrowserHostInspectionMetadata | null | undefined,
+): BrowserHostInspectionMetadata | undefined {
+  if (!inspection) return undefined;
+  const snapshotContext = normalizeSnapshotContext(inspection.snapshotContext);
+  return {
+    source: inspection.source,
+    title: inspection.title,
+    url: inspection.url,
+    normalizedUrl: inspection.normalizedUrl,
+    textSnippet: inspection.textSnippet,
+    capturedAt: inspection.capturedAt,
+    snapshotContext,
+  };
+}
+
+function createSnapshotContext(input: {
+  artifactId: string;
+  version: string;
+  capturedAt?: string;
+}): BrowserHostSnapshotContext {
+  return {
+    artifact: {
+      artifactId: input.artifactId,
+      version: input.version,
+      capturedAt: input.capturedAt,
+    },
+  };
+}
+
+function normalizeSnapshotContext(
+  snapshotContext: BrowserHostSnapshotContext | null | undefined,
+): BrowserHostSnapshotContext | undefined {
+  const artifactId = String(snapshotContext?.artifact?.artifactId || '').trim();
+  const version = String(snapshotContext?.artifact?.version || '').trim();
+  if (!artifactId || !version) return undefined;
+  const capturedAt = typeof snapshotContext?.artifact?.capturedAt === 'string' && snapshotContext.artifact.capturedAt.trim()
+    ? snapshotContext.artifact.capturedAt.trim()
+    : undefined;
+  return {
+    artifact: {
+      artifactId,
+      version,
+      capturedAt,
+    },
+  };
+}
+
+function resolveRuntimeSnapshotContext(
+  runtimeState: BrowserAssistRuntimeState | null | undefined,
+): BrowserHostSnapshotContext | undefined {
+  return normalizeSnapshotContext(runtimeState?.snapshotContext ?? runtimeState?.inspection?.snapshotContext);
+}
+
+function createSnapshotRefReadiness(
+  snapshotRequirement: BrowserHostActionSnapshotRequirement,
+  currentSnapshotContext: BrowserHostSnapshotContext | undefined,
+  requestedSnapshotContext: BrowserHostSnapshotContext | undefined,
+): BrowserHostSnapshotRefReadiness {
+  if (snapshotRequirement === 'none') {
+    return { freshness: 'not-required' };
+  }
+  if (!currentSnapshotContext) {
+    return { freshness: 'missing_runtime_snapshot', requested: requestedSnapshotContext };
+  }
+  if (!requestedSnapshotContext) {
+    return { freshness: 'missing_requested_snapshot', current: currentSnapshotContext };
+  }
+  if (
+    currentSnapshotContext.artifact.artifactId === requestedSnapshotContext.artifact.artifactId
+    && currentSnapshotContext.artifact.version === requestedSnapshotContext.artifact.version
+  ) {
+    return {
+      freshness: 'current',
+      current: currentSnapshotContext,
+      requested: requestedSnapshotContext,
+    };
+  }
+  return {
+    freshness: 'stale',
+    current: currentSnapshotContext,
+    requested: requestedSnapshotContext,
   };
 }
 
@@ -1269,26 +1432,35 @@ function createActionReadiness(
   overrides: Partial<BrowserHostActionReadiness> = {},
 ): BrowserHostActionReadiness {
   const preconditions = resolveActionPreconditions(input);
+  const currentSnapshotContext = resolveRuntimeSnapshotContext(runtimeState);
+  const requestedSnapshotContext = normalizeSnapshotContext(input.snapshotContext);
   return {
     preconditions,
     target: runtimeState?.runtimeTargetId ? 'ready' : 'missing',
     inspection: preconditions.inspection === 'none' ? 'not-required' : runtimeState?.inspection ? 'present' : 'missing',
-    snapshot: preconditions.snapshot === 'none' ? 'not-required' : runtimeState?.inspection ? 'present' : 'missing',
+    snapshot: preconditions.snapshot === 'none' ? 'not-required' : currentSnapshotContext ? 'present' : 'missing',
+    snapshotRef: createSnapshotRefReadiness(preconditions.snapshot, currentSnapshotContext, requestedSnapshotContext),
+    snapshotArtifact: currentSnapshotContext?.artifact,
+    expectedSnapshotArtifact: requestedSnapshotContext?.artifact,
     ...cloneValue(overrides),
   };
 }
 
-function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
+function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; snapshotContext?: BrowserHostSnapshotContext; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
+  const runtimeSnapshotContext = normalizeSnapshotContext(details.snapshotContext ?? resolveRuntimeSnapshotContext(input.runtimeState ?? null));
   return {
     actionId: `${input.sessionId}:${details.runtimeTargetId ?? 'no-target'}:${input.action.kind}:${details.actedAt}`,
     sessionId: input.sessionId,
     runtimeTargetId: details.runtimeTargetId,
     action: cloneValue(input.action),
     locator: cloneValue(input.locator),
+    snapshotContext: runtimeSnapshotContext,
     readiness: cloneValue(details.readiness ?? createActionReadiness(input, input.runtimeState ?? null)),
     actedAt: details.actedAt,
     targetDescription: input.locator.description,
     confirmation: details.confirmation ? cloneValue(details.confirmation) : undefined,
+    snapshotArtifact: details.readiness?.snapshotArtifact ?? runtimeSnapshotContext?.artifact,
+    expectedSnapshotArtifact: details.readiness?.expectedSnapshotArtifact ?? input.expectedSnapshotArtifact ?? input.snapshotContext?.artifact,
   };
 }
 
@@ -1298,7 +1470,12 @@ function createDomActionFailure(input: { code: BrowserHostDomActionFailureCode; 
     code: input.code,
     message: input.message,
     retryable: input.retryable,
-    receipt: createDomActionReceipt(input.input, { runtimeTargetId: input.runtimeTargetId, readiness: input.readiness, actedAt: input.input.requestedAt ?? new Date().toISOString() }),
+    receipt: createDomActionReceipt(input.input, {
+      runtimeTargetId: input.runtimeTargetId,
+      readiness: input.readiness,
+      snapshotContext: input.readiness?.snapshotRef.current,
+      actedAt: input.input.requestedAt ?? new Date().toISOString(),
+    }),
   };
 }
 

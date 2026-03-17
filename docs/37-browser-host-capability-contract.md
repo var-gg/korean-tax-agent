@@ -234,8 +234,11 @@ Current implementation note:
 - `InMemoryOpenClawBrowserRelay` remains for tests/examples/smoke coverage,
 - T9 adds a generic audited DOM action contract on top of the read/inspect seam,
 - T10 adds a narrow host-agnostic action-readiness layer that states whether target binding, inspection context, and snapshot-ref context are required/optional/absent for a requested action,
+- T11 upgrades snapshot-backed inspection/ref context into a first-class artifact (`snapshotContext.artifact`) with explicit `artifactId`, `version`, and `capturedAt`,
+- snapshot-backed action requests should echo the expected snapshot artifact when they are acting on `aria-ref` locators, and receipts should record the snapshot artifact actually used,
+- ref freshness should be evaluated against snapshot artifact identity/version rather than adapter-local inspection heuristics,
 - the first OpenClaw action surface is intentionally narrow: `click`, `fill`, and `press` using `aria-ref` locators only,
 - action execution is capability-gated and returns explicit success/failure receipts rather than silently mutating workflow state,
-- `aria-ref` failures should distinguish `target_not_found`, `missing_snapshot_context`, `stale_ref`, and `ambiguous_ref` instead of collapsing into generic relay failure.
+- `aria-ref` failures should distinguish `target_not_found`, `missing_snapshot_context`, `missing_expected_snapshot_artifact`, `snapshot_mismatch`, `stale_ref`, and `ambiguous_ref` instead of collapsing into generic relay failure.
 
 That keeps the product direction host-agnostic while still letting OpenClaw be the first real implementation.

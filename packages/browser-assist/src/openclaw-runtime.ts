@@ -9,7 +9,7 @@ import type {
   OpenClawRelayCheckpointHandoffRequest,
   OpenClawRelayOpenRequest,
 } from './openclaw.js';
-import type { BrowserHostDomActionRequest } from './index.js';
+import type { BrowserHostDomActionRequest, BrowserHostSnapshotContext } from './index.js';
 
 export interface OpenClawBrowserControlServerClientOptions {
   baseUrl: string;
@@ -118,6 +118,8 @@ export class OpenClawBrowserControlServerClient {
       snapshotInspection: true,
       checkpointHandoff: true,
       domActions: true,
+      actionReadiness: true,
+      snapshotRefLocators: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
@@ -167,6 +169,7 @@ export class OpenClawBrowserControlServerClient {
     const text = extractSnapshotText(snapshot);
     const url = normalizeString(snapshot?.url) ?? normalizeString(snapshot?.page?.url);
     const title = normalizeString(snapshot?.title) ?? normalizeString(snapshot?.page?.title) ?? normalizeString(snapshot?.documentTitle);
+    const capturedAt = normalizeString(snapshot?.capturedAt) ?? new Date().toISOString();
     return {
       targetId: input.targetId,
       url,
@@ -179,7 +182,8 @@ export class OpenClawBrowserControlServerClient {
         url: url ?? undefined,
         normalizedUrl: url ?? undefined,
         textSnippet: text ?? undefined,
-        capturedAt: new Date().toISOString(),
+        capturedAt,
+        snapshotContext: createOpenClawSnapshotContext(snapshot, input.targetId, capturedAt),
       },
     } satisfies OpenClawBrowserToolClientTarget;
   }
@@ -191,6 +195,20 @@ export class OpenClawBrowserControlServerClient {
   async executeDomAction(input: BrowserHostDomActionRequest & { runtimeTargetId: string }) {
     if (input.locator.kind !== 'aria-ref') {
       throw createError('OPENCLAW_LOCATOR_UNSUPPORTED', `OpenClaw browser control server action bridge only supports aria-ref locators, not ${input.locator.kind}.`);
+    }
+    const currentSnapshotContext = resolveRuntimeSnapshotContext(input.runtimeState);
+    const requestedSnapshotContext = normalizeSnapshotContext(input.snapshotContext);
+    if (!currentSnapshotContext) {
+      throw createError('OPENCLAW_MISSING_SNAPSHOT_CONTEXT', 'OpenClaw aria-ref actions require a current snapshot artifact context before execution.');
+    }
+    if (!requestedSnapshotContext) {
+      throw createError('OPENCLAW_MISSING_SNAPSHOT_CONTEXT', 'OpenClaw aria-ref actions require explicit snapshot context tied to the aria-ref before execution.');
+    }
+    if (
+      currentSnapshotContext.artifact.artifactId !== requestedSnapshotContext.artifact.artifactId
+      || currentSnapshotContext.artifact.version !== requestedSnapshotContext.artifact.version
+    ) {
+      throw createError('OPENCLAW_STALE_REF', `OpenClaw aria-ref ${input.locator.ref} is stale for snapshot ${currentSnapshotContext.artifact.artifactId}@${currentSnapshotContext.artifact.version}.`);
     }
     const body: Record<string, unknown> = {
       targetId: input.runtimeTargetId,
@@ -305,4 +323,40 @@ function extractSnapshotText(snapshot: any): string | null {
   const nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : Array.isArray(snapshot.elements) ? snapshot.elements : [];
   const parts = nodes.flatMap((node: any) => [node?.name, node?.text, node?.value]).filter((value: unknown) => typeof value === 'string' && value.trim());
   return parts.length > 0 ? parts.join(' ').slice(0, 4000) : null;
+}
+
+function createOpenClawSnapshotContext(snapshot: any, targetId: string, capturedAt: string): BrowserHostSnapshotContext {
+  const artifactId = normalizeString(snapshot?.snapshotId)
+    ?? normalizeString(snapshot?.snapshot?.id)
+    ?? normalizeString(snapshot?.artifactId)
+    ?? `snapshot:${targetId}`;
+  const version = normalizeString(snapshot?.snapshotVersion)
+    ?? normalizeString(snapshot?.snapshot?.version)
+    ?? normalizeString(snapshot?.version)
+    ?? normalizeString(snapshot?.epoch)
+    ?? capturedAt;
+  return {
+    artifact: {
+      artifactId,
+      version,
+      capturedAt,
+    },
+  };
+}
+
+function normalizeSnapshotContext(snapshotContext: BrowserHostSnapshotContext | null | undefined): BrowserHostSnapshotContext | undefined {
+  const artifactId = normalizeString(snapshotContext?.artifact?.artifactId);
+  const version = normalizeString(snapshotContext?.artifact?.version);
+  if (!artifactId || !version) return undefined;
+  return {
+    artifact: {
+      artifactId,
+      version,
+      capturedAt: normalizeString(snapshotContext?.artifact?.capturedAt),
+    },
+  };
+}
+
+function resolveRuntimeSnapshotContext(runtimeState: BrowserHostDomActionRequest['runtimeState']): BrowserHostSnapshotContext | undefined {
+  return normalizeSnapshotContext(runtimeState?.snapshotContext ?? runtimeState?.inspection?.snapshotContext);
 }
