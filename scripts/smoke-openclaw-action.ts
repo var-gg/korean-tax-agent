@@ -113,6 +113,8 @@ async function main() {
   if (!success.ok) throw new Error('expected success receipt');
   assert.equal(success.receipt.runtimeTargetId, 'openclaw-tab:session-openclaw-action-smoke');
   assert.equal(success.receipt.readiness.snapshot, 'present');
+  assert.equal(success.receipt.readiness.snapshotRef.freshness, 'current');
+  assert.equal(success.receipt.snapshotContext?.artifact.artifactId, 'snapshot:action-smoke');
   assert.equal(locatorFailure.code, 'locator_unsupported');
 
   console.log(JSON.stringify({

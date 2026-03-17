@@ -66,6 +66,13 @@ async function main() {
                 normalizedUrl: 'https://hometax.go.kr/reconnect/ready',
                 textSnippet: '신고서 제출 화면',
                 capturedAt: '2026-03-16T00:00:05.000Z',
+                snapshotContext: {
+                  artifact: {
+                    artifactId: 'snapshot:openclaw-tab:session-reconnect:2',
+                    version: 'snapshot-v1',
+                    capturedAt: '2026-03-16T00:00:05.000Z',
+                  },
+                },
               },
               attached: true,
               available: true,
@@ -106,6 +113,8 @@ async function main() {
   assert.equal(status.session.runtimeState.inspection?.title, 'HomeTax ready');
   assert.equal(status.session.runtimeState.inspection?.source, 'snapshot');
   assert.equal(status.session.runtimeState.inspection?.textSnippet, '신고서 제출 화면');
+  assert.equal(status.session.runtimeState.snapshotContext?.artifact.artifactId, 'snapshot:openclaw-tab:session-reconnect:2');
+  assert.equal(status.session.runtimeState.snapshotContext?.artifact.version, 'snapshot-v1');
 
   console.log(JSON.stringify({
     ok: true,
@@ -113,6 +122,8 @@ async function main() {
     reboundTargetId: status.session.runtimeState.runtimeTargetId,
     title: status.session.runtimeState.inspection?.title,
     inspectionSource: status.session.runtimeState.inspection?.source,
+    snapshotArtifactId: status.session.runtimeState.snapshotContext?.artifact.artifactId,
+    snapshotVersion: status.session.runtimeState.snapshotContext?.artifact.version,
   }, null, 2));
 }
 

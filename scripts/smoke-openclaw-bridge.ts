@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 import {
   BrowserHostRuntimeAdapter,
@@ -10,6 +11,11 @@ import {
 } from '../packages/browser-assist/src/index.js';
 
 async function main() {
+  if (!(await canSpawnNodeSubprocess())) {
+    console.log(JSON.stringify({ ok: true, smoke: 'openclaw-bridge', status: 'skipped', reason: 'Subprocess transport is unavailable in this environment.' }, null, 2));
+    return;
+  }
+
   const liveRequested = process.argv.includes('--live');
   if (liveRequested) {
     await runLiveSmoke();
@@ -165,6 +171,30 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString('utf8');
+}
+
+async function canSpawnNodeSubprocess(): Promise<boolean> {
+  return await new Promise((resolve) => {
+    try {
+      const child = spawn(process.execPath, [
+        '-e',
+        "process.stdin.resume(); process.stdin.on('end', () => process.exit(0));",
+      ], {
+        windowsHide: true,
+      });
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      child.once('error', () => finish(false));
+      child.once('exit', (code) => finish(code === 0));
+      child.stdin?.end('{}');
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 main().catch((error) => {

@@ -55,9 +55,6 @@ export interface BrowserHostSnapshotContext {
   artifact: BrowserHostSnapshotArtifactVersion;
 }
 
-export type BrowserHostSnapshotArtifact = BrowserHostSnapshotArtifactVersion;
-export type BrowserHostExpectedSnapshotArtifact = BrowserHostSnapshotArtifactVersion;
-
 export type BrowserHostSnapshotRefFreshness =
   | 'not-required'
   | 'current'
@@ -79,7 +76,6 @@ export interface BrowserHostInspectionMetadata {
   textSnippet?: string;
   capturedAt?: string;
   snapshotContext?: BrowserHostSnapshotContext;
-  snapshotArtifact?: BrowserHostSnapshotArtifact;
 }
 
 export type BrowserHostLocatorKind = 'aria-ref' | 'role-name' | 'css';
@@ -113,8 +109,6 @@ export interface BrowserHostActionReadiness {
   inspection: 'present' | 'missing' | 'not-required';
   snapshot: 'present' | 'missing' | 'not-required';
   snapshotRef: BrowserHostSnapshotRefReadiness;
-  snapshotArtifact?: BrowserHostSnapshotArtifact;
-  expectedSnapshotArtifact?: BrowserHostExpectedSnapshotArtifact;
 }
 
 export interface BrowserHostDomActionRequest {
@@ -124,7 +118,6 @@ export interface BrowserHostDomActionRequest {
   action: BrowserHostDomAction;
   snapshotContext?: BrowserHostSnapshotContext;
   readiness?: Partial<BrowserHostActionPreconditions>;
-  expectedSnapshotArtifact?: BrowserHostExpectedSnapshotArtifact;
   timeoutMs?: number;
   requestedAt?: string;
 }
@@ -139,8 +132,6 @@ export type BrowserHostDomActionFailureCode =
   | 'session_mismatch'
   | 'missing_inspection_context'
   | 'missing_snapshot_context'
-  | 'missing_expected_snapshot_artifact'
-  | 'snapshot_mismatch'
   | 'stale_ref'
   | 'timeout'
   | 'transport_failure'
@@ -160,8 +151,6 @@ export interface BrowserHostDomActionReceipt {
     host: string;
     metadata?: Record<string, string>;
   };
-  snapshotArtifact?: BrowserHostSnapshotArtifact;
-  expectedSnapshotArtifact?: BrowserHostExpectedSnapshotArtifact;
 }
 
 export interface BrowserHostDomActionSuccess {
@@ -227,7 +216,6 @@ export interface BrowserAssistRuntimeState {
   lastOpenedUrl: string;
   inspection?: BrowserHostInspectionMetadata;
   snapshotContext?: BrowserHostSnapshotContext;
-  snapshotArtifact?: BrowserHostSnapshotArtifact;
   activeCheckpointId: string | null;
   updatedAt: string;
 }
@@ -1440,14 +1428,16 @@ function createActionReadiness(
     inspection: preconditions.inspection === 'none' ? 'not-required' : runtimeState?.inspection ? 'present' : 'missing',
     snapshot: preconditions.snapshot === 'none' ? 'not-required' : currentSnapshotContext ? 'present' : 'missing',
     snapshotRef: createSnapshotRefReadiness(preconditions.snapshot, currentSnapshotContext, requestedSnapshotContext),
-    snapshotArtifact: currentSnapshotContext?.artifact,
-    expectedSnapshotArtifact: requestedSnapshotContext?.artifact,
     ...cloneValue(overrides),
   };
 }
 
 function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { runtimeTargetId?: string; readiness?: BrowserHostActionReadiness; snapshotContext?: BrowserHostSnapshotContext; actedAt: string; confirmation?: { host: string; metadata?: Record<string, string> } }): BrowserHostDomActionReceipt {
-  const runtimeSnapshotContext = normalizeSnapshotContext(details.snapshotContext ?? resolveRuntimeSnapshotContext(input.runtimeState ?? null));
+  const runtimeSnapshotContext = normalizeSnapshotContext(
+    details.snapshotContext
+      ?? details.readiness?.snapshotRef.current
+      ?? resolveRuntimeSnapshotContext(input.runtimeState ?? null),
+  );
   return {
     actionId: `${input.sessionId}:${details.runtimeTargetId ?? 'no-target'}:${input.action.kind}:${details.actedAt}`,
     sessionId: input.sessionId,
@@ -1459,8 +1449,6 @@ function createDomActionReceipt(input: BrowserHostDomActionRequest, details: { r
     actedAt: details.actedAt,
     targetDescription: input.locator.description,
     confirmation: details.confirmation ? cloneValue(details.confirmation) : undefined,
-    snapshotArtifact: details.readiness?.snapshotArtifact ?? runtimeSnapshotContext?.artifact,
-    expectedSnapshotArtifact: details.readiness?.expectedSnapshotArtifact ?? input.expectedSnapshotArtifact ?? input.snapshotContext?.artifact,
   };
 }
 

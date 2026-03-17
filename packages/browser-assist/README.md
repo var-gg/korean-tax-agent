@@ -74,7 +74,8 @@ First concrete host adapter implementation behind the generic browser-host seam.
 - Works with both `InMemoryOpenClawBrowserRelay` and `OpenClawBrowserToolTransport` while keeping broad DOM automation out of scope.
 - T9 adds a narrow audited action slice: `click`, `fill`, and `press` against generic locators, capability-gated and returned as explicit action results instead of hidden side effects.
 - T10 adds explicit host-agnostic action readiness/precondition reporting so action requests and receipts can say whether target, inspection, and snapshot-ref context were required, present, or missing.
-- The first honest OpenClaw action mapping only supports `aria-ref` locators; those actions now explicitly require snapshot-backed ref readiness and distinguish `missing_snapshot_context`, `stale_ref`, and `ambiguous_ref` from broader transport failures.
+- T11 upgrades snapshot-backed refs from “inspection is present” to an explicit versioned artifact context (`snapshotContext.artifact.{artifactId,version,capturedAt}`) that flows through inspection, runtime state, action requests, readiness, and receipts.
+- The first honest OpenClaw action mapping only supports `aria-ref` locators; those actions now explicitly require that request snapshot context match the bound runtime snapshot artifact/version and distinguish `missing_snapshot_context`, `stale_ref`, and `ambiguous_ref` from broader transport failures.
 
 ### `OpenClawBrowserToolTransport`
 
@@ -91,7 +92,7 @@ Thin real bridge/runtime path for T6.
 - `OpenClawBrowserRuntimeCommandClient` already spoke the T5 stdin/stdout command protocol seam.
 - `scripts/openclaw-browser-runtime.ts` is the concrete adapter entrypoint that reads that protocol and calls a live OpenClaw browser control server client.
 - `OpenClawBrowserControlServerClient` currently maps the stable slice onto OpenClaw browser server actions: `status`, `tabs`, `open`, and narrow `snapshot` reads.
-- `getRuntimeState()` and `handoffCheckpoint()` can now enrich runtime state with normalized inspection metadata (`inspection.source/title/url/normalizedUrl/textSnippet/capturedAt`) when the transport advertises inspection support.
+- `getRuntimeState()` and `handoffCheckpoint()` can now enrich runtime state with normalized inspection metadata (`inspection.source/title/url/normalizedUrl/textSnippet/capturedAt/snapshotContext`) when the transport advertises inspection support.
 - Reconnect and rebind now flow through a generic evidence-based target-resolution contract instead of OpenClaw-only heuristics; OpenClaw is just the first adapter implementing it.
 - `handoffCheckpoint()` remains state-preserving: it re-resolves/re-binds the bound target instead of inventing DOM automation.
 - Live use is environment-dependent: it requires `OPENCLAW_BROWSER_SERVER_URL` and usually a relay-attached Chrome target/profile if you want attach semantics.

@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   BrowserAssistSessionError,
@@ -20,6 +21,30 @@ import {
 function sequence<T>(values: T[]) {
   let index = 0;
   return () => values[Math.min(index++, values.length - 1)] as T;
+}
+
+async function canSpawnNodeSubprocess(): Promise<boolean> {
+  return await new Promise((resolve) => {
+    try {
+      const child = spawn(process.execPath, [
+        '-e',
+        "process.stdin.resume(); process.stdin.on('end', () => process.exit(0));",
+      ], {
+        windowsHide: true,
+      });
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      child.once('error', () => finish(false));
+      child.once('exit', (code) => finish(code === 0));
+      child.stdin?.end('{}');
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 describe('browser assist', () => {
@@ -443,6 +468,10 @@ describe('browser assist', () => {
   });
 
   it('runs the command-backed OpenClaw runtime client protocol', async () => {
+    if (!(await canSpawnNodeSubprocess())) {
+      return;
+    }
+
     const client = new OpenClawBrowserRuntimeCommandClient({
       command: process.execPath,
       args: [
@@ -747,7 +776,29 @@ if (input.operation === 'listTargets') {
               return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', attached: true, available: true };
             },
             async snapshotTarget(input) {
-              return { targetId: input.targetId, sessionId: 'session-openclaw-snapshot', url: 'https://hometax.go.kr/openclaw/snapshot/ready', title: 'Snapshot Ready', attached: true, available: true, inspection: { source: 'snapshot', title: 'Snapshot Ready', url: 'https://hometax.go.kr/openclaw/snapshot/ready', normalizedUrl: 'https://hometax.go.kr/openclaw/snapshot/ready', textSnippet: '납세 신고서 제출 화면', capturedAt: '2026-03-16T00:00:05.000Z' } };
+              return {
+                targetId: input.targetId,
+                sessionId: 'session-openclaw-snapshot',
+                url: 'https://hometax.go.kr/openclaw/snapshot/ready',
+                title: 'Snapshot Ready',
+                attached: true,
+                available: true,
+                inspection: {
+                  source: 'snapshot',
+                  title: 'Snapshot Ready',
+                  url: 'https://hometax.go.kr/openclaw/snapshot/ready',
+                  normalizedUrl: 'https://hometax.go.kr/openclaw/snapshot/ready',
+                  textSnippet: '납세 신고서 제출 화면',
+                  capturedAt: '2026-03-16T00:00:05.000Z',
+                  snapshotContext: {
+                    artifact: {
+                      artifactId: 'snapshot:openclaw-tab:session-openclaw-snapshot',
+                      version: 'snapshot-v1',
+                      capturedAt: '2026-03-16T00:00:05.000Z',
+                    },
+                  },
+                },
+              };
             },
             async handoffCheckpoint(input) {
               return { targetId: input.targetId, sessionId: input.sessionId, url: input.targetUrl, attached: true, available: true };
@@ -770,6 +821,13 @@ if (input.operation === 'listTargets') {
     expect(status.session.runtimeState.inspection?.title).toBe('Snapshot Ready');
     expect(status.session.runtimeState.inspection?.source).toBe('snapshot');
     expect(status.session.runtimeState.inspection?.textSnippet).toContain('납세 신고서 제출');
+    expect(status.session.runtimeState.snapshotContext).toEqual({
+      artifact: {
+        artifactId: 'snapshot:openclaw-tab:session-openclaw-snapshot',
+        version: 'snapshot-v1',
+        capturedAt: '2026-03-16T00:00:05.000Z',
+      },
+    });
   });
 
   it('surfaces unsupported OpenClaw runtime inspection explicitly', async () => {
@@ -836,10 +894,18 @@ if (input.operation === 'listTargets') {
         runtimeTargetId: 'browser-target:session-dom-action',
         locator: { kind: 'aria-ref', ref: 'e12' },
         action: { kind: 'click' },
+        snapshotContext: {
+          artifact: {
+            artifactId: 'browser-target:session-dom-action',
+            version: '2026-03-16T07:00:00.500Z',
+            capturedAt: '2026-03-16T07:00:00.500Z',
+          },
+        },
         readiness: {
           target: 'ready',
           inspection: 'present',
           snapshot: 'present',
+          snapshotRef: { freshness: 'current' },
           preconditions: { target: 'required', inspection: 'optional', snapshot: 'required', locatorNeedsSnapshotRef: true },
         },
         confirmation: { host: 'browser-host', metadata: { simulated: 'true' } },
@@ -917,10 +983,16 @@ if (input.operation === 'listTargets') {
         runtimeTargetId: 'openclaw-tab:session-openclaw-action',
         locator: { kind: 'aria-ref', ref: 'e44' },
         action: { kind: 'press', key: 'Enter' },
+        snapshotContext: {
+          artifact: {
+            artifactId: 'snapshot:openclaw-tab:session-openclaw-action',
+          },
+        },
         readiness: {
           target: 'ready',
           inspection: 'present',
           snapshot: 'present',
+          snapshotRef: { freshness: 'current' },
           preconditions: { target: 'required', inspection: 'required', snapshot: 'required', locatorNeedsSnapshotRef: true },
         },
         confirmation: { host: 'openclaw-browser-tool', metadata: { locatorKind: 'aria-ref', actionKind: 'press' } },
@@ -929,7 +1001,7 @@ if (input.operation === 'listTargets') {
     expect(unsupportedLocator).toEqual(expect.objectContaining({ ok: false, code: 'locator_unsupported' }));
   });
 
-  it('refuses aria-ref actions when required snapshot context is absent', async () => {
+  it('refuses aria-ref actions when inspection and runtime snapshot context are absent', async () => {
     const runtime = new BrowserHostRuntimeAdapter({
       executor: new OpenClawBrowserHostExecutor({
         relay: new InMemoryOpenClawBrowserRelay({ targetPrefix: 'openclaw-tab' }),
@@ -959,12 +1031,51 @@ if (input.operation === 'listTargets') {
           target: 'ready',
           inspection: 'missing',
           snapshot: 'missing',
+          snapshotRef: { freshness: 'missing_runtime_snapshot' },
         },
       },
     });
   });
 
-  it('distinguishes stale and ambiguous aria-ref failures', async () => {
+  it('refuses aria-ref actions when explicit snapshot request context is absent', async () => {
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: new OpenClawBrowserHostExecutor({
+        relay: new InMemoryOpenClawBrowserRelay({ targetPrefix: 'openclaw-tab' }),
+      }),
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-openclaw-missing-request-snapshot', 'checkpoint-auth-openclaw-missing-request-snapshot', 'checkpoint-review-openclaw-missing-request-snapshot']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/openclaw/action',
+      requestedBy: 'openclaw-runtime-test',
+    });
+
+    const result = await runtime.executeDomAction({
+      sessionId: started.session.id,
+      runtimeState: started.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'e12' },
+      action: { kind: 'click' },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'missing_snapshot_context',
+      receipt: {
+        readiness: {
+          target: 'ready',
+          inspection: 'present',
+          snapshot: 'present',
+          snapshotRef: { freshness: 'missing_requested_snapshot' },
+        },
+      },
+    });
+  });
+
+  it('distinguishes snapshot-version stale refs from ambiguous aria-ref failures', async () => {
     const runtime = new BrowserHostRuntimeAdapter({
       executor: new OpenClawBrowserHostExecutor({
         relay: new InMemoryOpenClawBrowserRelay({ targetPrefix: 'openclaw-tab' }),
@@ -984,9 +1095,16 @@ if (input.operation === 'listTargets') {
     const stale = await runtime.executeDomAction({
       sessionId: started.session.id,
       runtimeState: started.session.runtimeState,
-      locator: { kind: 'aria-ref', ref: 'stale-ref' },
+      locator: { kind: 'aria-ref', ref: 'e44' },
       action: { kind: 'click' },
-      snapshotContext: started.session.runtimeState?.snapshotContext,
+      snapshotContext: started.session.runtimeState?.snapshotContext
+        ? {
+            artifact: {
+              ...started.session.runtimeState.snapshotContext.artifact,
+              version: 'stale-v0',
+            },
+          }
+        : undefined,
     });
     const ambiguous = await runtime.executeDomAction({
       sessionId: started.session.id,
@@ -996,7 +1114,16 @@ if (input.operation === 'listTargets') {
       snapshotContext: started.session.runtimeState?.snapshotContext,
     });
 
-    expect(stale).toEqual(expect.objectContaining({ ok: false, code: 'stale_ref' }));
+    expect(stale).toMatchObject({
+      ok: false,
+      code: 'stale_ref',
+      receipt: {
+        readiness: {
+          snapshot: 'present',
+          snapshotRef: { freshness: 'stale' },
+        },
+      },
+    });
     expect(ambiguous).toEqual(expect.objectContaining({ ok: false, code: 'ambiguous_ref' }));
   });
 

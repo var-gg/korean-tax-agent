@@ -5,8 +5,6 @@ import type {
   BrowserAssistRuntimeState,
   BrowserHostActionReadiness,
   BrowserHostCapabilities,
-  BrowserHostExpectedSnapshotArtifact,
-  BrowserHostSnapshotArtifact,
   BrowserHostDomActionRequest,
   BrowserHostDomActionResult,
   BrowserHostExecutor,
