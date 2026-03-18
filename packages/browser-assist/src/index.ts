@@ -152,12 +152,25 @@ export interface BrowserHostInspectionLocatorCandidateGuidance {
   rationale?: string;
 }
 
+export type BrowserHostInspectionLocatorCandidateStalenessStatus = 'current' | 'stale' | 'unknown';
+export type BrowserHostInspectionLocatorCandidateStalenessReason = 'matches_bound_snapshot' | 'snapshot_turnover' | 'bound_snapshot_unavailable';
+
+export interface BrowserHostInspectionLocatorCandidateStaleness {
+  status: BrowserHostInspectionLocatorCandidateStalenessStatus;
+  tiedToCurrentSnapshot: boolean;
+  reason: BrowserHostInspectionLocatorCandidateStalenessReason;
+  candidateSnapshotContext: BrowserHostSnapshotContext;
+  currentSnapshotContext?: BrowserHostSnapshotContext;
+  detail?: string;
+}
+
 export interface BrowserHostInspectionLocatorCandidate {
   kind: 'snapshot-derived';
   label: string;
   locator: BrowserHostSnapshotRefLocator;
   snapshotContext: BrowserHostSnapshotContext;
   guidance: BrowserHostInspectionLocatorCandidateGuidance;
+  staleness: BrowserHostInspectionLocatorCandidateStaleness;
 }
 
 export type BrowserHostDomActionKind = 'click' | 'fill' | 'press';
@@ -475,6 +488,7 @@ export interface BrowserHostCapabilities {
   explicitSnapshotRebinding: boolean;
   snapshotLocatorProvenance: boolean;
   inspectionCandidateGuidance: boolean;
+  inspectionCandidateStaleness: boolean;
   supportedDomActionKinds: BrowserHostDomActionKind[];
   supportedLocatorKinds: BrowserHostLocatorKind[];
 }
@@ -1505,12 +1519,10 @@ function normalizeBrowserHostInspectionLocatorCandidate(
   const snapshotContext = normalizeSnapshotContext(candidate.snapshotContext ?? locator.provenance.snapshotContext ?? inspection.snapshotContext);
   if (!snapshotContext) return undefined;
   if (!snapshotContextsMatch(locator.provenance.snapshotContext, snapshotContext)) return undefined;
-  if (inspection.snapshotContext && !snapshotContextsMatch(inspection.snapshotContext, snapshotContext)) return undefined;
   const inspectionUrl = inspection.normalizedUrl ?? inspection.url;
   const provenanceUrl = locator.provenance.inspection.normalizedUrl ?? locator.provenance.inspection.url;
   if (inspection.source !== locator.provenance.inspection.source) return undefined;
   if (inspectionUrl && provenanceUrl && inspectionUrl !== provenanceUrl) return undefined;
-  if (inspection.capturedAt && locator.provenance.inspection.capturedAt && inspection.capturedAt !== locator.provenance.inspection.capturedAt) return undefined;
   const label = normalizeInspectionLocatorCandidateLabel(
     candidate.label,
     locator.description,
@@ -1536,6 +1548,37 @@ function normalizeBrowserHostInspectionLocatorCandidate(
       },
     },
     guidance: normalizeInspectionLocatorCandidateGuidance(candidate.guidance, label, locator),
+    staleness: normalizeInspectionLocatorCandidateStaleness(candidate.staleness, snapshotContext, inspection.snapshotContext),
+  };
+}
+
+function normalizeInspectionLocatorCandidateStaleness(
+  staleness: BrowserHostInspectionLocatorCandidateStaleness | null | undefined,
+  candidateSnapshotContext: BrowserHostSnapshotContext,
+  currentSnapshotContext: BrowserHostSnapshotContext | null | undefined,
+): BrowserHostInspectionLocatorCandidateStaleness {
+  const current = normalizeSnapshotContext(currentSnapshotContext);
+  if (!current) {
+    const detail = typeof staleness?.detail === 'string' && staleness.detail.trim() ? staleness.detail.trim() : 'Current bound snapshot artifact/version is unavailable, so candidate freshness cannot be compared.';
+    return { status: 'unknown', tiedToCurrentSnapshot: false, reason: 'bound_snapshot_unavailable', candidateSnapshotContext: cloneValue(candidateSnapshotContext), detail };
+  }
+  if (snapshotContextsMatch(candidateSnapshotContext, current)) {
+    return {
+      status: 'current',
+      tiedToCurrentSnapshot: true,
+      reason: 'matches_bound_snapshot',
+      candidateSnapshotContext: cloneValue(candidateSnapshotContext),
+      currentSnapshotContext: cloneValue(current),
+      detail: 'Candidate is still tied to the currently bound snapshot artifact/version.',
+    };
+  }
+  return {
+    status: 'stale',
+    tiedToCurrentSnapshot: false,
+    reason: 'snapshot_turnover',
+    candidateSnapshotContext: cloneValue(candidateSnapshotContext),
+    currentSnapshotContext: cloneValue(current),
+    detail: 'Candidate was derived from an older snapshot artifact/version than the one currently bound.',
   };
 }
 
@@ -1764,6 +1807,7 @@ function defaultBrowserHostCapabilities(overrides: Partial<BrowserHostCapabiliti
     explicitSnapshotRebinding: false,
     snapshotLocatorProvenance: false,
     inspectionCandidateGuidance: false,
+    inspectionCandidateStaleness: false,
     supportedDomActionKinds: [],
     supportedLocatorKinds: [],
     ...cloneValue(overrides),
@@ -1784,6 +1828,7 @@ function normalizeBrowserHostCapabilities(input: Partial<BrowserHostCapabilities
     explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? false,
     snapshotLocatorProvenance: input?.snapshotLocatorProvenance ?? false,
     inspectionCandidateGuidance: input?.inspectionCandidateGuidance ?? false,
+    inspectionCandidateStaleness: input?.inspectionCandidateStaleness ?? false,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [],
   };

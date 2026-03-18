@@ -534,6 +534,7 @@ export class OpenClawBrowserHostExecutor implements BrowserHostExecutor {
       explicitSnapshotRebinding: typeof this.transport.executeDomAction === 'function',
       snapshotLocatorProvenance: typeof this.transport.executeDomAction === 'function',
       inspectionCandidateGuidance: typeof this.transport.executeDomAction === 'function',
+      inspectionCandidateStaleness: typeof this.transport.executeDomAction === 'function',
       supportedDomActionKinds: typeof this.transport.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [],
       supportedLocatorKinds: typeof this.transport.executeDomAction === 'function' ? ['aria-ref'] satisfies BrowserHostLocatorKind[] : [],
     });
@@ -765,9 +766,10 @@ export class OpenClawBrowserToolTransport implements OpenClawBrowserTransport {
       explicitSnapshotRebinding: reported?.explicitSnapshotRebinding ?? (typeof this.client.executeDomAction === 'function'),
       snapshotLocatorProvenance: reported?.snapshotLocatorProvenance ?? (typeof this.client.executeDomAction === 'function'),
       inspectionCandidateGuidance: reported?.inspectionCandidateGuidance ?? (typeof this.client.executeDomAction === 'function'),
+      inspectionCandidateStaleness: reported?.inspectionCandidateStaleness ?? (typeof this.client.executeDomAction === 'function'),
       supportedDomActionKinds: reported?.supportedDomActionKinds ?? (typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : []),
       supportedLocatorKinds: reported?.supportedLocatorKinds ?? (typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : []),
-    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', explicitSnapshotRebinding: typeof this.client.executeDomAction === 'function', snapshotLocatorProvenance: typeof this.client.executeDomAction === 'function', inspectionCandidateGuidance: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
+    }, defaultOpenClawCapabilities({ runtimeInspection: true, snapshotInspection: typeof this.client.snapshotTarget === 'function', targetResolution: typeof this.client.listTargets === 'function', checkpointHandoff: typeof this.client.handoffCheckpoint === 'function', domActions: typeof this.client.executeDomAction === 'function', actionReadiness: typeof this.client.executeDomAction === 'function', snapshotRefLocators: typeof this.client.executeDomAction === 'function', explicitSnapshotRebinding: typeof this.client.executeDomAction === 'function', snapshotLocatorProvenance: typeof this.client.executeDomAction === 'function', inspectionCandidateGuidance: typeof this.client.executeDomAction === 'function', inspectionCandidateStaleness: typeof this.client.executeDomAction === 'function', supportedDomActionKinds: typeof this.client.executeDomAction === 'function' ? ['click', 'fill', 'press'] : [], supportedLocatorKinds: typeof this.client.executeDomAction === 'function' ? ['aria-ref'] : [] }));
   }
 
   async open(input: OpenClawRelayOpenRequest): Promise<OpenClawRelayTarget> {
@@ -847,6 +849,7 @@ export class InMemoryOpenClawBrowserRelay implements OpenClawBrowserRelay {
       snapshotRefLocators: true,
       snapshotLocatorProvenance: true,
       inspectionCandidateGuidance: true,
+      inspectionCandidateStaleness: true,
       supportedDomActionKinds: ['click', 'fill', 'press'],
       supportedLocatorKinds: ['aria-ref'],
     } satisfies Partial<OpenClawBrowserTransportCapabilities>;
@@ -1029,13 +1032,14 @@ function normalizeOpenClawCapabilities(input: Partial<OpenClawBrowserTransportCa
     explicitSnapshotRebinding: input?.explicitSnapshotRebinding ?? fallback.explicitSnapshotRebinding,
     snapshotLocatorProvenance: input?.snapshotLocatorProvenance ?? fallback.snapshotLocatorProvenance,
     inspectionCandidateGuidance: input?.inspectionCandidateGuidance ?? fallback.inspectionCandidateGuidance,
+    inspectionCandidateStaleness: input?.inspectionCandidateStaleness ?? fallback.inspectionCandidateStaleness,
     supportedDomActionKinds: Array.isArray(input?.supportedDomActionKinds) ? [...input.supportedDomActionKinds] : [...fallback.supportedDomActionKinds],
     supportedLocatorKinds: Array.isArray(input?.supportedLocatorKinds) ? [...input.supportedLocatorKinds] : [...fallback.supportedLocatorKinds],
   };
 }
 
 function defaultOpenClawCapabilities(overrides: Partial<OpenClawBrowserTransportCapabilities> = {}): OpenClawBrowserTransportCapabilities {
-  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, explicitSnapshotRebinding: false, snapshotLocatorProvenance: false, inspectionCandidateGuidance: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
+  return { hostAvailable: true, activeTarget: null, runtimeInspection: false, snapshotInspection: false, targetResolution: false, checkpointHandoff: false, domActions: false, actionReadiness: false, snapshotRefLocators: false, explicitSnapshotRebinding: false, snapshotLocatorProvenance: false, inspectionCandidateGuidance: false, inspectionCandidateStaleness: false, supportedDomActionKinds: [], supportedLocatorKinds: [], ...cloneValue(overrides) };
 }
 
 function defaultAttachedTargetResolver(targets: OpenClawRelayTarget[], input: OpenClawRelayAttachRequest): OpenClawRelayTarget | null {
@@ -1379,9 +1383,8 @@ function mergeInspectionMetadata(current: BrowserHostInspectionMetadata | undefi
     capturedAt: incoming.capturedAt ?? current.capturedAt ?? now(),
     snapshotContext: normalizeSnapshotContext(incoming.snapshotContext ?? current.snapshotContext),
   };
-  if (incoming.locatorCandidates) {
-    mergedInspection.locatorCandidates = cloneValue(incoming.locatorCandidates);
-  }
+  const mergedLocatorCandidates = normalizeInspectionLocatorCandidates(incoming.locatorCandidates ?? current.locatorCandidates, mergedInspection);
+  if (mergedLocatorCandidates) mergedInspection.locatorCandidates = mergedLocatorCandidates;
   return mergedInspection;
 }
 
@@ -1417,12 +1420,10 @@ function normalizeInspectionLocatorCandidate(
   const snapshotContext = normalizeSnapshotContext(candidate.snapshotContext ?? locator.provenance.snapshotContext ?? inspection.snapshotContext);
   if (!snapshotContext) return undefined;
   if (!snapshotContextsMatch(locator.provenance.snapshotContext, snapshotContext)) return undefined;
-  if (inspection.snapshotContext && !snapshotContextsMatch(inspection.snapshotContext, snapshotContext)) return undefined;
   const inspectionUrl = inspection.normalizedUrl ?? inspection.url;
   const provenanceUrl = locator.provenance.inspection.normalizedUrl ?? locator.provenance.inspection.url;
   if (inspection.source !== locator.provenance.inspection.source) return undefined;
   if (inspectionUrl && provenanceUrl && inspectionUrl !== provenanceUrl) return undefined;
-  if (inspection.capturedAt && locator.provenance.inspection.capturedAt && inspection.capturedAt !== locator.provenance.inspection.capturedAt) return undefined;
   const label = normalizeInspectionLocatorCandidateLabel(
     candidate.label,
     locator.description,
@@ -1448,7 +1449,24 @@ function normalizeInspectionLocatorCandidate(
       },
     },
     guidance: normalizeInspectionLocatorCandidateGuidance(candidate.guidance, label, locator),
+    staleness: normalizeInspectionLocatorCandidateStaleness(candidate.staleness, snapshotContext, inspection.snapshotContext),
   };
+}
+
+function normalizeInspectionLocatorCandidateStaleness(
+  staleness: BrowserHostInspectionLocatorCandidate['staleness'] | null | undefined,
+  candidateSnapshotContext: BrowserHostSnapshotContext,
+  currentSnapshotContext: BrowserHostSnapshotContext | null | undefined,
+): BrowserHostInspectionLocatorCandidate['staleness'] {
+  const current = normalizeSnapshotContext(currentSnapshotContext);
+  if (!current) {
+    const detail = typeof staleness?.detail === 'string' && staleness.detail.trim() ? staleness.detail.trim() : 'Current bound snapshot artifact/version is unavailable, so candidate freshness cannot be compared.';
+    return { status: 'unknown', tiedToCurrentSnapshot: false, reason: 'bound_snapshot_unavailable', candidateSnapshotContext: cloneValue(candidateSnapshotContext), detail };
+  }
+  if (snapshotContextsMatch(candidateSnapshotContext, current)) {
+    return { status: 'current', tiedToCurrentSnapshot: true, reason: 'matches_bound_snapshot', candidateSnapshotContext: cloneValue(candidateSnapshotContext), currentSnapshotContext: cloneValue(current), detail: 'Candidate is still tied to the currently bound snapshot artifact/version.' };
+  }
+  return { status: 'stale', tiedToCurrentSnapshot: false, reason: 'snapshot_turnover', candidateSnapshotContext: cloneValue(candidateSnapshotContext), currentSnapshotContext: cloneValue(current), detail: 'Candidate was derived from an older snapshot artifact/version than the one currently bound.' };
 }
 
 function normalizeInspectionLocatorCandidateGuidance(

@@ -59,6 +59,14 @@ function createSnapshotDerivedAriaRefCandidate(input: {
     kind: 'snapshot-derived' as const,
     label,
     snapshotContext: input.snapshotContext,
+    staleness: {
+      status: 'current' as const,
+      tiedToCurrentSnapshot: true,
+      reason: 'matches_bound_snapshot' as const,
+      candidateSnapshotContext: input.snapshotContext,
+      currentSnapshotContext: input.snapshotContext,
+      detail: 'Candidate is still tied to the currently bound snapshot artifact/version.',
+    },
     guidance: {
       manualSelectionOnly: true as const,
       ranking: {
@@ -248,7 +256,7 @@ describe('browser assist', () => {
     const runtime = new BrowserHostRuntimeAdapter({
       now: sequence(['2026-03-16T03:00:00.500Z', '2026-03-16T03:00:01.500Z', '2026-03-16T03:00:02.500Z']),
       client: {
-        async openTarget(input) {
+        async openTarget(input: any) {
           clientCalls.push({ method: 'openTarget', sessionId: input.sessionId });
           return {
             runtimeTargetId: `browser-target:${input.sessionId}`,
@@ -256,7 +264,7 @@ describe('browser assist', () => {
             currentTargetUrl: `${input.target.entryUrl}/login`,
           };
         },
-        async getRuntimeState(input) {
+        async getRuntimeState(input: any) {
           clientCalls.push({
             method: 'getRuntimeState',
             sessionId: input.sessionId,
@@ -314,7 +322,7 @@ describe('browser assist', () => {
     const runtime = new BrowserHostRuntimeAdapter({
       now: sequence(['2026-03-16T04:00:00.500Z', '2026-03-16T04:00:01.500Z']),
       client: {
-        async openTarget(input) {
+        async openTarget(input: any) {
           return {
             runtimeTargetId: `browser-target:${input.sessionId}`,
             currentTargetUrl: input.target.entryUrl,
@@ -467,7 +475,7 @@ describe('browser assist', () => {
             },
           ];
         },
-        async openTarget(input) {
+        async openTarget(input: any) {
           clientCalls.push(`openTarget:${input.url}`);
           return {
             targetId: 'openclaw-tab:session-openclaw-live',
@@ -697,6 +705,11 @@ if (input.operation === 'listTargets') {
               ranking: expect.objectContaining({ ordinal: 1, criteria: ['label-kind', 'evidence-fields', 'label', 'ref'] }),
               signals: expect.objectContaining({ labelKind: 'role-name', evidenceFields: ['title', 'textSnippet', 'description'] }),
             }),
+            staleness: expect.objectContaining({
+              status: 'current',
+              tiedToCurrentSnapshot: true,
+              reason: 'matches_bound_snapshot',
+            }),
           }),
           expect.objectContaining({
             kind: 'snapshot-derived',
@@ -900,7 +913,7 @@ if (input.operation === 'listTargets') {
             async listTargets() {
               return [];
             },
-            async openTarget(input) {
+            async openTarget(input: any) {
               return { targetId: `openclaw-tab:${input.sessionId}`, sessionId: input.sessionId, url: input.url, attached: true, available: true };
             },
             async getTarget(input) {
@@ -1037,7 +1050,7 @@ if (input.operation === 'listTargets') {
     };
     const runtime = new BrowserHostRuntimeAdapter({
       client: {
-        async openTarget(input) {
+        async openTarget(input: any) {
           return {
             transport: 'browser-host',
             runtimeTargetId: `browser-target:${input.sessionId}`,
@@ -1105,7 +1118,7 @@ if (input.operation === 'listTargets') {
     };
     const runtime = new BrowserHostRuntimeAdapter({
       client: {
-        async openTarget(input) {
+        async openTarget(input: any) {
           return {
             transport: 'browser-host',
             runtimeTargetId: `browser-target:${input.sessionId}`,
@@ -1172,7 +1185,7 @@ if (input.operation === 'listTargets') {
     ]);
   });
 
-  it('drops incoherent snapshot-derived inspection locator candidates during normalization', async () => {
+  it('retains snapshot-derived inspection locator candidates as stale when only the bound snapshot version turns over', async () => {
     const inspectionSnapshotContext = {
       artifact: {
         artifactId: 'snapshot:generic-candidate-mismatch',
@@ -1182,7 +1195,7 @@ if (input.operation === 'listTargets') {
     };
     const runtime = new BrowserHostRuntimeAdapter({
       client: {
-        async openTarget(input) {
+        async openTarget(input: any) {
           return {
             transport: 'browser-host',
             runtimeTargetId: `browser-target:${input.sessionId}`,
@@ -1235,7 +1248,16 @@ if (input.operation === 'listTargets') {
       requestedBy: 'browser-assist-test',
     });
 
-    expect(started.session.runtimeState.inspection?.locatorCandidates).toBeUndefined();
+    expect(started.session.runtimeState.inspection?.locatorCandidates).toEqual([
+      expect.objectContaining({
+        locator: expect.objectContaining({ ref: 'aria-old-1' }),
+        staleness: expect.objectContaining({
+          status: 'stale',
+          tiedToCurrentSnapshot: false,
+          reason: 'snapshot_turnover',
+        }),
+      }),
+    ]);
   });
 
   it('returns audited DOM action receipts through the generic in-memory host seam', async () => {
@@ -1435,7 +1457,7 @@ if (input.operation === 'listTargets') {
   it('capability-gates DOM actions before dispatch', async () => {
     const runtime = new BrowserHostRuntimeAdapter({
       client: {
-        async openTarget(input) {
+        async openTarget(input: any) {
           return {
             runtimeTargetId: `browser-target:${input.sessionId}`,
             currentTargetUrl: input.target.entryUrl,
@@ -1543,7 +1565,7 @@ if (input.operation === 'listTargets') {
               };
             },
             async listTargets() { return []; },
-            async openTarget(input) {
+            async openTarget(input: any) {
               return { targetId: `openclaw-tab:${input.sessionId}`, sessionId: input.sessionId, url: input.url, attached: true, available: true };
             },
             async getTarget(input) {
@@ -1588,7 +1610,7 @@ if (input.operation === 'listTargets') {
                 },
               };
             },
-            async executeDomAction(input) {
+            async executeDomAction(input: any) {
               dispatchedRefs.push(input.locator.kind === 'aria-ref' ? input.locator.ref : 'non-aria');
               return {
                 targetId: input.runtimeTargetId,
@@ -1668,7 +1690,7 @@ if (input.operation === 'listTargets') {
               };
             },
             async listTargets() { return []; },
-            async openTarget(input) {
+            async openTarget(input: any) {
               return { targetId: `openclaw-tab:${input.sessionId}`, sessionId: input.sessionId, url: input.url, attached: true, available: true };
             },
             async getTarget(input) {
@@ -1708,7 +1730,7 @@ if (input.operation === 'listTargets') {
                 },
               };
             },
-            async executeDomAction(input) {
+            async executeDomAction(input: any) {
               dispatchedRefs.push(input.locator.kind === 'aria-ref' ? input.locator.ref : 'non-aria');
               return {
                 targetId: input.runtimeTargetId,
@@ -2117,7 +2139,7 @@ if (input.operation === 'listTargets') {
             supportedLocatorKinds: ['aria-ref'],
           };
         },
-        async openTarget(input) {
+        async openTarget(input: any) {
           return {
             runtimeTargetId: `browser-target:${input.sessionId}`,
             currentTargetUrl: input.target.entryUrl,
@@ -2147,4 +2169,168 @@ if (input.operation === 'listTargets') {
 
     expect(result).toEqual(expect.objectContaining({ ok: false, code: 'action_unsupported' }));
   });
+
+  it('annotates retained snapshot-derived candidates as stale after snapshot turnover without auto-selection', async () => {
+    const initialSnapshotContext = { artifact: { artifactId: 'snapshot:turnover', version: 'v1', capturedAt: '2026-03-17T09:00:00.000Z' } };
+    const currentSnapshotContext = { artifact: { artifactId: 'snapshot:turnover', version: 'v2', capturedAt: '2026-03-17T09:05:00.000Z' } };
+    const staleCandidate = createSnapshotDerivedAriaRefCandidate({
+      ref: 'old-e12',
+      label: 'button: 이전 제출',
+      description: 'Old submit button',
+      snapshotContext: initialSnapshotContext,
+      inspection: {
+        source: 'snapshot',
+        url: 'https://hometax.go.kr/turnover',
+        normalizedUrl: 'https://hometax.go.kr/turnover',
+        capturedAt: '2026-03-17T09:00:00.000Z',
+      },
+      evidence: {
+        title: 'button: 이전 제출',
+        textSnippet: '이전 제출',
+        description: 'Old submit button',
+      },
+    });
+    const freshCandidate = createSnapshotDerivedAriaRefCandidate({
+      ref: 'fresh-e44',
+      label: 'button: 새 제출',
+      description: 'Fresh submit button',
+      snapshotContext: currentSnapshotContext,
+      inspection: {
+        source: 'snapshot',
+        url: 'https://hometax.go.kr/turnover',
+        normalizedUrl: 'https://hometax.go.kr/turnover',
+        capturedAt: '2026-03-17T09:05:00.000Z',
+      },
+      evidence: {
+        title: 'button: 새 제출',
+        textSnippet: '새 제출',
+        description: 'Fresh submit button',
+      },
+    });
+    const dispatchedRefs: string[] = [];
+    const runtime = new BrowserHostRuntimeAdapter({
+      executor: {
+        async getCapabilities() {
+          return {
+            hostAvailable: true,
+            activeTarget: true,
+            runtimeInspection: true,
+            snapshotInspection: true,
+            targetResolution: true,
+            checkpointHandoff: true,
+            domActions: true,
+            actionReadiness: true,
+            snapshotRefLocators: true,
+            explicitSnapshotRebinding: true,
+            snapshotLocatorProvenance: true,
+            inspectionCandidateGuidance: true,
+            inspectionCandidateStaleness: true,
+            supportedDomActionKinds: ['click'],
+            supportedLocatorKinds: ['aria-ref'],
+          };
+        },
+        async openTarget(input: any) {
+          return {
+            sessionId: input.sessionId,
+            runtimeTargetId: 'target-turnover',
+            targetUrl: input.targetUrl,
+            currentTargetUrl: input.targetUrl,
+            openedAt: '2026-03-17T09:00:00.000Z',
+            updatedAt: '2026-03-17T09:00:00.000Z',
+            transport: 'test-turnover',
+            inspection: {
+              source: 'snapshot',
+              url: input.targetUrl,
+              normalizedUrl: input.targetUrl,
+              capturedAt: '2026-03-17T09:00:00.000Z',
+              snapshotContext: initialSnapshotContext,
+              locatorCandidates: [staleCandidate],
+            },
+            snapshotContext: initialSnapshotContext,
+          };
+        },
+        async getRuntimeState(input: any) {
+          return {
+            sessionId: input.sessionId,
+            runtimeTargetId: 'target-turnover',
+            currentTargetUrl: input.target.entryUrl,
+            updatedAt: '2026-03-17T09:05:00.000Z',
+            inspection: {
+              source: 'snapshot',
+              url: input.target.entryUrl,
+              normalizedUrl: input.target.entryUrl,
+              capturedAt: '2026-03-17T09:05:00.000Z',
+              snapshotContext: currentSnapshotContext,
+              locatorCandidates: [staleCandidate, freshCandidate],
+            },
+            snapshotContext: currentSnapshotContext,
+          };
+        },
+        async executeDomAction(input: any) {
+          dispatchedRefs.push(input.rebinding?.locator.kind === 'aria-ref' ? input.rebinding.locator.ref : input.locator.kind === 'aria-ref' ? input.locator.ref : 'non-aria');
+          return {
+            ok: true as const,
+            receipt: {
+              actionId: 'action-turnover-1',
+              sessionId: input.sessionId,
+              runtimeTargetId: 'target-turnover',
+              targetUrl: 'https://hometax.go.kr/turnover',
+              action: input.action,
+              locator: input.rebinding?.locator ?? input.locator,
+              requestedLocator: input.locator,
+              actedAt: '2026-03-17T09:06:00.000Z',
+              readiness: {
+                preconditions: { target: 'required', inspection: 'optional', snapshot: 'required', locatorNeedsSnapshotRef: true },
+                target: 'ready', inspection: 'present', snapshot: 'present',
+                snapshotRef: { freshness: 'current', current: currentSnapshotContext, requested: input.snapshotContext },
+                rebinding: input.rebinding ? { status: 'accepted', submitted: input.rebinding, accepted: input.rebinding } : { status: 'not-provided' },
+              },
+              rebinding: {
+                provided: Boolean(input.rebinding),
+                accepted: Boolean(input.rebinding),
+                submission: input.rebinding,
+                usedLocator: input.rebinding?.locator,
+                usedSnapshotContext: input.rebinding?.snapshotContext,
+              },
+              host: 'test-turnover',
+            },
+          };
+        },
+      },
+    });
+    const service = createBrowserAssistService({
+      store: new InMemoryBrowserAssistSessionStore(),
+      runtime,
+      createId: sequence(['session-turnover', 'checkpoint-auth-turnover', 'checkpoint-review-turnover']),
+    });
+
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/turnover',
+      requestedBy: 'turnover-test',
+    });
+    const refreshed = await service.getHomeTaxAssistStatus(started.session.id);
+    const candidates = refreshed.session.runtimeState.inspection?.locatorCandidates ?? [];
+
+    expect(candidates.map((candidate) => ({ ref: candidate.locator.ref, status: candidate.staleness.status, tied: candidate.staleness.tiedToCurrentSnapshot }))).toEqual([
+      { ref: 'old-e12', status: 'stale', tied: false },
+      { ref: 'fresh-e44', status: 'current', tied: true },
+    ]);
+
+    const actionResult = await runtime.executeDomAction({
+      sessionId: refreshed.session.id,
+      runtimeState: refreshed.session.runtimeState,
+      locator: { kind: 'aria-ref', ref: 'old-e12', description: 'Old submit button' },
+      action: { kind: 'click' },
+      snapshotContext: currentSnapshotContext,
+      rebinding: {
+        snapshotContext: freshCandidate.snapshotContext,
+        locator: freshCandidate.locator,
+        previousLocator: { kind: 'aria-ref', ref: 'old-e12', description: 'Old submit button' },
+      },
+    });
+
+    expect(actionResult).toEqual(expect.objectContaining({ ok: true }));
+    expect(dispatchedRefs).toEqual(['fresh-e44']);
+  });
+
 });

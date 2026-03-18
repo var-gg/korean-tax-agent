@@ -39,6 +39,14 @@ function createSnapshotDerivedAriaRefCandidate(input: {
     kind: 'snapshot-derived' as const,
     label,
     snapshotContext: input.snapshotContext,
+    staleness: {
+      status: 'current' as const,
+      tiedToCurrentSnapshot: true,
+      reason: 'matches_bound_snapshot' as const,
+      candidateSnapshotContext: input.snapshotContext,
+      currentSnapshotContext: input.snapshotContext,
+      detail: 'Candidate is still tied to the currently bound snapshot artifact/version.',
+    },
     guidance: {
       manualSelectionOnly: true as const,
       ranking: {
