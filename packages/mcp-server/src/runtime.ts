@@ -6,14 +6,17 @@ import type {
   ClassificationDecision,
   ConsentRecord,
   CoverageGap,
+  EvidenceDocument,
   FilingFieldValue,
   FilingWorkspace,
   LedgerTransaction,
   ReviewItem,
+  SourceArtifact,
   SourceConnection,
   SyncAttempt,
   TaxpayerFact,
   WithholdingRecord,
+  AuditEvent,
 } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
@@ -102,6 +105,9 @@ export type RuntimeStore = {
   coverageGapsByWorkspace: Map<string, CoverageGap[]>;
   taxpayerFacts: Map<string, TaxpayerFact[]>;
   withholdingRecords: Map<string, WithholdingRecord[]>;
+  sourceArtifacts: Map<string, SourceArtifact>;
+  evidenceDocuments: Map<string, EvidenceDocument>;
+  auditEventsByWorkspace: Map<string, AuditEvent[]>;
   authCheckpoints: Map<string, AuthCheckpoint>;
   filingFieldValues: Map<string, FilingFieldValue[]>;
   transactions: Map<string, LedgerTransaction>;
@@ -119,6 +125,9 @@ export type CreateRuntimeOptions = {
   coverageGapsByWorkspace?: Record<string, Array<CoverageGap | string>>;
   taxpayerFacts?: TaxpayerFact[];
   withholdingRecords?: WithholdingRecord[];
+  sourceArtifacts?: SourceArtifact[];
+  evidenceDocuments?: EvidenceDocument[];
+  auditEvents?: AuditEvent[];
   authCheckpoints?: AuthCheckpoint[];
   filingFieldValues?: FilingFieldValue[];
   transactions?: LedgerTransaction[];
@@ -135,6 +144,9 @@ export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeS
     coverageGapsByWorkspace: new Map(Object.entries(options.coverageGapsByWorkspace ?? {}).map(([workspaceId, gaps]) => [workspaceId, normalizeCoverageGaps(workspaceId, gaps)])),
     taxpayerFacts: groupByWorkspace(options.taxpayerFacts ?? [], (fact) => fact.workspaceId),
     withholdingRecords: groupByWorkspace(options.withholdingRecords ?? [], (record) => record.workspaceId),
+    sourceArtifacts: new Map((options.sourceArtifacts ?? []).map((artifact) => [artifact.artifactId, artifact])),
+    evidenceDocuments: new Map((options.evidenceDocuments ?? []).map((document) => [document.documentId, document])),
+    auditEventsByWorkspace: groupByWorkspace(options.auditEvents ?? [], (event) => event.workspaceId),
     authCheckpoints: new Map((options.authCheckpoints ?? []).map((checkpoint) => [checkpoint.authCheckpointId, checkpoint])),
     filingFieldValues: new Map(),
     transactions: new Map((options.transactions ?? []).map((tx) => [tx.transactionId, tx])),
@@ -703,16 +715,44 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private normalizeLedger(input: NormalizeLedgerInput): MCPResponseEnvelope<NormalizeLedgerData> {
-    const result = taxLedgerNormalize(input, Array.from(this.store.transactions.values()));
+    const result = taxLedgerNormalize(input, {
+      transactions: Array.from(this.store.transactions.values()),
+      evidenceDocuments: Array.from(this.store.evidenceDocuments.values()),
+      withholdingRecords: this.getWithholdingRecords(input.workspaceId),
+      coverageGaps: this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
+    });
+
+    for (const artifact of result.data.normalizedArtifacts ?? []) {
+      this.store.sourceArtifacts.set(artifact.artifactId, artifact);
+    }
+    for (const document of result.data.normalizedDocuments ?? []) {
+      this.store.evidenceDocuments.set(document.documentId, document);
+    }
+    for (const transaction of result.data.normalizedTransactions ?? []) {
+      this.store.transactions.set(transaction.transactionId, transaction);
+    }
+
     const scopedTransactions = Array.from(this.store.transactions.values()).filter((tx) => tx.workspaceId === input.workspaceId);
     const taxpayerFacts = buildRuntimeTaxpayerFacts(input.workspaceId, scopedTransactions);
-    const withholdingRecords = buildRuntimeWithholdingRecords(input.workspaceId, scopedTransactions);
+    const withholdingRecords = mergeWithholdingRecords(this.getWithholdingRecords(input.workspaceId), result.data.withholdingRecordsCreated, result.data.withholdingRecordsUpdated);
+    const coverageGaps = mergeCoverageGaps(this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [], result.data.coverageGapsCreated);
 
     this.store.taxpayerFacts.set(input.workspaceId, taxpayerFacts);
     this.store.withholdingRecords.set(input.workspaceId, withholdingRecords);
+    this.store.coverageGapsByWorkspace.set(input.workspaceId, coverageGaps);
+    this.appendAuditEvent(input.workspaceId, result.audit, {
+      normalizationMode: input.normalizationMode ?? 'default',
+      artifactIds: input.artifactIds ?? [],
+      transactionCount: result.data.transactionCount,
+      documentCount: result.data.documentCount,
+      duplicateCandidateCount: result.data.duplicateCandidateCount,
+      withholdingCreated: result.data.withholdingRecordsCreated.length,
+      withholdingUpdated: result.data.withholdingRecordsUpdated.length,
+      coverageGapsCreated: result.data.coverageGapsCreated.length,
+    });
     this.reconcileCoverageGapsForWorkspace(input.workspaceId);
     this.syncWorkspaceSnapshot(input.workspaceId, {
-      status: result.data.transactionCount > 0 ? 'normalizing' : 'collecting',
+      status: result.data.transactionCount > 0 || result.data.documentCount > 0 ? 'normalizing' : 'collecting',
     });
     return result;
   }
@@ -1041,6 +1081,33 @@ export class InMemoryKoreanTaxMCPRuntime {
 
     this.store.coverageGapsByWorkspace.set(workspaceId, preservedGaps);
   }
+
+  private appendAuditEvent(workspaceId: string, audit: MCPResponseEnvelope['audit'] | undefined, metadata: Record<string, unknown>): void {
+    if (!audit) return;
+    const current = this.store.auditEventsByWorkspace.get(workspaceId) ?? [];
+    current.push({
+      workspaceId,
+      eventType: audit.eventType as AuditEvent['eventType'],
+      actorType: 'system',
+      eventId: audit.eventId,
+      summary: 'Ledger normalization completed.',
+      metadata,
+      createdAt: new Date().toISOString(),
+    });
+    this.store.auditEventsByWorkspace.set(workspaceId, current);
+  }
+}
+
+function mergeWithholdingRecords(existing: WithholdingRecord[], created: WithholdingRecord[], updated: WithholdingRecord[]): WithholdingRecord[] {
+  const merged = new Map(existing.map((record) => [record.withholdingRecordId, record] as const));
+  for (const record of [...created, ...updated]) merged.set(record.withholdingRecordId, record);
+  return Array.from(merged.values());
+}
+
+function mergeCoverageGaps(existing: CoverageGap[], created: CoverageGap[]): CoverageGap[] {
+  const merged = new Map(existing.map((gap) => [gap.gapId, gap] as const));
+  for (const gap of created) merged.set(gap.gapId, gap);
+  return Array.from(merged.values());
 }
 
 function humanizeToken(value: string): string {

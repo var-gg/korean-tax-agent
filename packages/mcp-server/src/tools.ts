@@ -19,10 +19,12 @@ import type {
   ConsentRecord,
   CoverageByDomain,
   CoverageGap,
+  EvidenceDocument,
   FilingCoverageDomain,
   LedgerTransaction,
   MappedReadinessState,
   ReviewItem,
+  SourceArtifact,
   SourceConnection,
   TaxpayerFact,
   WithholdingRecord,
@@ -540,51 +542,321 @@ export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelop
 
 export function taxLedgerNormalize(
   input: NormalizeLedgerInput,
-  transactions: LedgerTransaction[] = [],
+  state: {
+    transactions?: LedgerTransaction[];
+    evidenceDocuments?: EvidenceDocument[];
+    withholdingRecords?: WithholdingRecord[];
+    coverageGaps?: CoverageGap[];
+  } = {},
 ): MCPResponseEnvelope<NormalizeLedgerData> {
-  const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
+  const now = new Date().toISOString();
+  const scopedTransactions = (state.transactions ?? []).filter((tx) => tx.workspaceId === input.workspaceId);
+  const scopedDocuments = (state.evidenceDocuments ?? []).filter((doc) => doc.workspaceId === input.workspaceId);
+  const scopedWithholdingRecords = (state.withholdingRecords ?? []).filter((record) => record.workspaceId === input.workspaceId);
   const artifactIds = input.artifactIds ?? [];
-  const filteredTransactions = artifactIds.length > 0
-    ? scopedTransactions.filter((tx) => tx.artifactId !== undefined && artifactIds.includes(tx.artifactId))
-    : scopedTransactions;
+  const payloads = (input.extractedPayloads ?? []).filter((payload) => artifactIds.length === 0 || (payload.artifactId && artifactIds.includes(payload.artifactId)));
 
+  const normalizedArtifacts: SourceArtifact[] = [];
+  const normalizedDocuments = [...scopedDocuments];
+  const normalizedTransactions = [...scopedTransactions];
+  const withholdingRecordsCreated: WithholdingRecord[] = [];
+  const withholdingRecordsUpdated: WithholdingRecord[] = [];
+  const coverageGapsCreated: CoverageGap[] = [];
+
+  const documentRefMap = new Map<string, string>();
+  const transactionRefMap = new Map<string, string>();
+
+  for (const transaction of scopedTransactions) {
+    if (transaction.artifactId && transaction.sourceReference) {
+      transactionRefMap.set(`${transaction.artifactId}:${transaction.sourceReference}`, transaction.transactionId);
+    }
+  }
+  for (const document of scopedDocuments) {
+    documentRefMap.set(document.documentId, document.documentId);
+    if (document.artifactId) {
+      documentRefMap.set(`${document.artifactId}:${document.fileRef}`, document.documentId);
+    }
+  }
+
+  for (const payload of payloads) {
+    const artifactId = payload.artifactId ?? `artifact_${slugify(payload.sourceId ?? 'import')}_${normalizedArtifacts.length + 1}`;
+    normalizedArtifacts.push({
+      artifactId,
+      workspaceId: input.workspaceId,
+      sourceId: payload.sourceId ?? `source_import_${slugify(payload.sourceType ?? 'manual')}`,
+      artifactType: payload.sourceArtifact?.artifactType ?? 'json',
+      acquiredAt: now,
+      ingestedAt: now,
+      parseStatus: 'parsed',
+      parseState: 'parsed',
+      parseSummary: {
+        transactionCount: payload.transactions?.length ?? 0,
+        documentCount: payload.documents?.length ?? 0,
+        withholdingRecordCount: payload.withholdingRecords?.length ?? 0,
+      },
+      contentRef: payload.sourceArtifact?.contentRef,
+      storageRef: payload.sourceArtifact?.storageRef,
+      checksum: payload.sourceArtifact?.checksum,
+      contentHash: payload.sourceArtifact?.contentHash,
+      provenance: {
+        normalizationMode: input.normalizationMode ?? 'default',
+        ...payload.provenance,
+        sourceArtifact: payload.sourceArtifact?.provenance,
+      },
+    });
+
+    for (const document of payload.documents ?? []) {
+      const documentId = document.externalId
+        ? `doc_${slugify(document.externalId)}`
+        : `doc_${slugify(artifactId)}_${normalizedDocuments.length + 1}`;
+      const linkedTransactionIds = (document.linkedTransactionRefs ?? []).map((ref) => transactionRefMap.get(`${artifactId}:${ref}`) ?? transactionRefMap.get(ref) ?? ref);
+      const normalizedDocument: EvidenceDocument = {
+        documentId,
+        workspaceId: input.workspaceId,
+        sourceId: payload.sourceId ?? `source_import_${slugify(payload.sourceType ?? 'manual')}`,
+        artifactId,
+        documentType: document.documentType ?? inferDocumentTypeFromFields(document.extractedFields),
+        issuedAt: document.issuedAt,
+        issuer: document.issuer,
+        amount: document.amount,
+        currency: document.currency ?? 'KRW',
+        fileRef: document.fileRef,
+        extractionStatus: document.extractionStatus ?? 'extracted',
+        extractedFields: {
+          ...document.extractedFields,
+          normalizationProvenance: {
+            artifactId,
+            sourceId: payload.sourceId,
+            providedBy: 'external_agent',
+            payloadProvenance: payload.provenance,
+            documentProvenance: document.provenance,
+          },
+        },
+        linkedTransactionIds,
+      };
+      normalizedDocuments.push(normalizedDocument);
+      documentRefMap.set(documentId, documentId);
+      documentRefMap.set(`${artifactId}:${document.fileRef}`, documentId);
+      if (document.externalId) documentRefMap.set(`${artifactId}:${document.externalId}`, documentId);
+    }
+
+    for (const transaction of payload.transactions ?? []) {
+      const transactionId = transaction.externalId
+        ? `tx_${slugify(transaction.externalId)}`
+        : `tx_${slugify(artifactId)}_${normalizedTransactions.length + 1}`;
+      const evidenceRefs = (transaction.evidenceDocumentRefs ?? []).map((ref) => documentRefMap.get(`${artifactId}:${ref}`) ?? documentRefMap.get(ref) ?? ref);
+      const normalizedTransaction: LedgerTransaction = {
+        transactionId,
+        workspaceId: input.workspaceId,
+        sourceId: payload.sourceId ?? `source_import_${slugify(payload.sourceType ?? 'manual')}`,
+        artifactId,
+        occurredAt: transaction.occurredAt,
+        postedAt: transaction.postedAt,
+        amount: transaction.amount,
+        currency: transaction.currency ?? 'KRW',
+        normalizedDirection: transaction.normalizedDirection ?? inferDirection(transaction.description, transaction.amount),
+        counterparty: transaction.counterparty,
+        description: transaction.description,
+        rawCategory: transaction.rawCategory,
+        sourceReference: transaction.sourceReference ?? transaction.externalId,
+        evidenceRefs,
+        duplicateGroupId: transaction.duplicateHint ?? deriveDuplicateGroupId(transaction, artifactId),
+        reviewStatus: 'unreviewed',
+        createdAt: now,
+      };
+      normalizedTransactions.push(normalizedTransaction);
+      if (transaction.externalId) transactionRefMap.set(`${artifactId}:${transaction.externalId}`, transactionId);
+      if (normalizedTransaction.sourceReference) transactionRefMap.set(`${artifactId}:${normalizedTransaction.sourceReference}`, transactionId);
+    }
+
+    for (const withholding of payload.withholdingRecords ?? []) {
+      const withholdingRecord = buildNormalizedWithholdingRecord({
+        workspaceId: input.workspaceId,
+        artifactId,
+        payload,
+        withholding,
+        transactions: normalizedTransactions,
+        evidenceDocuments: normalizedDocuments,
+        existingRecords: scopedWithholdingRecords,
+        now,
+      });
+      const existingIndex = scopedWithholdingRecords.findIndex((record) => record.withholdingRecordId === withholdingRecord.withholdingRecordId);
+      if (existingIndex >= 0) {
+        scopedWithholdingRecords[existingIndex] = withholdingRecord;
+        withholdingRecordsUpdated.push(withholdingRecord);
+      } else {
+        scopedWithholdingRecords.push(withholdingRecord);
+        withholdingRecordsCreated.push(withholdingRecord);
+      }
+    }
+  }
+
+  const filteredTransactions = artifactIds.length > 0
+    ? normalizedTransactions.filter((tx) => tx.artifactId !== undefined && artifactIds.includes(tx.artifactId))
+    : normalizedTransactions;
+  const filteredDocuments = artifactIds.length > 0
+    ? normalizedDocuments.filter((doc) => doc.artifactId !== undefined && artifactIds.includes(doc.artifactId))
+    : normalizedDocuments;
   const duplicateCandidateCount = filteredTransactions.filter((tx) => Boolean(tx.duplicateGroupId)).length;
-  const documentIds = new Set(filteredTransactions.flatMap((tx) => tx.evidenceRefs));
-  const normalizationWarnings = filteredTransactions.length === 0
-    ? [{ code: 'no_artifacts_normalized', message: 'No imported artifacts matched the normalization request.', severity: 'medium' as const }]
+
+  coverageGapsCreated.push(...buildNormalizationCoverageGaps({
+    workspaceId: input.workspaceId,
+    transactions: filteredTransactions,
+    documents: filteredDocuments,
+    withholdingRecords: scopedWithholdingRecords,
+    existingGaps: state.coverageGaps ?? [],
+    now,
+  }));
+
+  const normalizationWarnings = filteredTransactions.length === 0 && filteredDocuments.length === 0
+    ? [{ code: 'no_artifacts_normalized', message: 'No imported artifacts or extracted payloads matched the normalization request.', severity: 'medium' as const }]
     : undefined;
   const audit = createAuditEvent({
     workspaceId: input.workspaceId,
     eventType: 'import_completed',
     actorType: 'system',
-    entityRefs: filteredTransactions.map((tx) => tx.transactionId),
-    summary: `Normalized ${filteredTransactions.length} transaction(s) into the canonical ledger.`,
+    entityRefs: [...filteredTransactions.map((tx) => tx.transactionId), ...filteredDocuments.map((doc) => doc.documentId)],
+    summary: `Normalized ${filteredTransactions.length} transaction(s), ${filteredDocuments.length} document(s), and ${withholdingRecordsCreated.length + withholdingRecordsUpdated.length} withholding record(s) into workflow state.`,
     metadata: {
       normalizationMode: input.normalizationMode ?? 'default',
       artifactIds: input.artifactIds,
+      extractedPayloadCount: payloads.length,
+      coverageGapCount: coverageGapsCreated.length,
     },
   });
+  const nextRecommendedAction = filteredTransactions.length > 0 || withholdingRecordsCreated.length > 0 || withholdingRecordsUpdated.length > 0
+    ? 'tax.classify.run'
+    : 'tax.sources.plan_collection';
 
   return {
     ok: true,
     status: 'completed',
     data: {
       transactionCount: filteredTransactions.length,
-      documentCount: documentIds.size,
+      documentCount: filteredDocuments.length,
       duplicateCandidateCount,
+      withholdingRecordsCreated,
+      withholdingRecordsUpdated,
+      coverageGapsCreated,
+      normalizedArtifacts,
+      normalizedDocuments: filteredDocuments,
+      normalizedTransactions: filteredTransactions,
     },
     warnings: normalizationWarnings,
     progress: {
       phase: 'ledger_normalization',
-      step: 'canonicalize_imported_artifacts',
+      step: payloads.length > 0 ? 'materialize_extracted_payloads' : 'canonicalize_imported_artifacts',
       percent: 100,
     },
-    nextRecommendedAction: 'tax.classify.run',
+    nextRecommendedAction,
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_ledger_normalized',
     },
   };
+}
+
+function slugify(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
+}
+
+function inferDocumentTypeFromFields(fields: Record<string, unknown> | undefined): EvidenceDocument['documentType'] {
+  const text = JSON.stringify(fields ?? {}).toLowerCase();
+  if (text.includes('withholding')) return 'withholding_doc';
+  if (text.includes('invoice')) return 'invoice';
+  if (text.includes('receipt')) return 'receipt';
+  return 'other';
+}
+
+function inferDirection(description: string | undefined, amount: number): LedgerTransaction['normalizedDirection'] {
+  const text = (description ?? '').toLowerCase();
+  if (/income|payment|consulting|invoice|service/.test(text)) return 'income';
+  if (/expense|purchase|receipt|supplies|laptop|equipment/.test(text)) return 'expense';
+  return amount >= 0 ? 'expense' : 'income';
+}
+
+function deriveDuplicateGroupId(transaction: { occurredAt: string; amount: number; counterparty?: string }, artifactId: string): string | undefined {
+  return `dup_${slugify(artifactId)}_${slugify(transaction.occurredAt.slice(0, 10))}_${Math.abs(transaction.amount)}_${slugify(transaction.counterparty ?? 'unknown')}`;
+}
+
+function buildNormalizedWithholdingRecord(input: {
+  workspaceId: string;
+  artifactId: string;
+  payload: NonNullable<NormalizeLedgerInput['extractedPayloads']>[number];
+  withholding: NonNullable<NonNullable<NormalizeLedgerInput['extractedPayloads']>[number]['withholdingRecords']>[number];
+  transactions: LedgerTransaction[];
+  evidenceDocuments: EvidenceDocument[];
+  existingRecords: WithholdingRecord[];
+  now: string;
+}): WithholdingRecord {
+  const payerName = input.withholding.payerName ?? input.payload.sourceId ?? 'unknown_payer';
+  const evidenceRefs = (input.withholding.evidenceDocumentRefs ?? []).map((ref) => input.evidenceDocuments.find((doc) => doc.documentId === ref || `${input.artifactId}:${doc.fileRef}` === `${input.artifactId}:${ref}`)?.documentId ?? ref);
+  const matchingIncome = input.transactions.find((tx) => tx.transactionId === input.withholding.incomeSourceRef || (tx.counterparty && tx.counterparty === payerName && tx.normalizedDirection === 'income'));
+  const recordId = input.withholding.externalId
+    ? `withholding_${slugify(input.withholding.externalId)}`
+    : matchingIncome
+      ? `withholding_${matchingIncome.transactionId}`
+      : `withholding_${slugify(input.artifactId)}_${slugify(payerName)}`;
+  const existing = input.existingRecords.find((record) => record.withholdingRecordId === recordId);
+  return {
+    withholdingRecordId: recordId,
+    workspaceId: input.workspaceId,
+    filingYear: input.withholding.filingYear ?? Number((matchingIncome?.occurredAt ?? input.now).slice(0, 4)),
+    incomeSourceRef: input.withholding.incomeSourceRef ?? matchingIncome?.transactionId,
+    payerName,
+    grossAmount: input.withholding.grossAmount ?? matchingIncome?.amount,
+    withheldTaxAmount: input.withholding.withheldTaxAmount,
+    localTaxAmount: input.withholding.localTaxAmount,
+    currency: input.withholding.currency ?? matchingIncome?.currency ?? 'KRW',
+    sourceType: input.withholding.sourceType ?? input.payload.sourceType ?? 'manual',
+    sourceOfTruth: 'imported',
+    extractionConfidence: input.withholding.extractionConfidence ?? 0.85,
+    reviewStatus: existing?.reviewStatus ?? 'review_required',
+    evidenceRefs,
+    capturedAt: input.now,
+  };
+}
+
+function buildNormalizationCoverageGaps(input: {
+  workspaceId: string;
+  transactions: LedgerTransaction[];
+  documents: EvidenceDocument[];
+  withholdingRecords: WithholdingRecord[];
+  existingGaps: CoverageGap[];
+  now: string;
+}): CoverageGap[] {
+  const existingKeys = new Set(input.existingGaps.map((gap) => `${gap.gapType}:${gap.affectedArea}:${gap.description}`));
+  const gaps: CoverageGap[] = [];
+  for (const tx of input.transactions.filter((item) => item.normalizedDirection === 'expense' && item.evidenceRefs.length === 0)) {
+    const description = `Expense transaction ${tx.transactionId} is missing supporting evidence.`;
+    const key = `missing_expense_evidence:expense_evidence:${description}`;
+    if (!existingKeys.has(key)) {
+      gaps.push({
+        gapId: `gap_${tx.transactionId}_missing_evidence`, workspaceId: input.workspaceId, gapType: 'missing_expense_evidence', severity: 'medium', description,
+        affectedArea: 'expense_evidence', affectedDomains: ['expenseEvidence'], materiality: 'medium', blocksEstimate: false, blocksDraft: true, blocksSubmission: true,
+        recommendedNextSource: 'receipt_upload', recommendedNextAction: 'tax.sources.plan_collection', relatedSourceIds: [tx.sourceId], sourceRefs: [tx.transactionId], state: 'open', createdAt: input.now, updatedAt: input.now,
+      });
+    }
+  }
+  for (const record of input.withholdingRecords.filter((item) => !item.incomeSourceRef)) {
+    const description = `Withholding record ${record.withholdingRecordId} is missing a matched income transaction.`;
+    const key = `missing_income_source:income_inventory:${description}`;
+    if (!existingKeys.has(key)) {
+      gaps.push({
+        gapId: `gap_${record.withholdingRecordId}_missing_income`, workspaceId: input.workspaceId, gapType: 'missing_income_source', severity: 'high', description,
+        affectedArea: 'income_inventory', affectedDomains: ['incomeInventory', 'withholdingPrepaidTax'], materiality: 'high', blocksEstimate: true, blocksDraft: true, blocksSubmission: true,
+        recommendedNextSource: 'bank_csv', recommendedNextAction: 'tax.sources.plan_collection', relatedSourceIds: [], sourceRefs: record.evidenceRefs, state: 'open', createdAt: input.now, updatedAt: input.now,
+      });
+    }
+  }
+  if ((input.transactions.some((tx) => tx.normalizedDirection === 'income') || input.withholdingRecords.length > 0) && !input.existingGaps.some((gap) => gap.gapType === 'missing_hometax_comparison')) {
+    gaps.push({
+      gapId: `gap_${input.workspaceId}_missing_hometax_comparison_normalize`, workspaceId: input.workspaceId, gapType: 'missing_hometax_comparison', severity: 'medium',
+      description: 'Normalized income and withholding state exists but HomeTax comparison has not been recorded yet.', affectedArea: 'submission_comparison', affectedDomains: ['submissionComparison'], materiality: 'medium',
+      blocksEstimate: false, blocksDraft: false, blocksSubmission: true, recommendedNextSource: 'hometax', recommendedNextAction: 'tax.filing.compare_with_hometax', relatedSourceIds: [], sourceRefs: input.documents.map((doc) => doc.documentId), state: 'open', createdAt: input.now, updatedAt: input.now,
+    });
+  }
+  return gaps;
 }
 
 export function taxProfileDetectFilingPath(

@@ -14,7 +14,7 @@ import { buildFilingAlertSenderBatch, discordFilingAlertChannel } from '../packa
 import { buildFilingAlertDispatchPlan } from '../packages/mcp-server/src/alert-transport.js';
 import { formatFilingSummaryForDiscord, formatFilingSummaryForReply } from '../packages/mcp-server/src/reply-formatters.js';
 import { decideFilingAlert, toFilingAlertSnapshot } from '../packages/mcp-server/src/status-alerts.js';
-import type { ClassificationDecision, ConsentRecord, LedgerTransaction, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
+import type { ClassificationDecision, ConsentRecord, EvidenceDocument, LedgerTransaction, SourceArtifact, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
   workspaceId: string;
@@ -23,6 +23,8 @@ const demo = rawDemo as {
   sources: SourceConnection[];
   syncAttempts: SyncAttempt[];
   coverageGaps: Array<{ description: string }>;
+  sourceArtifacts: SourceArtifact[];
+  evidenceDocuments: EvidenceDocument[];
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
 };
@@ -37,6 +39,8 @@ describe('mcp facade', () => {
       coverageGapsByWorkspace: {
         [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
       },
+      sourceArtifacts: demo.sourceArtifacts,
+      evidenceDocuments: demo.evidenceDocuments,
       transactions: demo.transactions,
       decisions: demo.decisions,
     });
@@ -103,6 +107,8 @@ describe('mcp facade', () => {
 
     expect(normalizeResult.ok).toBe(true);
     expect(normalizeResult.data.transactionCount).toBe(3);
+    expect(normalizeResult.data.documentCount).toBe(2);
+    expect(Array.isArray(normalizeResult.data.coverageGapsCreated)).toBe(true);
     expect(normalizeResult.nextRecommendedAction).toBe('tax.classify.run');
 
     const workspaceStatusResult = facade.invokeTool({

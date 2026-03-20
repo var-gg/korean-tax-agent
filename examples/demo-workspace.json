@@ -98,6 +98,59 @@
       "createdAt": "2026-03-10T08:05:00Z"
     }
   ],
+  "sourceArtifacts": [
+    {
+      "artifactId": "artifact_csv_1",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_bank_csv_demo_workspace_2025",
+      "artifactType": "csv",
+      "ingestedAt": "2026-03-10T08:00:00Z",
+      "parseStatus": "parsed",
+      "parseState": "parsed",
+      "contentRef": "upload://artifact_csv_1",
+      "provenance": {
+        "providedBy": "demo_seed"
+      }
+    }
+  ],
+  "evidenceDocuments": [
+    {
+      "documentId": "doc_receipt_2",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_bank_csv_demo_workspace_2025",
+      "artifactId": "artifact_csv_1",
+      "documentType": "receipt",
+      "issuedAt": "2025-07-18",
+      "issuer": "Electronics Store",
+      "amount": 1800000,
+      "currency": "KRW",
+      "fileRef": "upload://doc_receipt_2",
+      "extractionStatus": "extracted",
+      "extractedFields": {
+        "merchant": "Electronics Store",
+        "category": "equipment"
+      },
+      "linkedTransactionIds": ["tx_2"]
+    },
+    {
+      "documentId": "doc_invoice_3",
+      "workspaceId": "demo_workspace_2025",
+      "sourceId": "source_bank_csv_demo_workspace_2025",
+      "artifactId": "artifact_csv_1",
+      "documentType": "invoice",
+      "issuedAt": "2025-08-01",
+      "issuer": "Client A",
+      "amount": 450000,
+      "currency": "KRW",
+      "fileRef": "upload://doc_invoice_3",
+      "extractionStatus": "extracted",
+      "extractedFields": {
+        "payer": "Client A",
+        "serviceType": "consulting"
+      },
+      "linkedTransactionIds": ["tx_3"]
+    }
+  ],
   "transactions": [
     {
       "transactionId": "tx_1",

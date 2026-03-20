@@ -3,8 +3,10 @@ import { InMemoryKoreanTaxMCPRuntime } from '../packages/mcp-server/src/runtime.
 import type {
   ClassificationDecision,
   ConsentRecord,
+  EvidenceDocument,
   FilingWorkspace,
   LedgerTransaction,
+  SourceArtifact,
   SourceConnection,
   SyncAttempt,
 } from '../packages/core/src/types.js';
@@ -17,6 +19,8 @@ const demo = rawDemo as {
   sources: SourceConnection[];
   syncAttempts: SyncAttempt[];
   coverageGaps: Array<{ description: string }>;
+  sourceArtifacts: SourceArtifact[];
+  evidenceDocuments: EvidenceDocument[];
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
 };
@@ -34,6 +38,8 @@ const runtime = new InMemoryKoreanTaxMCPRuntime({
   coverageGapsByWorkspace: {
     [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
   },
+  sourceArtifacts: demo.sourceArtifacts,
+  evidenceDocuments: demo.evidenceDocuments,
   transactions: demo.transactions,
   decisions: demo.decisions,
 });
@@ -85,6 +91,7 @@ const normalizeResult = runtime.invoke('tax.ledger.normalize', {
 });
 assert(normalizeResult.status === 'completed', 'normalize should complete');
 assert(normalizeResult.data.transactionCount === 3, 'normalize should report all demo transactions');
+assert(normalizeResult.data.documentCount === 2, 'normalize should report linked demo documents');
 assert(normalizeResult.nextRecommendedAction === 'tax.classify.run', 'normalize should recommend classification');
 
 const detectResult = runtime.invoke('tax.profile.detect_filing_path', {

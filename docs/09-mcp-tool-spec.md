@@ -326,11 +326,19 @@ Input:
 - workspace id
 - optional artifact ids
 - normalization mode
+- optional structured extracted payloads from an external agent/runtime, including:
+  - artifact/upload refs
+  - extracted transactions
+  - extracted evidence documents
+  - extracted withholding/prepaid-tax records
 
 Output:
 - transaction/document counts
 - duplicate candidates
+- created/updated withholding records
+- created coverage gaps for missing evidence / missing income / missing comparison
 - normalization warnings
+- next action should naturally route to `tax.classify.run` when usable normalized state exists, otherwise additional collection
 
 #### `tax.ledger.list_transactions`
 Purpose:

@@ -20,6 +20,12 @@ import type {
   SyncAttemptState,
   TaxpayerFact,
   WithholdingRecord,
+  EvidenceDocument,
+  SourceArtifact,
+  NormalizedDirection,
+  DocumentType,
+  SourceType,
+  ExtractionStatus,
 } from '../../core/src/types.js';
 
 export type MCPWarning = {
@@ -227,16 +233,73 @@ export type ResumeSyncData = {
   nextCheckpointId?: string;
 };
 
+export type NormalizeLedgerExtractedPayload = {
+  artifactId?: string;
+  sourceId?: string;
+  sourceType?: SourceType | string;
+  sourceArtifact?: Partial<SourceArtifact>;
+  provenance?: Record<string, unknown>;
+  transactions?: Array<{
+    externalId?: string;
+    occurredAt: string;
+    postedAt?: string;
+    amount: number;
+    currency?: string;
+    normalizedDirection?: NormalizedDirection;
+    counterparty?: string;
+    description?: string;
+    rawCategory?: string;
+    sourceReference?: string;
+    evidenceDocumentRefs?: string[];
+    duplicateHint?: string;
+    provenance?: Record<string, unknown>;
+  }>;
+  documents?: Array<{
+    externalId?: string;
+    documentType?: DocumentType;
+    issuedAt?: string;
+    issuer?: string;
+    amount?: number;
+    currency?: string;
+    fileRef: string;
+    extractionStatus?: ExtractionStatus | string;
+    extractedFields?: Record<string, unknown>;
+    linkedTransactionRefs?: string[];
+    provenance?: Record<string, unknown>;
+  }>;
+  withholdingRecords?: Array<{
+    externalId?: string;
+    filingYear?: number;
+    incomeSourceRef?: string;
+    payerName?: string;
+    grossAmount?: number;
+    withheldTaxAmount: number;
+    localTaxAmount?: number;
+    currency?: string;
+    sourceType?: SourceType | string;
+    extractionConfidence?: number;
+    evidenceDocumentRefs?: string[];
+    provenance?: Record<string, unknown>;
+  }>;
+};
+
 export type NormalizeLedgerInput = {
   workspaceId: string;
   artifactIds?: string[];
-  normalizationMode?: 'default' | 'strict';
+  normalizationMode?: 'default' | 'strict' | 'append';
+  extractedPayloads?: NormalizeLedgerExtractedPayload[];
 };
 
 export type NormalizeLedgerData = {
   transactionCount: number;
   documentCount: number;
   duplicateCandidateCount: number;
+  withholdingRecordsCreated: WithholdingRecord[];
+  withholdingRecordsUpdated: WithholdingRecord[];
+  coverageGapsCreated: CoverageGap[];
+  normalizedArtifacts?: SourceArtifact[];
+  normalizedDocuments?: EvidenceDocument[];
+  normalizedTransactions?: import('../../core/src/types.js').LedgerTransaction[];
 };
 
 export type DetectFilingPathInput = {
