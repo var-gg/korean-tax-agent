@@ -131,6 +131,7 @@ describe('external AI agent integration contract', () => {
     expect(syncResult.status).toBe('awaiting_user_action');
     expect(syncResult.blockingReason).toBe('export_required');
     expectCallableNextAction(syncResult.nextRecommendedAction);
+    expect(syncResult.nextRecommendedAction).toBe('tax.sources.resume_sync');
 
     const resumeSyncResult = runtime.invoke('tax.sources.resume_sync', {
       sourceId: connectResult.data.sourceId,

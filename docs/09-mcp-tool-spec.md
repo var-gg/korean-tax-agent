@@ -177,14 +177,16 @@ Output:
 - created workspace info
 - initial config summary
 
-#### `tax.setup.list_connectors`
+#### `tax.sources.plan_collection`
 Purpose:
-- show available source connectors/import modes and their consent/auth requirements
+- recommend the next best source connections or collection actions for a workspace
+- surface available collection modes and likely consent/auth checkpoints through the planning response
 
 Output:
-- connector list
-- capability matrix
-- consent/auth notes
+- recommended next sources
+- expected value by source
+- likely user checkpoints
+- fallback path suggestions
 
 ### source planning
 
@@ -691,7 +693,7 @@ When the workflow is waiting for judgment rather than login:
 ## Recommended workflow sequence
 1. `tax.setup.inspect_environment`
 2. `tax.setup.init_config`
-3. `tax.setup.list_connectors`
+3. `tax.sources.plan_collection`
 4. `tax.sources.connect` / upload imports
 5. `tax.ledger.normalize`
 6. `tax.profile.detect_filing_path`
@@ -747,4 +749,6 @@ Minimum expected host methods:
 
 This spec intentionally includes some forward-looking tools.
 When a tool is documented here but not yet implemented in the runtime/facade, treat it as a contract gap or backlog item rather than as an already-supported capability.
+See [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md).
+og item rather than as an already-supported capability.
 See [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md).

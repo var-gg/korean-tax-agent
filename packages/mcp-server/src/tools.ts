@@ -479,7 +479,7 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<Sync
       step: 'await_export_or_auth_completion',
       percent: 25,
     },
-    nextRecommendedAction: 'tax.browser.resume_hometax_assist',
+    nextRecommendedAction: 'tax.sources.resume_sync',
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_sync_blocked',

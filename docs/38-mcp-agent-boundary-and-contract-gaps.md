@@ -71,7 +71,7 @@ Priority 1 — should be resolved before broadening scope further:
 - `tax.sources.plan_collection` (implemented as a function in `tools.ts`, but not exposed through runtime/facade contract dispatch)
 
 Priority 2 — keep as documented backlog until the runtime surface is ready:
-- `tax.setup.list_connectors`
+- `tax.sources.plan_collection`
 - `tax.sources.list`
 - `tax.sources.disconnect`
 - `tax.ledger.normalize`

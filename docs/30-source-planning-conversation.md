@@ -405,7 +405,7 @@ Sometimes source planning should collapse immediately into ingestion.
       "whyThisSourceFirst": "Relevant filing artifacts are already available locally, so immediate ingestion is lower friction than recreating collection through a live portal first."
     }
   },
-  "nextRecommendedAction": "tax.sources.ingest_artifacts"
+  "nextRecommendedAction": "tax.sources.connect"
 }
 ```
 

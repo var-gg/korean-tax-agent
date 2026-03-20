@@ -404,7 +404,7 @@ This is a deeper stop condition.
     "preserve_workspace_for_manual_review",
     "export_structured_summary_for_tax_professional"
   ],
-  "nextRecommendedAction": "tax.workspace.export_summary",
+  "nextRecommendedAction": "tax.filing.get_summary",
   "audit": {
     "eventType": "unsupported_filing_path_detected",
     "eventId": "evt_unsupported_path_001"

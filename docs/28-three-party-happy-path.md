@@ -440,7 +440,7 @@ The agent should now be doing work that the user should not have to micromanage:
     "warnings": [],
     "partialBlockers": []
   },
-  "nextRecommendedAction": "tax.normalize.run",
+  "nextRecommendedAction": "tax.ledger.normalize",
   "audit": {
     "eventType": "source_sync_completed",
     "eventId": "evt_sync_htx_001"
@@ -484,7 +484,7 @@ The notification should explain:
 
 ### MCP tool shape
 Suggested tools:
-- `tax.normalize.run`
+- `tax.ledger.normalize`
 - `tax.sources.get_collection_status`
 
 ### Example MCP response
@@ -576,7 +576,7 @@ Suggested tools:
     "importedArtifacts": 9,
     "targetedReason": "missing_expense_evidence"
   },
-  "nextRecommendedAction": "tax.normalize.run",
+  "nextRecommendedAction": "tax.ledger.normalize",
   "audit": {
     "eventType": "targeted_evidence_ingested",
     "eventId": "evt_local_ingest_001"
@@ -703,7 +703,7 @@ Suggested tools:
     },
     "draftId": "draft_001"
   },
-  "nextRecommendedAction": "tax.filing.get_readiness",
+  "nextRecommendedAction": "tax.filing.get_summary",
   "audit": {
     "eventType": "review_item_resolved",
     "eventId": "evt_review_resolve_001"
@@ -739,7 +739,7 @@ The user should hear:
 ### MCP tool shape
 Suggested tools:
 - `tax.filing.compute_draft`
-- `tax.filing.get_readiness`
+- `tax.filing.get_summary`
 - `tax.filing.list_blockers`
 
 ### Example MCP response
@@ -940,3 +940,5 @@ It is:
 - the agent orchestrates progressively,
 - the MCP layer exposes explicit checkpointed workflow state,
 - and readiness is earned through visible source coverage, narrow review, and honest assist preparation.
+on.
+on.
