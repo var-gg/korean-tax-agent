@@ -15,7 +15,11 @@
 
 ## Objective
 Define the practical V1 filing paths the project intends to support first,
-and the conditions under which the agent must stop, defer, or hand control back to the user.
+and the conditions under which the external AI agent must stop, defer, or hand control back to the user.
+
+In this repo, MCP is the domain/tool layer.
+The external AI agent handles browser work, file selection, OCR/extraction, and user conversation around checkpoints.
+This document defines when that external AI agent must stop instead of pretending MCP can cover unsupported browser/file/OCR/user-judgment work.
 
 This document exists to reduce ambiguity.
 V1 should not pretend to support every Korean comprehensive income tax filing path equally well.
@@ -232,8 +236,17 @@ Meaning:
 
 The system should prefer these layered readiness levels over a single vague notion of “ready.”
 
+## Unsupported scope reminder
+Even on a supported filing path, these remain outside MCP scope:
+- direct browser automation as MCP responsibility
+- local file discovery by MCP
+- OCR/document extraction by MCP
+- replacing explicit user consent, login, or review judgment
+
+The external AI agent may perform those tasks in its own runtime, but it must hand MCP only the resulting refs, structured extracted payloads, and portal-observed values.
+
 ## Stop conditions
-The agent should stop, pause, or downgrade claims when any of the following holds.
+The external AI agent should stop, pause, or downgrade claims when any of the following holds.
 
 ### Stop 1. Unsupported filing path detected
 Examples:

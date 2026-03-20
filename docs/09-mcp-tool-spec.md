@@ -25,9 +25,11 @@ The MCP surface should expose a compact, agent-friendly workflow layer for:
 - comparison/readiness/preparation state for HomeTax-assisted submission.
 
 Boundary rule:
+- MCP is the **domain/tool layer**
 - MCP tools accept **refs and structured observations**
 - MCP tools do **not** directly open local files, control browser pages, run OCR, or perform user-facing persuasion/conversation
-- browser/file/OCR/user-interaction work belongs to the external AI agent and its host/runtime
+- the external AI agent and its host/runtime own browser/file/OCR/user-interaction work
+- if a workflow needs browser automation, local file discovery, OCR, or direct user conversation, that work must stay outside MCP and be completed before calling MCP or between MCP calls
 
 The goal is not to expose every internal function, but to give the agent a reliable workflow API with clear consent and audit behavior.
 
@@ -75,6 +77,7 @@ Interpretation rules:
 - `blockingReason` explains why progress stopped
 - `pendingUserAction` tells the agent what to ask the user to do next
 - `resumeToken` or a session id should be returned when the action is resumable
+- `nextRecommendedAction` should name a callable MCP tool (or another explicitly documented action surface); the external AI agent should not guess the next step when MCP already knows it
 
 ## Recommended status values
 - `completed`
@@ -130,6 +133,18 @@ Mapping rule:
 - if the tool is waiting on the user, it should prefer a resumable response over a generic error
 - `awaiting_consent`, `awaiting_auth`, and `awaiting_user_action` should usually come with `checkpointType`
 - `blocked` should explain whether the best next move is fallback, retry, or human review
+
+## External-agent stop conditions
+The external AI agent must stop and ask for user input or action when MCP reports any of the following:
+- `status = awaiting_consent` or `blockingReason = missing_consent`
+- `status = awaiting_auth` or `blockingReason = missing_auth`
+- `blockingReason = missing_material_coverage` including missing withholding or missing expense evidence
+- `blockingReason = awaiting_review_decision`
+- `blockingReason = comparison_incomplete`
+- unsupported filing path / unsupported HomeTax state / provider block that MCP cannot resolve itself
+
+The external AI agent must not treat those states as cues to improvise hidden browser work, hidden file discovery, or guessed tax decisions.
+The correct pattern is: stop, explain the checkpoint, gather the missing user/browser/file input outside MCP, then call the next MCP tool explicitly.
 
 ## Proposed tool groups
 

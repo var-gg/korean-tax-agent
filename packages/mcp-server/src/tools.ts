@@ -1001,6 +1001,7 @@ export function taxClassifyResolveReviewItem(
       generatedDecisionIds: resolution.generatedDecisions.map((decision) => decision.decisionId),
       generatedDecisions: resolution.generatedDecisions,
     },
+    nextRecommendedAction: 'tax.filing.compute_draft',
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_review_resolved',
@@ -1115,6 +1116,11 @@ export function taxFilingComputeDraft(
     pendingUserAction: computeBlockingReason
       ? derivePendingUserAction({ blockingReason: computeBlockingReason, checkpointType: computeBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined })
       : undefined,
+    nextRecommendedAction: computeBlockingReason === undefined
+      ? 'tax.filing.compare_with_hometax'
+      : computeBlockingReason === 'comparison_incomplete'
+        ? 'tax.filing.compare_with_hometax'
+        : 'tax.classify.list_review_items',
     progress: {
       phase: 'drafting',
       step: 'compute_from_ledger',

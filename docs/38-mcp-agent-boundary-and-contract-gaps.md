@@ -13,8 +13,10 @@
 
 This document fixes the tranche-[1/6] boundary first: **MCP is the workflow server called by an external AI agent.**
 
-That means the MCP side owns workflow state, checkpoints, validation, normalization, classification, drafting, comparison, readiness, blockers, and audit.
+That means MCP is the domain/tool layer: workflow state, checkpoints, validation, normalization, classification, drafting, comparison, readiness, blockers, and audit.
 The external AI agent side owns browser automation, local file access, OCR/document extraction, and user-facing conversation/explanation/persuasion.
+
+If a future change makes MCP look like it is discovering local files, reading screenshots directly, or driving HomeTax as product responsibility, that change is crossing the intended boundary.
 
 ## Scope boundary
 

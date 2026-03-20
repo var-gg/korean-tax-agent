@@ -123,6 +123,9 @@ Read:
 
 ### Agentic collection and filing execution
 - [08-hometax-submission-flow.md](./08-hometax-submission-flow.md) — assisted filing flow
+- [../examples/external-agent-artifact-ingestion-example.ts](../examples/external-agent-artifact-ingestion-example.ts) — external agent sends artifact refs + structured extracted payloads into MCP
+- [../examples/external-agent-compare-with-hometax-example.ts](../examples/external-agent-compare-with-hometax-example.ts) — external agent sends HomeTax-observed values into `tax.filing.compare_with_hometax`
+- [../examples/external-agent-next-step-example.ts](../examples/external-agent-next-step-example.ts) — external agent chooses the next tool via `tax.workspace.get_status` / `tax.filing.get_summary`
 - [17-data-collection-strategy.md](./17-data-collection-strategy.md) — collection modes and v1 posture
 - [18-source-feasibility-matrix.md](./18-source-feasibility-matrix.md) — realistic source-by-source feasibility
 - [19-agentic-auth-and-consent-flow.md](./19-agentic-auth-and-consent-flow.md) — user checkpoint interaction model

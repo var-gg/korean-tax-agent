@@ -21,7 +21,7 @@ const seededTaxpayerFacts: TaxpayerFact[] = [
     category: 'taxpayer_profile',
     factKey: 'taxpayer_type',
     value: 'mixed_income_individual',
-    status: 'confirmed',
+    status: 'provided',
     sourceOfTruth: 'user_asserted',
     confidence: 0.95,
     evidenceRefs: [],

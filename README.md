@@ -28,7 +28,25 @@ Concrete examples:
 - **in scope for MCP:** compare a draft against `portalObservedFields`, create mismatch review items, decide whether submission readiness is blocked
 - **out of scope for MCP:** open a browser tab, inspect the DOM directly, read a PDF from `C:\...`, run OCR on a receipt image, or convince a user to approve a risky action
 
-See also: [docs/05-architecture.md](./docs/05-architecture.md), [docs/09-mcp-tool-spec.md](./docs/09-mcp-tool-spec.md), and [docs/38-mcp-agent-boundary-and-contract-gaps.md](./docs/38-mcp-agent-boundary-and-contract-gaps.md).
+See also: [docs/05-architecture.md](./docs/05-architecture.md), [docs/09-mcp-tool-spec.md](./docs/09-mcp-tool-spec.md), [docs/27-v1-supported-paths-and-stop-conditions.md](./docs/27-v1-supported-paths-and-stop-conditions.md), and [docs/38-mcp-agent-boundary-and-contract-gaps.md](./docs/38-mcp-agent-boundary-and-contract-gaps.md).
+
+## External AI agent integration quickstart
+
+If you are integrating this repo into an external AI agent, the intended split is:
+- call MCP tools for **domain state and decisions**
+- use the external AI agent/runtime for **browser, file, OCR, and user interaction**
+
+A minimal integration loop is:
+1. Call `tax.setup.init_config` and `tax.sources.plan_collection`.
+2. Let the external AI agent gather consent/auth, pick files, inspect HomeTax pages, and extract structured values.
+3. Send **artifact refs**, **uploaded file refs**, **structured extracted payloads**, and **portal-observed values** into MCP tools.
+4. Read `tax.workspace.get_status` or `tax.filing.get_summary` and follow `nextRecommendedAction`.
+5. Stop and ask the user for help whenever MCP reports consent/auth/review/coverage/comparison blockers.
+
+Runnable examples for this external-agent model:
+- [`examples/external-agent-artifact-ingestion-example.ts`](./examples/external-agent-artifact-ingestion-example.ts)
+- [`examples/external-agent-compare-with-hometax-example.ts`](./examples/external-agent-compare-with-hometax-example.ts)
+- [`examples/external-agent-next-step-example.ts`](./examples/external-agent-next-step-example.ts)
 
 ## Product message
 
@@ -118,6 +136,20 @@ The current prototype filing loop is:
 11. `tax.browser.start_hometax_assist`
 
 Step 11 is a **workflow handoff** into an external browser-capable agent/runtime. It does not mean the MCP server itself becomes the browser controller.
+
+Unsupported scope stays unsupported even if an external agent exists:
+- MCP does **not** browse HomeTax directly
+- MCP does **not** discover local files on its own
+- MCP does **not** OCR receipts/PDFs/images
+- MCP does **not** replace the user for consent, login, or judgment checkpoints
+
+The external AI agent must stop and ask for more input/action when any of the following appears:
+- `missing_consent`
+- `missing_auth`
+- `missing_material_coverage` such as missing withholding or missing expense evidence
+- `awaiting_review_decision`
+- `comparison_incomplete` or material HomeTax mismatches
+- unsupported filing path or unsupported HomeTax state
 
 For runnable examples, use:
 - `npm run smoke:workflow`
