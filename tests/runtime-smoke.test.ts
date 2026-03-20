@@ -13,7 +13,32 @@ const demo = rawDemo as {
 };
 
 describe('in-memory runtime', () => {
-  it('persists source and sync state across connect/sync/resume', () => {
+  it('exposes setup and planning tools through runtime', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+
+    const inspectResult = runtime.invoke('tax.setup.inspect_environment', {});
+    expect(inspectResult.ok).toBe(true);
+    expect(inspectResult.nextRecommendedAction).toBe('tax.setup.init_config');
+
+    const initResult = runtime.invoke('tax.setup.init_config', {
+      filingYear: 2025,
+      storageMode: 'local',
+      taxpayerTypeHint: 'sole proprietor',
+    });
+    expect(initResult.ok).toBe(true);
+    expect(initResult.data.workspaceId).toContain('workspace_2025');
+    expect(initResult.nextRecommendedAction).toBe('tax.sources.plan_collection');
+
+    const planResult = runtime.invoke('tax.sources.plan_collection', {
+      workspaceId: initResult.data.workspaceId,
+      filingYear: 2025,
+    });
+    expect(planResult.ok).toBe(true);
+    expect(planResult.data.recommendedSources.length).toBeGreaterThan(0);
+    expect(planResult.nextRecommendedAction).toBe('tax.sources.connect');
+  });
+
+  it('persists source and sync state across connect/sync/resume/normalize', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime({
       consentRecords: demo.consentRecords,
       sources: demo.sources.filter((source) => source.sourceType !== 'hometax'),
@@ -21,6 +46,7 @@ describe('in-memory runtime', () => {
       coverageGapsByWorkspace: {
         [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
       },
+      transactions: demo.transactions,
     });
 
     const before = runtime.invoke('tax.sources.get_collection_status', { workspaceId: demo.workspaceId });
@@ -60,5 +86,14 @@ describe('in-memory runtime', () => {
 
     const statusAfterResume = runtime.invoke('tax.sources.get_collection_status', { workspaceId: demo.workspaceId });
     expect(statusAfterResume.data.pendingCheckpoints).not.toContain('authentication');
+
+    const normalizeResult = runtime.invoke('tax.ledger.normalize', {
+      workspaceId: demo.workspaceId,
+      artifactIds: ['artifact_csv_1'],
+    });
+
+    expect(normalizeResult.status).toBe('completed');
+    expect(normalizeResult.data.transactionCount).toBe(3);
+    expect(normalizeResult.nextRecommendedAction).toBe('tax.classify.run');
   });
 });

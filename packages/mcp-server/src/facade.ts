@@ -12,12 +12,16 @@ export type InvokeToolRequest = {
 };
 
 export const SUPPORTED_RUNTIME_TOOLS: SupportedRuntimeToolName[] = [
+  'tax.setup.inspect_environment',
+  'tax.setup.init_config',
+  'tax.sources.plan_collection',
   'tax.sources.get_collection_status',
   'tax.workspace.get_status',
   'tax.filing.get_summary',
   'tax.sources.connect',
   'tax.sources.sync',
   'tax.sources.resume_sync',
+  'tax.ledger.normalize',
   'tax.profile.detect_filing_path',
   'tax.classify.run',
   'tax.classify.list_review_items',
@@ -153,12 +157,16 @@ export class KoreanTaxMCPFacade {
 
 function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<string, unknown>): string[] {
   const requiredFieldsByTool: Partial<Record<SupportedRuntimeToolName, string[]>> = {
+    'tax.setup.inspect_environment': [],
+    'tax.setup.init_config': ['filingYear', 'storageMode'],
+    'tax.sources.plan_collection': ['workspaceId', 'filingYear'],
     'tax.sources.get_collection_status': ['workspaceId'],
     'tax.workspace.get_status': ['workspaceId'],
     'tax.filing.get_summary': ['workspaceId'],
     'tax.sources.connect': ['workspaceId', 'sourceType', 'requestedScope'],
     'tax.sources.sync': ['sourceId', 'syncMode'],
     'tax.sources.resume_sync': [],
+    'tax.ledger.normalize': ['workspaceId'],
     'tax.profile.detect_filing_path': ['workspaceId'],
     'tax.classify.run': ['workspaceId'],
     'tax.classify.list_review_items': ['workspaceId'],

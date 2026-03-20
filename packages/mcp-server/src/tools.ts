@@ -38,7 +38,14 @@ import type {
   DetectFilingPathData,
   DetectFilingPathInput,
   GetCollectionStatusInput,
+  InitConfigData,
+  InitConfigInput,
+  InspectEnvironmentData,
+  InspectEnvironmentInput,
   MCPResponseEnvelope,
+  NormalizeLedgerData,
+  NormalizeLedgerInput,
+  PlanCollectionData,
   PlanCollectionInput,
   PrepareHomeTaxInput,
   RefreshOfficialDataData,
@@ -178,19 +185,44 @@ function buildCollectionReadinessState(params: {
   };
 }
 
-export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPResponseEnvelope<{
-  recommendedSources: Array<{
-    sourceType: string;
-    priority: 'high' | 'medium' | 'low';
-    rationale: string;
-    collectionMode: 'direct_connector' | 'browser_assist' | 'export_ingestion' | 'fact_capture';
-    likelyCheckpoints: Array<'source_consent' | 'authentication' | 'collection_blocker' | 'review_judgment' | 'final_submission'>;
-    fallbackOptions: string[];
-  }>;
-  expectedValueBySource: Record<string, string>;
-  likelyUserCheckpoints: Array<'source_consent' | 'authentication' | 'collection_blocker' | 'review_judgment' | 'final_submission'>;
-  fallbackPathSuggestions: string[];
-}> {
+export function taxSetupInspectEnvironment(input: InspectEnvironmentInput = {}): MCPResponseEnvelope<InspectEnvironmentData> {
+  const configPath = input.configPath?.trim();
+  const storageReady = true;
+  const availableConnectors = ['hometax', 'local_documents', 'bank_csv'];
+  const supportedImportModes = ['browser_assist', 'export_ingestion', 'fact_capture'];
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      storageReady,
+      supportedImportModes,
+      availableConnectors,
+      browserAssistAvailable: true,
+      missingDependencies: configPath ? [] : ['config_path_not_provided'],
+    },
+    nextRecommendedAction: 'tax.setup.init_config',
+  };
+}
+
+export function taxSetupInitConfig(input: InitConfigInput): MCPResponseEnvelope<InitConfigData> {
+  const workspacePath = input.workspacePath?.trim() || `./workspaces/${input.filingYear}/${input.taxpayerTypeHint?.trim() || 'default'}`;
+  const workspaceId = `workspace_${input.filingYear}_${slugifyWorkspaceSegment(input.taxpayerTypeHint)}`;
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId,
+      filingYear: input.filingYear,
+      storageMode: 'local',
+      workspacePath,
+    },
+    nextRecommendedAction: 'tax.sources.plan_collection',
+  };
+}
+
+export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPResponseEnvelope<PlanCollectionData> {
   const audit = createAuditEvent({
     workspaceId: input.workspaceId,
     eventType: 'source_planned',
@@ -275,7 +307,7 @@ export function taxSourcesGetCollectionStatus(
       blockedAttempts,
       coverageGaps,
     }),
-    nextRecommendedAction: pendingCheckpoints.length > 0 ? 'Resolve pending checkpoint and resume collection' : 'tax.sources.plan_collection',
+    nextRecommendedAction: pendingCheckpoints.length > 0 ? 'tax.sources.resume_sync' : 'tax.sources.plan_collection',
   };
 }
 
@@ -502,6 +534,55 @@ export function taxSourcesResumeSync(input: ResumeSyncInput): MCPResponseEnvelop
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_import_completed',
+    },
+  };
+}
+
+export function taxLedgerNormalize(
+  input: NormalizeLedgerInput,
+  transactions: LedgerTransaction[] = [],
+): MCPResponseEnvelope<NormalizeLedgerData> {
+  const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
+  const artifactIds = input.artifactIds ?? [];
+  const filteredTransactions = artifactIds.length > 0
+    ? scopedTransactions.filter((tx) => tx.artifactId !== undefined && artifactIds.includes(tx.artifactId))
+    : scopedTransactions;
+
+  const duplicateCandidateCount = filteredTransactions.filter((tx) => Boolean(tx.duplicateGroupId)).length;
+  const documentIds = new Set(filteredTransactions.flatMap((tx) => tx.evidenceRefs));
+  const normalizationWarnings = filteredTransactions.length === 0
+    ? [{ code: 'no_artifacts_normalized', message: 'No imported artifacts matched the normalization request.', severity: 'medium' as const }]
+    : undefined;
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'import_completed',
+    actorType: 'system',
+    entityRefs: filteredTransactions.map((tx) => tx.transactionId),
+    summary: `Normalized ${filteredTransactions.length} transaction(s) into the canonical ledger.`,
+    metadata: {
+      normalizationMode: input.normalizationMode ?? 'default',
+      artifactIds: input.artifactIds,
+    },
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      transactionCount: filteredTransactions.length,
+      documentCount: documentIds.size,
+      duplicateCandidateCount,
+    },
+    warnings: normalizationWarnings,
+    progress: {
+      phase: 'ledger_normalization',
+      step: 'canonicalize_imported_artifacts',
+      percent: 100,
+    },
+    nextRecommendedAction: 'tax.classify.run',
+    audit: {
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_ledger_normalized',
     },
   };
 }
@@ -1051,4 +1132,9 @@ function extractWorkspaceIdFromSourceId(sourceId?: string): string {
   if (!sourceId) return 'unknown_workspace';
   const match = sourceId.match(/^source_[^_]+_(.+)$/);
   return match?.[1] ?? 'unknown_workspace';
+}
+
+function slugifyWorkspaceSegment(value?: string): string {
+  const normalized = value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return normalized || 'default';
 }

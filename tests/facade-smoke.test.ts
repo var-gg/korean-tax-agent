@@ -41,13 +41,42 @@ describe('mcp facade', () => {
       decisions: demo.decisions,
     });
 
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.setup.inspect_environment');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.setup.init_config');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.plan_collection');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.connect');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.workspace.get_status');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.get_summary');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.ledger.normalize');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compute_draft');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compare_with_hometax');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.refresh_official_data');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.profile.detect_filing_path');
+
+    const inspectResult = facade.invokeTool({
+      name: 'tax.setup.inspect_environment',
+      input: {},
+    });
+
+    expect(inspectResult.ok).toBe(true);
+    expect(inspectResult.nextRecommendedAction).toBe('tax.setup.init_config');
+
+    const initResult = facade.invokeTool({
+      name: 'tax.setup.init_config',
+      input: { filingYear: demo.filingYear, storageMode: 'local' },
+    });
+
+    expect(initResult.ok).toBe(true);
+    expect(initResult.nextRecommendedAction).toBe('tax.sources.plan_collection');
+
+    const planResult = facade.invokeTool({
+      name: 'tax.sources.plan_collection',
+      input: { workspaceId: demo.workspaceId, filingYear: demo.filingYear },
+    });
+
+    expect(planResult.ok).toBe(true);
+    expect(planResult.data.recommendedSources.length).toBeGreaterThan(0);
+    expect(planResult.nextRecommendedAction).toBe('tax.sources.connect');
 
     const statusResult = facade.invokeTool({
       name: 'tax.sources.get_collection_status',
@@ -66,6 +95,15 @@ describe('mcp facade', () => {
     expect(pathResult.data.workspaceId).toBe(demo.workspaceId);
     expect(typeof pathResult.data.supportTier).toBe('string');
     expect(pathResult.readiness).toBeTruthy();
+
+    const normalizeResult = facade.invokeTool({
+      name: 'tax.ledger.normalize',
+      input: { workspaceId: demo.workspaceId, artifactIds: ['artifact_csv_1'] },
+    });
+
+    expect(normalizeResult.ok).toBe(true);
+    expect(normalizeResult.data.transactionCount).toBe(3);
+    expect(normalizeResult.nextRecommendedAction).toBe('tax.classify.run');
 
     const workspaceStatusResult = facade.invokeTool({
       name: 'tax.workspace.get_status',

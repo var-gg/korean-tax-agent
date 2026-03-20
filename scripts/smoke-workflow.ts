@@ -29,14 +29,63 @@ function assert(condition: unknown, message: string): asserts condition {
 
 const runtime = new InMemoryKoreanTaxMCPRuntime({
   consentRecords: demo.consentRecords,
-  sources: demo.sources,
-  syncAttempts: demo.syncAttempts,
+  sources: demo.sources.filter((source) => source.sourceType !== 'hometax'),
+  syncAttempts: [],
   coverageGapsByWorkspace: {
     [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
   },
   transactions: demo.transactions,
   decisions: demo.decisions,
 });
+
+const inspectResult = runtime.invoke('tax.setup.inspect_environment', {});
+assert(inspectResult.status === 'completed', 'inspect_environment should complete');
+assert(inspectResult.nextRecommendedAction === 'tax.setup.init_config', 'inspect_environment should recommend init_config');
+
+const initResult = runtime.invoke('tax.setup.init_config', {
+  filingYear: demo.filingYear,
+  storageMode: 'local',
+  workspacePath: `./workspaces/${demo.workspaceId}`,
+  taxpayerTypeHint: 'demo',
+});
+assert(initResult.status === 'completed', 'init_config should complete');
+assert(initResult.nextRecommendedAction === 'tax.sources.plan_collection', 'init_config should recommend source planning');
+
+const planResult = runtime.invoke('tax.sources.plan_collection', {
+  workspaceId: demo.workspaceId,
+  filingYear: demo.filingYear,
+});
+assert(planResult.status === 'completed', 'plan_collection should complete');
+assert(planResult.nextRecommendedAction === 'tax.sources.connect', 'plan_collection should recommend connect');
+
+const connectResult = runtime.invoke('tax.sources.connect', {
+  workspaceId: demo.workspaceId,
+  sourceType: 'hometax',
+  requestedScope: ['read_documents', 'prepare_import'],
+});
+assert(connectResult.status === 'awaiting_auth', 'connect should reach auth checkpoint');
+
+const syncResult = runtime.invoke('tax.sources.sync', {
+  sourceId: connectResult.data.sourceId,
+  syncMode: 'full',
+});
+assert(syncResult.status === 'awaiting_user_action', 'sync should block awaiting user action');
+
+const resumeResult = runtime.invoke('tax.sources.resume_sync', {
+  sourceId: connectResult.data.sourceId,
+  checkpointId: syncResult.checkpointId,
+  resumeToken: syncResult.resumeToken,
+});
+assert(resumeResult.status === 'completed', 'resume_sync should complete');
+assert(resumeResult.nextRecommendedAction === 'tax.ledger.normalize', 'resume_sync should recommend normalize');
+
+const normalizeResult = runtime.invoke('tax.ledger.normalize', {
+  workspaceId: demo.workspaceId,
+  artifactIds: ['artifact_csv_1'],
+});
+assert(normalizeResult.status === 'completed', 'normalize should complete');
+assert(normalizeResult.data.transactionCount === 3, 'normalize should report all demo transactions');
+assert(normalizeResult.nextRecommendedAction === 'tax.classify.run', 'normalize should recommend classification');
 
 const detectResult = runtime.invoke('tax.profile.detect_filing_path', {
   workspaceId: demo.workspaceId,
@@ -163,6 +212,13 @@ console.log(
       ok: true,
       smoke: 'workflow',
       summary: {
+        inspectStatus: inspectResult.status,
+        initStatus: initResult.status,
+        planStatus: planResult.status,
+        connectStatus: connectResult.status,
+        syncStatus: syncResult.status,
+        resumeStatus: resumeResult.status,
+        normalizeStatus: normalizeResult.status,
         detectStatus: detectResult.status,
         classifyStatus: classifyResult.status,
         initialDraftStatus: initialDraftResult.status,

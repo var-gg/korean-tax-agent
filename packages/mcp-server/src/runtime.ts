@@ -15,8 +15,14 @@ import type {
   DetectFilingPathData,
   DetectFilingPathInput,
   GetCollectionStatusInput,
+  InitConfigData,
+  InitConfigInput,
+  InspectEnvironmentData,
+  InspectEnvironmentInput,
   KoreanTaxMCPContracts,
   MCPResponseEnvelope,
+  NormalizeLedgerData,
+  NormalizeLedgerInput,
   PrepareHomeTaxData,
   PrepareHomeTaxInput,
   RefreshOfficialDataData,
@@ -37,24 +43,32 @@ import {
   taxClassifyListReviewItems,
   taxClassifyResolveReviewItem,
   taxClassifyRun,
-  taxProfileDetectFilingPath,
   taxFilingCompareWithHomeTax,
   taxFilingComputeDraft,
   taxFilingPrepareHomeTax,
   taxFilingRefreshOfficialData,
+  taxLedgerNormalize,
+  taxProfileDetectFilingPath,
+  taxSetupInitConfig,
+  taxSetupInspectEnvironment,
   taxSourcesConnect,
   taxSourcesGetCollectionStatus,
+  taxSourcesPlanCollection,
   taxSourcesResumeSync,
   taxSourcesSync,
 } from './tools.js';
 
 export type SupportedRuntimeToolName =
+  | 'tax.setup.inspect_environment'
+  | 'tax.setup.init_config'
+  | 'tax.sources.plan_collection'
   | 'tax.sources.get_collection_status'
   | 'tax.workspace.get_status'
   | 'tax.filing.get_summary'
   | 'tax.sources.connect'
   | 'tax.sources.sync'
   | 'tax.sources.resume_sync'
+  | 'tax.ledger.normalize'
   | 'tax.profile.detect_filing_path'
   | 'tax.classify.run'
   | 'tax.classify.list_review_items'
@@ -111,12 +125,16 @@ export class InMemoryKoreanTaxMCPRuntime {
     this.store = createRuntimeStore(options);
   }
 
+  invoke(name: 'tax.setup.inspect_environment', input: InspectEnvironmentInput): MCPResponseEnvelope<InspectEnvironmentData>;
+  invoke(name: 'tax.setup.init_config', input: InitConfigInput): MCPResponseEnvelope<InitConfigData>;
+  invoke(name: 'tax.sources.plan_collection', input: { workspaceId: string; filingYear: number; currentCoverageSummary?: Record<string, unknown>; userProfileHints?: Record<string, unknown> }): MCPResponseEnvelope<{ recommendedSources: ReturnType<typeof taxSourcesPlanCollection>['data']['recommendedSources']; expectedValueBySource: Record<string, string>; likelyUserCheckpoints: ReturnType<typeof taxSourcesPlanCollection>['data']['likelyUserCheckpoints']; fallbackPathSuggestions: string[] }>;
   invoke(name: 'tax.sources.get_collection_status', input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData>;
   invoke(name: 'tax.workspace.get_status', input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData>;
   invoke(name: 'tax.filing.get_summary', input: GetFilingSummaryInput): MCPResponseEnvelope<GetFilingSummaryData>;
   invoke(name: 'tax.sources.connect', input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData>;
   invoke(name: 'tax.sources.sync', input: SyncSourceInput): MCPResponseEnvelope<SyncSourceData>;
   invoke(name: 'tax.sources.resume_sync', input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData>;
+  invoke(name: 'tax.ledger.normalize', input: NormalizeLedgerInput): MCPResponseEnvelope<NormalizeLedgerData>;
   invoke(name: 'tax.profile.detect_filing_path', input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData>;
   invoke(name: 'tax.classify.run', input: RunClassificationInput): MCPResponseEnvelope<RunClassificationData>;
   invoke(name: 'tax.classify.list_review_items', input: { workspaceId: string }): MCPResponseEnvelope<{ items: ReviewItem[]; summary: ReturnType<typeof taxClassifyListReviewItems>['data']['summary'] }>;
@@ -131,6 +149,12 @@ export class InMemoryKoreanTaxMCPRuntime {
     input: KoreanTaxMCPContracts[TName]['input'],
   ): KoreanTaxMCPContracts[TName]['output'] {
     switch (name) {
+      case 'tax.setup.inspect_environment':
+        return this.inspectEnvironment(input as InspectEnvironmentInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.setup.init_config':
+        return this.initConfig(input as InitConfigInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.sources.plan_collection':
+        return this.planCollection(input as KoreanTaxMCPContracts['tax.sources.plan_collection']['input']) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.sources.get_collection_status':
         return this.getCollectionStatus(input as GetCollectionStatusInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.workspace.get_status':
@@ -143,6 +167,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         return this.syncSource(input as SyncSourceInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.sources.resume_sync':
         return this.resumeSync(input as ResumeSyncInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.ledger.normalize':
+        return this.normalizeLedger(input as NormalizeLedgerInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.profile.detect_filing_path':
         return this.detectFilingPath(input as DetectFilingPathInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.classify.run':
@@ -290,6 +316,32 @@ export class InMemoryKoreanTaxMCPRuntime {
       lastCollectionStatus: hints.lastCollectionStatus ?? latestSyncAttempt?.state ?? workspace.lastCollectionStatus,
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  private inspectEnvironment(input: InspectEnvironmentInput): MCPResponseEnvelope<InspectEnvironmentData> {
+    return taxSetupInspectEnvironment(input);
+  }
+
+  private initConfig(input: InitConfigInput): MCPResponseEnvelope<InitConfigData> {
+    const result = taxSetupInitConfig(input);
+    const now = new Date().toISOString();
+    const workspace = this.store.workspaces.get(result.data.workspaceId);
+    this.store.workspaces.set(result.data.workspaceId, {
+      workspaceId: result.data.workspaceId,
+      taxpayerId: workspace?.taxpayerId ?? `taxpayer_${result.data.workspaceId}`,
+      filingYear: result.data.filingYear,
+      status: 'initialized',
+      createdAt: workspace?.createdAt ?? now,
+      updatedAt: now,
+      unresolvedReviewCount: workspace?.unresolvedReviewCount ?? 0,
+      openCoverageGapCount: workspace?.openCoverageGapCount ?? 0,
+      notes: workspace?.notes,
+    });
+    return result;
+  }
+
+  private planCollection(input: KoreanTaxMCPContracts['tax.sources.plan_collection']['input']): KoreanTaxMCPContracts['tax.sources.plan_collection']['output'] {
+    return taxSourcesPlanCollection(input);
   }
 
   private getCollectionStatus(input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData> {
@@ -520,6 +572,14 @@ export class InMemoryKoreanTaxMCPRuntime {
       status: 'collecting',
     });
 
+    return result;
+  }
+
+  private normalizeLedger(input: NormalizeLedgerInput): MCPResponseEnvelope<NormalizeLedgerData> {
+    const result = taxLedgerNormalize(input, Array.from(this.store.transactions.values()));
+    this.syncWorkspaceSnapshot(input.workspaceId, {
+      status: result.data.transactionCount > 0 ? 'normalizing' : 'collecting',
+    });
     return result;
   }
 
