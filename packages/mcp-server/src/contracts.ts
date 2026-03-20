@@ -449,9 +449,26 @@ export type PrepareHomeTaxInput = {
 };
 
 export type PrepareHomeTaxData = {
-  sectionMapping: Record<string, unknown>;
-  requiredManualFields: string[];
+  sectionMapping: Record<string, {
+    sectionKey: string;
+    fieldRefs: string[];
+    mappedFields: Array<{
+      fieldKey: string;
+      fieldRef: string;
+      value: FilingFieldValue['value'];
+      comparisonState: FilingFieldValue['comparisonState'] | 'not_compared';
+      sourceOfTruth: FilingFieldValue['sourceOfTruth'];
+      requiresManualEntry: boolean;
+      blocked: boolean;
+      comparisonNeeded: boolean;
+    }>;
+    manualOnlyFields: string[];
+    blockedFields: string[];
+    comparisonNeededFields: string[];
+  }>;
+  manualOnlyFields: string[];
   blockedFields: string[];
+  comparisonNeededFields: string[];
   browserAssistReady: boolean;
   fieldValues?: FilingFieldValue[];
 };

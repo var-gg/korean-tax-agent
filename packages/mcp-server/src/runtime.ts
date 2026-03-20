@@ -1560,14 +1560,14 @@ function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): strin
   if (primaryBlockingReason === 'official_data_refresh_required') {
     return 'tax.filing.refresh_official_data';
   }
-  if (primaryBlockingReason === 'comparison_incomplete') {
-    return 'tax.filing.compare_with_hometax';
-  }
   if (primaryBlockingReason === 'missing_material_coverage' || primaryBlockingReason === 'awaiting_review_decision') {
     return 'tax.classify.list_review_items';
   }
   if (workspace.unresolvedReviewCount > 0) {
     return 'tax.classify.list_review_items';
+  }
+  if (primaryBlockingReason === 'comparison_incomplete') {
+    return 'tax.filing.compare_with_hometax';
   }
   if (!workspace.currentDraftId) {
     return 'tax.filing.compute_draft';

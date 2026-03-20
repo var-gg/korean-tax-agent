@@ -198,7 +198,7 @@ describe('external AI agent integration contract', () => {
     expect(prepareBeforeCompare.status).toBe('blocked');
     expect(prepareBeforeCompare.blockingReason).toBe('comparison_incomplete');
     expectCallableNextAction(prepareBeforeCompare.nextRecommendedAction);
-    expect(prepareBeforeCompare.nextRecommendedAction).toBe('tax.classify.list_review_items');
+    expect(prepareBeforeCompare.nextRecommendedAction).toBe('tax.filing.compare_with_hometax');
 
     const compareResult = runtime.invoke('tax.filing.compare_with_hometax', {
       workspaceId: demo.workspaceId,
@@ -348,7 +348,8 @@ describe('external AI agent integration contract', () => {
 
     const filingSummary = runtime.invoke('tax.filing.get_summary', { workspaceId: demo.workspaceId });
     expect(filingSummary.data.blockers).toContain('comparison_incomplete');
-    expect(filingSummary.data.nextRecommendedAction).toBe('tax.filing.compare_with_hometax');
+    expect(filingSummary.data.blockers).toContain('awaiting_review_decision');
+    expect(filingSummary.data.nextRecommendedAction).toBe('tax.classify.list_review_items');
     expectCallableNextAction(filingSummary.data.nextRecommendedAction);
   });
 });

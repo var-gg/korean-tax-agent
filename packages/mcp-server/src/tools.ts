@@ -49,6 +49,7 @@ import type {
   NormalizeLedgerInput,
   PlanCollectionData,
   PlanCollectionInput,
+  PrepareHomeTaxData,
   PrepareHomeTaxInput,
   RefreshOfficialDataData,
   RefreshOfficialDataInput,
@@ -1264,13 +1265,7 @@ export function taxFilingPrepareHomeTax(
   reviewItems: ReviewItem[],
   existingFieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
   readinessHints?: { supportTier?: import('../../core/src/types.js').FilingSupportTier; filingPathKind?: import('../../core/src/types.js').FilingPathKind },
-): MCPResponseEnvelope<{
-  sectionMapping: Record<string, unknown>;
-  requiredManualFields: string[];
-  blockedFields: string[];
-  browserAssistReady: boolean;
-  fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
-}> {
+): MCPResponseEnvelope<PrepareHomeTaxData> {
   const fieldValues = existingFieldValues;
   const readinessSummary = deriveReadinessSummary({
     supportTier: readinessHints?.supportTier ?? 'undetermined',
@@ -1291,15 +1286,16 @@ export function taxFilingPrepareHomeTax(
 
   const prepareBlockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
 
+  const derivedPreparation = deriveHomeTaxPreparationState(fieldValues);
+
   return {
     ok: prepareBlockingReason === undefined,
     status: prepareBlockingReason === undefined ? 'completed' : 'blocked',
     data: {
-      sectionMapping: buildHomeTaxSectionMapping(fieldValues),
-      requiredManualFields: fieldValues.filter((field) => field.requiresManualEntry).map((field) => `${field.sectionKey}.${field.fieldKey}`),
-      blockedFields: fieldValues
-        .filter((field) => field.comparisonState === 'mismatch' || field.comparisonState === 'not_compared')
-        .map((field) => `${field.sectionKey}.${field.fieldKey}`),
+      sectionMapping: derivedPreparation.sectionMapping,
+      manualOnlyFields: derivedPreparation.manualOnlyFields,
+      blockedFields: derivedPreparation.blockedFields,
+      comparisonNeededFields: derivedPreparation.comparisonNeededFields,
       browserAssistReady: prepareBlockingReason === undefined,
       fieldValues,
     },
@@ -1309,7 +1305,13 @@ export function taxFilingPrepareHomeTax(
     pendingUserAction: prepareBlockingReason
       ? derivePendingUserAction({ blockingReason: prepareBlockingReason, checkpointType: prepareBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined })
       : undefined,
-    nextRecommendedAction: prepareBlockingReason === undefined ? 'tax.browser.start_hometax_assist' : 'tax.classify.list_review_items',
+    nextRecommendedAction: prepareBlockingReason === undefined
+      ? 'tax.browser.start_hometax_assist'
+      : prepareBlockingReason === 'comparison_incomplete'
+        ? 'tax.filing.compare_with_hometax'
+        : prepareBlockingReason === 'official_data_refresh_required'
+          ? 'tax.filing.refresh_official_data'
+          : 'tax.classify.list_review_items',
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_prepare_hometax',
@@ -1440,22 +1442,64 @@ function mergeComputedFieldValuesWithRuntimeState(
   });
 }
 
-function buildHomeTaxSectionMapping(fieldValues: import('../../core/src/types.js').FilingFieldValue[]): Record<string, unknown> {
-  const grouped = new Map<string, { mappedFields: Array<Record<string, unknown>>; manualFields: string[]; blockedFields: string[] }>();
+function deriveHomeTaxPreparationState(fieldValues: import('../../core/src/types.js').FilingFieldValue[]): PrepareHomeTaxData {
+  const grouped = new Map<string, PrepareHomeTaxData['sectionMapping'][string]>();
+  const manualOnlyFields: string[] = [];
+  const blockedFields: string[] = [];
+  const comparisonNeededFields: string[] = [];
+
   for (const field of fieldValues) {
-    const current = grouped.get(field.sectionKey) ?? { mappedFields: [], manualFields: [], blockedFields: [] };
     const fieldRef = `${field.sectionKey}.${field.fieldKey}`;
+    const comparisonState = field.comparisonState ?? 'not_compared';
+    const requiresManualEntry = field.requiresManualEntry === true;
+    const comparisonNeeded = !requiresManualEntry && (comparisonState === 'not_compared' || comparisonState === undefined);
+    const blocked = comparisonState === 'mismatch' || comparisonNeeded;
+
+    const current = grouped.get(field.sectionKey) ?? {
+      sectionKey: field.sectionKey,
+      fieldRefs: [],
+      mappedFields: [],
+      manualOnlyFields: [],
+      blockedFields: [],
+      comparisonNeededFields: [],
+    };
+
+    current.fieldRefs.push(fieldRef);
     current.mappedFields.push({
       fieldKey: field.fieldKey,
+      fieldRef,
       value: field.value,
-      comparisonState: field.comparisonState ?? 'not_compared',
+      comparisonState,
       sourceOfTruth: field.sourceOfTruth,
+      requiresManualEntry,
+      blocked,
+      comparisonNeeded,
     });
-    if (field.requiresManualEntry) current.manualFields.push(fieldRef);
-    if (field.comparisonState === 'mismatch' || field.comparisonState === 'not_compared') current.blockedFields.push(fieldRef);
+
+    if (requiresManualEntry) {
+      current.manualOnlyFields.push(fieldRef);
+      manualOnlyFields.push(fieldRef);
+    }
+    if (blocked) {
+      current.blockedFields.push(fieldRef);
+      blockedFields.push(fieldRef);
+    }
+    if (comparisonNeeded) {
+      current.comparisonNeededFields.push(fieldRef);
+      comparisonNeededFields.push(fieldRef);
+    }
+
     grouped.set(field.sectionKey, current);
   }
-  return Object.fromEntries(grouped.entries());
+
+  return {
+    sectionMapping: Object.fromEntries(grouped.entries()),
+    manualOnlyFields,
+    blockedFields,
+    comparisonNeededFields,
+    browserAssistReady: false,
+    fieldValues,
+  };
 }
 
 function extractWorkspaceIdFromSourceId(sourceId?: string): string {

@@ -153,6 +153,17 @@ describe('in-memory runtime filing flow', () => {
     expect(prepareResult.status).toBe('completed');
     expect(prepareResult.blockingReason).toBeUndefined();
     expect(prepareResult.data.browserAssistReady).toBe(true);
+    expect(Array.isArray(prepareResult.data.manualOnlyFields)).toBe(true);
+    expect(Array.isArray(prepareResult.data.blockedFields)).toBe(true);
+    expect(Array.isArray(prepareResult.data.comparisonNeededFields)).toBe(true);
+    expect(Object.values(prepareResult.data.sectionMapping)[0]).toMatchObject({
+      sectionKey: expect.any(String),
+      fieldRefs: expect.any(Array),
+      mappedFields: expect.any(Array),
+      manualOnlyFields: expect.any(Array),
+      blockedFields: expect.any(Array),
+      comparisonNeededFields: expect.any(Array),
+    });
     expect(prepareResult.readiness?.submissionReadiness).toBe('submission_assist_ready');
     expect(runtime.getWorkspace(demo.workspaceId)?.submissionReadiness).toBe('submission_assist_ready');
     expect(runtime.getWorkspace(demo.workspaceId)?.status).toBe('ready_for_hometax_assist');
