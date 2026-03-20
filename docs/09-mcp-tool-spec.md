@@ -15,14 +15,19 @@
 
 
 ## Purpose
-The MCP surface should expose a compact, agent-friendly tool layer for:
-- environment setup,
-- data import,
+The MCP surface should expose a compact, agent-friendly workflow layer for:
+- workspace setup,
+- artifact ingestion by reference,
 - normalization,
 - classification,
 - review handling,
 - draft generation,
-- HomeTax-assisted submission.
+- comparison/readiness/preparation state for HomeTax-assisted submission.
+
+Boundary rule:
+- MCP tools accept **refs and structured observations**
+- MCP tools do **not** directly open local files, control browser pages, run OCR, or perform user-facing persuasion/conversation
+- browser/file/OCR/user-interaction work belongs to the external AI agent and its host/runtime
 
 The goal is not to expose every internal function, but to give the agent a reliable workflow API with clear consent and audit behavior.
 
@@ -32,6 +37,7 @@ The goal is not to expose every internal function, but to give the agent a relia
 - review-item resolution must be explicit and attributable
 - tool responses should be structured for agent follow-up, not prose-only
 - long-running steps should support progress/pause/resume semantics
+- inputs should prefer artifact refs, uploaded file refs, structured extracted payloads, and portal-observed values over host-specific paths or live-page handles
 
 ## Common response envelope
 Suggested response shape:
@@ -134,7 +140,7 @@ Purpose:
 - detect storage readiness, supported connectors, browser-assist capability, and missing prerequisites
 
 Input:
-- optional working config path
+- optional config reference from the calling agent/runtime
 
 Output:
 - environment summary
@@ -149,7 +155,7 @@ Purpose:
 Input:
 - filing year
 - storage mode
-- optional workspace path
+- optional workspace label/reference
 - optional taxpayer type hint
 
 Output:
@@ -265,10 +271,10 @@ Notes:
 
 #### `tax.import.upload_transactions`
 Purpose:
-- ingest user-provided transaction files
+- ingest user-provided transaction artifacts that were already selected/uploaded by the external agent/runtime
 
 Input:
-- file refs
+- uploaded file refs or artifact refs
 - source format hint
 - workspace id
 
@@ -279,20 +285,31 @@ Output:
 
 #### `tax.import.upload_documents`
 Purpose:
-- ingest receipts, invoices, tax statements, and related evidence files
+- ingest receipts, invoices, tax statements, and related evidence artifacts that were already uploaded or referenced by the external agent/runtime
 
-#### `tax.import.scan_receipts`
+Input:
+- uploaded file refs or artifact refs
+- optional document type hints
+- workspace id
+
+#### `tax.import.submit_extracted_receipt_fields`
 Purpose:
-- OCR/extract fields from receipt-like inputs
+- accept structured receipt/document field payloads that were extracted outside MCP
+
+Input:
+- source artifact refs
+- structured extracted fields
+- extraction metadata such as extractor type/version and confidence summary
+- workspace id
 
 Output:
-- extracted field candidates
-- confidence
-- review candidates
+- accepted field candidates
+- normalization/review hints
+- warnings when evidence or extraction metadata is insufficient
 
 #### `tax.import.import_hometax_materials`
 Purpose:
-- ingest HomeTax-exported files or acquired materials
+- ingest HomeTax-exported artifacts or external-agent-acquired materials
 
 Output:
 - recognized document types
@@ -500,7 +517,7 @@ Alerting pattern:
 
 #### `tax.filing.compare_with_hometax`
 Purpose:
-- compare current filing draft values against visible/imported HomeTax-observed values
+- compare current filing draft values against HomeTax-observed values supplied by the external AI agent
 - update filing-field comparison state and derive submission readiness gates
 
 Input:
@@ -508,6 +525,7 @@ Input:
 - draft id
 - comparison mode
 - optional section keys
+- optional `portalObservedFields[]` captured/imported outside MCP
 
 Output:
 - section-level comparison results
@@ -521,7 +539,7 @@ Notes:
 
 #### `tax.filing.refresh_official_data`
 Purpose:
-- refresh HomeTax-adjacent official data before comparison or preparation
+- refresh official source state before comparison or preparation using already-approved source connections, artifact ingestion, or agent-supplied refresh context
 
 Input:
 - workspace id
@@ -558,7 +576,7 @@ Notes:
 
 #### `tax.browser.start_hometax_assist`
 Purpose:
-- begin a visible, pause/resume HomeTax assistance session
+- create a HomeTax assistance checkpoint/handoff session for an external browser-capable agent/runtime
 
 Input:
 - workspace id
@@ -569,6 +587,7 @@ Output:
 - assist session id
 - current checkpoint
 - auth required flag
+- handoff context for the external browser-capable agent/runtime
 
 #### `tax.browser.resume_hometax_assist`
 Purpose:
@@ -699,3 +718,9 @@ Minimum expected host methods:
 - `openTarget()` maps a browser-assist session into a real host/browser open or attach call
 - `getRuntimeState()` maps status reads to runtime-side tab or session inspection
 - `handoffCheckpoint()` carries checkpoint context forward after authentication and page-ready transitions
+
+## Declared vs implemented note
+
+This spec intentionally includes some forward-looking tools.
+When a tool is documented here but not yet implemented in the runtime/facade, treat it as a contract gap or backlog item rather than as an already-supported capability.
+See [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md).

@@ -13,7 +13,7 @@ The workflow should feel like:
 1. the agent explains the next useful source or action
 2. the agent asks for scoped approval
 3. the user performs login or a required confirmation
-4. the agent resumes collection automatically
+4. the external AI agent/runtime resumes collection automatically
 5. the agent asks follow-up questions only when blocked or when risk meaningfully changes
 
 ## Key principle
@@ -57,11 +57,11 @@ Examples:
 After authentication completes, the agent should resume collection without asking for low-value confirmation steps.
 
 Examples of work that should happen automatically after login:
-- navigation to the relevant screen
-- download or extraction of approved materials
-- ingestion into the filing workspace
-- normalization and duplicate detection
-- coverage analysis
+- the external AI agent/runtime navigates to the relevant screen
+- the external AI agent/runtime downloads, extracts, or observes approved materials
+- MCP ingests resulting artifact refs / structured observations into the filing workspace
+- MCP runs normalization and duplicate detection
+- MCP updates coverage analysis
 
 ### Stage 5. Ask targeted follow-up questions only when needed
 The agent should interrupt only for:
@@ -196,3 +196,9 @@ That implies explicit support for:
 - progress and pause/resume handling
 - collection attempt summaries
 - fallback recommendation fields
+
+## MCP vs agent boundary in checkpoint flows
+
+In checkpoint flows, MCP should return structured state such as `checkpointType`, `blockingReason`, `pendingUserAction`, `resumeToken`, and audit metadata.
+The external AI agent should handle the actual user conversation and any browser/file/OCR work needed to clear that checkpoint.
+MCP should never be treated as the component that directly reads a local file, directly clicks through a browser page, or persuades the user.

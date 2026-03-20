@@ -327,6 +327,15 @@ export type CompareWithHomeTaxInput = {
   draftId: string;
   comparisonMode?: 'visible_portal' | 'imported_portal' | 'manual_entry';
   sectionKeys?: string[];
+  /**
+   * Structured HomeTax-observed values supplied by the external agent/runtime.
+   * Prefer this over implying MCP directly observed the browser page.
+   */
+  portalObservedFields?: Array<{
+    sectionKey: string;
+    fieldKey: string;
+    portalObservedValue: string | number | boolean | null;
+  }>;
 };
 
 export type CompareWithHomeTaxData = {

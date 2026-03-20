@@ -26,16 +26,26 @@ Responsibilities:
 
 ### 2. MCP server package
 Responsibilities:
-- expose agent-callable tools
-- validate tool inputs
-- orchestrate data import, classification, review, and draft generation
+- expose agent-callable workflow tools
+- validate agent-supplied inputs such as artifact refs, uploaded file refs, structured extracted payloads, and portal-observed values
+- orchestrate workflow state, normalization, classification, review, and draft generation
 - surface consent-required actions clearly
+
+Must not become responsible for:
+- directly opening local files
+- directly controlling browser pages or tabs
+- directly performing OCR/document extraction
+- directly handling user-facing explanation, persuasion, or conversational UX
 
 ### 3. Browser assist package
 Responsibilities:
-- support HomeTax navigation and assisted input flows
+- define HomeTax assist session semantics and checkpoint handoff contracts
 - pause for authentication and user approval checkpoints
 - avoid hidden submission behavior
+
+Important boundary:
+- package-level browser-assist contracts may describe session state and runtime handoff expectations
+- concrete browser execution still belongs to the external AI agent and its host/runtime bridge, not to MCP business logic
 
 ### 4. OpenClaw skill
 Responsibilities:
@@ -78,3 +88,23 @@ See:
 - `packages/` isolates implementation concerns
 - `skills/` keeps agent instructions explicit and portable
 - `examples/` and `templates/` reduce setup ambiguity
+
+## Responsibility boundary examples
+
+### In scope for MCP
+- record that a HomeTax comparison was supplied for a draft
+- validate whether required comparison sections are still missing
+- persist blockers, review items, readiness, and audit events
+- accept uploaded-file references or extracted field payloads and normalize them into workflow state
+
+### Out of scope for MCP
+- read `C:\\Users\\...\\receipt.pdf` directly
+- drive the browser to HomeTax, inspect the live page, or click buttons by itself
+- run OCR on receipt images
+- decide how to phrase a trust-building explanation to the user
+
+### Split of responsibilities in practice
+1. external AI agent collects/observes data
+2. agent submits refs or structured observations to MCP
+3. MCP updates workflow state, computes readiness, and returns the next checkpoint/blocker
+4. agent explains the next step to the user and, if needed, uses its own host/browser/file/OCR capabilities

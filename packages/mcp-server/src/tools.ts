@@ -779,7 +779,7 @@ export function taxFilingCompareWithHomeTax(
       sectionKeys: input.sectionKeys,
       comparisonMode: input.comparisonMode,
     },
-    buildObservedFields(fieldValues, input.sectionKeys),
+    input.portalObservedFields ?? buildObservedFields(fieldValues, input.sectionKeys),
   );
 
   const calibratedReadiness = deriveCalibratedReadiness({

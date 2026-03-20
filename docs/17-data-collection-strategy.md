@@ -10,7 +10,7 @@ The preferred collection order is:
 1. agent-led connector discovery
 2. scoped consent
 3. browser-mediated or provider-mediated authentication by the user
-4. agent-driven extraction, normalization, and reconciliation
+4. agent/runtime-driven extraction or observation outside MCP, followed by MCP normalization and reconciliation
 5. targeted follow-up questions only for gaps or risk-changing ambiguities
 
 The system should avoid starting from a manual-upload mindset.
@@ -44,7 +44,7 @@ Use when the source is accessible through normal user web flows, but not through
 Typical shape:
 - agent opens a visible browser path
 - user completes login, identity confirmation, or one-time security step
-- agent resumes navigation and extraction
+- external AI agent/runtime resumes navigation and extracts or observes the needed data
 - agent pauses again only when another real user checkpoint is required
 
 Best use cases:
@@ -64,7 +64,7 @@ Use when the best realistic path is to have the source itself produce a file or 
 Typical shape:
 - agent guides the user to the right export screen
 - user triggers export or confirms a download
-- agent ingests the resulting artifact automatically when accessible
+- external AI agent/runtime uploads or references the resulting artifact for MCP ingestion
 - agent normalizes and links the imported artifact into the filing workspace
 
 Best use cases:
@@ -136,12 +136,12 @@ Examples:
 - messaging-delivered receipts
 
 Preferred mode:
-- connector or local-access ingestion
+- uploaded-file or artifact-ref ingestion after the external AI agent/runtime selects the material
 - targeted retrieval based on transaction gaps
 
 Why:
 - supporting evidence often exists outside formal tax systems
-- the agent should seek evidence only when needed, not indiscriminately scan everything without scope
+- the external AI agent/runtime should seek evidence only when needed, not indiscriminately scan everything without scope; MCP should only receive scoped refs/artifacts and derived structured data
 
 ### User-provided facts
 Examples:
@@ -243,3 +243,11 @@ A good run should feel like this:
 ## Product test
 If the workflow still mostly feels like "please upload more files," the product is not yet agentic enough.
 If the workflow feels like "I log in when asked, and the agent does the rest until it truly needs me," the design is on track.
+
+## MCP boundary for collection
+
+In this repo, MCP is the workflow/state layer for collection progress, not the collector of raw host resources.
+That means:
+- MCP can track source state, sync attempts, blockers, coverage gaps, and imported artifact records
+- MCP should not directly read local folders, drive a browser, or run OCR
+- external agents may do those things, then submit artifact refs, uploaded file refs, extracted fields, or portal-observed values back to MCP

@@ -7,6 +7,29 @@ Open-source, agent-native workflow for **Korean comprehensive income tax prepara
 This repository is building a **host-agnostic MCP core** for Korean comprehensive income tax workflow, plus optional runtime-specific integrations and examples.
 It should remain usable whether the operator runs it through OpenClaw, Codex-style apps, Claude-oriented agent workspaces, or other agent runtimes.
 
+## MCP vs external AI agent boundary
+
+This repo treats **MCP as a workflow server**, not as the whole agent.
+The boundary is intentional and should constrain future PRs.
+
+**MCP owns:**
+- workspace state and checkpoints
+- validation, normalization, and classification
+- review queues, draft computation, comparison, readiness, blockers, and audit
+- narrow agent-facing tool contracts that accept artifact refs, uploaded file refs, structured extracted payloads, and portal-observed values
+
+**The external AI agent owns:**
+- browser control and visible step-by-step portal operation
+- local file access and choosing which files to upload or reference
+- OCR or document extraction before structured values are handed to MCP
+- user-facing conversation, narration, persuasion, and checkpoint explanation
+
+Concrete examples:
+- **in scope for MCP:** compare a draft against `portalObservedFields`, create mismatch review items, decide whether submission readiness is blocked
+- **out of scope for MCP:** open a browser tab, inspect the DOM directly, read a PDF from `C:\...`, run OCR on a receipt image, or convince a user to approve a risky action
+
+See also: [docs/05-architecture.md](./docs/05-architecture.md), [docs/09-mcp-tool-spec.md](./docs/09-mcp-tool-spec.md), and [docs/38-mcp-agent-boundary-and-contract-gaps.md](./docs/38-mcp-agent-boundary-and-contract-gaps.md).
+
 ## Product message
 
 This project is not trying to be:
@@ -57,7 +80,7 @@ Implemented prototype coverage currently includes:
 - mismatch-to-review escalation,
 - mismatch resolution applied back to the draft,
 - HomeTax preparation and browser-assist handoff,
-- minimum browser-assist session lifecycle and real-browser open bridge.
+- minimum browser-assist session lifecycle and host-handoff bridge.
 
 A minimum real-browser bridge is included through `SystemBrowserRuntimeAdapter`. The repo now also has a generic browser-host runtime seam, capability reporting, and a first concrete `OpenClawBrowserHostExecutor` adapter that can run either against the in-repo relay stub or a production-style `OpenClawBrowserToolTransport` bound to an external OpenClaw runtime/client path for the stable open/runtime-state/checkpoint-handoff slice. T6 added a thin command-bridge runtime script (`scripts/openclaw-browser-runtime.ts`) plus a live-style control-server client for that path. T7 added narrow snapshot-backed inspection and reconnect/rebind support; T8 lifts that into a host-agnostic target-resolution contract plus normalized inspection metadata so recovery evidence and inspection results are no longer adapter-local heuristics. T9 added an audited DOM action slice, T10 made action readiness explicit, T11 formalizes snapshot artifact identity/versioning so snapshot-backed refs are bound to a concrete snapshot artifact (`snapshotContext.artifact.{artifactId,version,capturedAt}`) instead of generic inspection presence, and T12 adds structured recovery advice on explicit snapshot-bound action failures. T13 adds a narrow host-agnostic explicit rebinding submission contract so callers can submit a fresh snapshot-derived locator/ref plus fresh snapshot artifact/version after that advice, have the submission validated/recorded explicitly in readiness and receipts, and reuse it without any hidden auto-rebinding or retries. T14 adds a narrow host-agnostic provenance/evidence contract for snapshot-derived locators/refs so inspection outputs, recovery advice, rebinding submissions, and action receipts can say which inspection context and snapshot artifact produced a locator, and audit that explicit rebinding without introducing acquisition orchestration or auto-recovery. T15 makes fresh locator acquisition itself caller-visible by letting inspection return typed snapshot-derived locator candidates with snapshot identity plus provenance/evidence, T16 adds deterministic caller-visible guidance metadata (`guidance.ranking/signals/rationale`) for manual comparison only, and T17 adds caller-visible candidate staleness/invalidation metadata (`candidate.staleness`) so callers can see whether an inspected snapshot-derived candidate is still tied to the currently bound snapshot artifact/version or has gone stale after snapshot turnover. That metadata is status only: the manual loop is still inspect candidates, compare them yourself, notice stale/current annotations, choose one, submit explicit rebinding, then act. Failures still carry inspectable `recoveryAdvice` metadata describing whether the next manual step is to reinspect the current target, reacquire a fresh snapshot artifact, or rebind a locator/ref against that fresh snapshot—without auto-recovery, hidden retries, or orchestration loops. Full browser automation and HomeTax field-level interaction are still pending. 
 ## Start here
@@ -93,6 +116,8 @@ The current prototype filing loop is:
 9. if mismatches exist: create review items and resolve them
 10. `tax.filing.prepare_hometax`
 11. `tax.browser.start_hometax_assist`
+
+Step 11 is a **workflow handoff** into an external browser-capable agent/runtime. It does not mean the MCP server itself becomes the browser controller.
 
 For runnable examples, use:
 - `npm run smoke:workflow`
