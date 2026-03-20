@@ -56,6 +56,7 @@ describe('mcp facade', () => {
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compare_with_hometax');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.refresh_official_data');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.profile.detect_filing_path');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.browser.resume_hometax_assist');
 
     const inspectResult = facade.invokeTool({
       name: 'tax.setup.inspect_environment',

@@ -600,6 +600,7 @@ Output:
 #### `tax.browser.resume_hometax_assist`
 Purpose:
 - continue a paused assist session after auth, user action, or interruption
+- return durable handoff context (assistSessionId, draftId, checkpoint, pending action) for an external browser-capable agent
 
 #### `tax.browser.stop_hometax_assist`
 Purpose:

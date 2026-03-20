@@ -47,6 +47,8 @@ import type {
   RefreshOfficialDataInput,
   ResolveReviewItemData,
   ResolveReviewItemInput,
+  ResumeHomeTaxAssistData,
+  ResumeHomeTaxAssistInput,
   ResumeSyncData,
   ResumeSyncInput,
   RunClassificationData,
@@ -57,6 +59,7 @@ import type {
   SyncSourceInput,
 } from './contracts.js';
 import {
+  taxBrowserResumeHomeTaxAssist,
   taxBrowserStartHomeTaxAssist,
   taxClassifyListReviewItems,
   taxClassifyResolveReviewItem,
@@ -95,7 +98,8 @@ export type SupportedRuntimeToolName =
   | 'tax.filing.compare_with_hometax'
   | 'tax.filing.refresh_official_data'
   | 'tax.filing.prepare_hometax'
-  | 'tax.browser.start_hometax_assist';
+  | 'tax.browser.start_hometax_assist'
+  | 'tax.browser.resume_hometax_assist';
 
 export type RuntimeStore = {
   consentRecords: ConsentRecord[];
@@ -183,6 +187,7 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.filing.refresh_official_data', input: RefreshOfficialDataInput): MCPResponseEnvelope<RefreshOfficialDataData>;
   invoke(name: 'tax.filing.prepare_hometax', input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData>;
   invoke(name: 'tax.browser.start_hometax_assist', input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData>;
+  invoke(name: 'tax.browser.resume_hometax_assist', input: ResumeHomeTaxAssistInput): MCPResponseEnvelope<ResumeHomeTaxAssistData>;
   invoke<TName extends SupportedRuntimeToolName>(
     name: TName,
     input: KoreanTaxMCPContracts[TName]['input'],
@@ -226,6 +231,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         return this.prepareHomeTax(input as PrepareHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
       case 'tax.browser.start_hometax_assist':
         return this.startHomeTaxAssist(input as StartHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
+      case 'tax.browser.resume_hometax_assist':
+        return this.resumeHomeTaxAssist(input as ResumeHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
       default:
         throw new Error(`Unsupported runtime tool: ${String(name)}`);
     }
@@ -902,6 +909,10 @@ export class InMemoryKoreanTaxMCPRuntime {
       Array.from(this.store.transactions.values()),
       this.listDecisions(input.workspaceId),
       this.listReviewItems(input.workspaceId),
+      this.getTaxpayerFacts(input.workspaceId),
+      this.getWithholdingRecords(input.workspaceId),
+      this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
+      this.getFilingFieldValues(input.workspaceId),
     );
     this.store.draftsByWorkspace.set(input.workspaceId, result.data);
     this.store.taxpayerFacts.set(input.workspaceId, result.data.taxpayerFacts ?? this.getTaxpayerFacts(input.workspaceId));
@@ -914,7 +925,8 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private compareWithHomeTax(input: CompareWithHomeTaxInput): MCPResponseEnvelope<CompareWithHomeTaxData> {
     const draft = this.getDraft(input.workspaceId);
-    const result = taxFilingCompareWithHomeTax(input, draft?.fieldValues ?? []);
+    const fieldValues = this.getFilingFieldValues(input.workspaceId);
+    const result = taxFilingCompareWithHomeTax(input, fieldValues.length > 0 ? fieldValues : draft?.fieldValues ?? []);
 
     if (draft && result.data.fieldValues && result.readinessState && result.readiness) {
       this.store.filingFieldValues.set(input.workspaceId, result.data.fieldValues);
@@ -1001,7 +1013,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const result = taxFilingPrepareHomeTax(
       input,
       this.listReviewItems(input.workspaceId),
-      draft?.fieldValues ?? [],
+      this.getFilingFieldValues(input.workspaceId).length > 0 ? this.getFilingFieldValues(input.workspaceId) : draft?.fieldValues ?? [],
       {
         supportTier: draft?.supportTier ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'tier_a' : 'undetermined'),
         filingPathKind: draft?.filingPathKind ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown'),
@@ -1043,6 +1055,46 @@ export class InMemoryKoreanTaxMCPRuntime {
       });
     }
 
+    this.syncWorkspaceSnapshot(input.workspaceId, {
+      lastBlockingReason: result.blockingReason,
+      status: 'submission_in_progress',
+    });
+    return result;
+  }
+
+  private resumeHomeTaxAssist(input: ResumeHomeTaxAssistInput): MCPResponseEnvelope<ResumeHomeTaxAssistData> {
+    const session = input.assistSessionId
+      ? Array.from(this.store.assistSessionsByWorkspace.values()).find((candidate) => candidate.assistSessionId === input.assistSessionId && candidate.workspaceId === input.workspaceId)
+      : this.getBrowserAssistSession(input.workspaceId);
+
+    if (!session) {
+      return {
+        ok: false,
+        status: 'failed',
+        data: {
+          assistSessionId: input.assistSessionId ?? `assist_missing_${input.workspaceId}`,
+          draftId: this.getDraft(input.workspaceId)?.draftId ?? 'unknown_draft',
+          checkpointType: 'authentication',
+          authRequired: true,
+          handoff: {
+            provider: 'hometax',
+            recommendedTool: 'tax.browser.resume_hometax_assist',
+          },
+        },
+        errorCode: 'assist_session_not_found',
+        errorMessage: `No active HomeTax assist session found for workspace ${input.workspaceId}.`,
+      };
+    }
+
+    const result = taxBrowserResumeHomeTaxAssist(input, session);
+    this.store.assistSessionsByWorkspace.set(input.workspaceId, {
+      ...session,
+      checkpointType: result.data.checkpointType,
+      authState: result.requiresAuth ? 'pending' : session.authState ?? 'completed',
+      pendingUserAction: result.pendingUserAction,
+      lastKnownSection: result.data.handoff.targetSection,
+      updatedAt: new Date().toISOString(),
+    });
     this.syncWorkspaceSnapshot(input.workspaceId, {
       lastBlockingReason: result.blockingReason,
       status: 'submission_in_progress',
@@ -1447,6 +1499,9 @@ function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): strin
   const submissionReadiness = getRuntimeSubmissionReadiness(workspace);
   const primaryBlockingReason = getPrimaryBlockingReason(workspace);
 
+  if (workspace.status === 'submission_in_progress') {
+    return 'tax.browser.resume_hometax_assist';
+  }
   if (workspace.lastCollectionStatus === 'awaiting_user_action' || workspace.lastCollectionStatus === 'blocked') {
     return 'tax.sources.resume_sync';
   }

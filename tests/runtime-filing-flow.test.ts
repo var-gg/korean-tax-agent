@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { InMemoryKoreanTaxMCPRuntime } from '../packages/mcp-server/src/runtime.js';
-import type { ClassificationDecision, ConsentRecord, FilingFieldValue, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
+import type { ClassificationDecision, ConsentRecord, FilingFieldValue, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt, TaxpayerFact, WithholdingRecord } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
   workspaceId: string;
@@ -13,6 +13,39 @@ const demo = rawDemo as {
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
 };
+
+const seededTaxpayerFacts: TaxpayerFact[] = [
+  {
+    factId: `fact_${demo.workspaceId}_taxpayer_type`,
+    workspaceId: demo.workspaceId,
+    category: 'taxpayer_profile',
+    factKey: 'taxpayer_type',
+    value: 'mixed_income_individual',
+    status: 'confirmed',
+    sourceOfTruth: 'user_asserted',
+    confidence: 0.95,
+    evidenceRefs: [],
+    updatedAt: '2026-03-20T08:00:00Z',
+  },
+];
+
+const seededWithholdingRecords: WithholdingRecord[] = [
+  {
+    withholdingRecordId: `withholding_${demo.workspaceId}_1`,
+    workspaceId: demo.workspaceId,
+    filingYear: demo.workspace.filingYear,
+    payerName: 'Demo Platform',
+    grossAmount: 3000000,
+    withheldTaxAmount: 99000,
+    localTaxAmount: 9900,
+    currency: 'KRW',
+    sourceType: 'hometax',
+    sourceOfTruth: 'official',
+    extractionConfidence: 0.98,
+    evidenceRefs: [],
+    capturedAt: '2026-03-20T08:00:00Z',
+  },
+];
 
 describe('in-memory runtime filing flow', () => {
   it('persists classification, review resolution, drafting, and hometax assist state', () => {
@@ -26,6 +59,8 @@ describe('in-memory runtime filing flow', () => {
       },
       transactions: demo.transactions,
       decisions: demo.decisions,
+      taxpayerFacts: seededTaxpayerFacts,
+      withholdingRecords: seededWithholdingRecords,
     });
 
     const classifyResult = runtime.invoke('tax.classify.run', {
@@ -129,9 +164,19 @@ describe('in-memory runtime filing flow', () => {
     });
 
     expect(assistResult.status).toBe('awaiting_auth');
+    expect(assistResult.nextRecommendedAction).toBe('tax.browser.resume_hometax_assist');
     expect(runtime.getBrowserAssistSession(demo.workspaceId)?.assistSessionId).toBe(assistResult.data.assistSessionId);
     expect(runtime.getAuthCheckpoints(demo.workspaceId).some((checkpoint) => checkpoint.sessionBinding === assistResult.data.assistSessionId)).toBe(true);
     expect(runtime.getWorkspace(demo.workspaceId)?.status).toBe('submission_in_progress');
+
+    const resumeAssistResult = runtime.invoke('tax.browser.resume_hometax_assist', {
+      workspaceId: demo.workspaceId,
+      assistSessionId: assistResult.data.assistSessionId,
+    });
+
+    expect(resumeAssistResult.ok).toBe(true);
+    expect(resumeAssistResult.data.assistSessionId).toBe(assistResult.data.assistSessionId);
+    expect(resumeAssistResult.data.handoff.recommendedTool).toBe('tax.browser.resume_hometax_assist');
   });
 
   it('creates review items when hometax comparison finds material mismatches', () => {
@@ -145,6 +190,8 @@ describe('in-memory runtime filing flow', () => {
       },
       transactions: demo.transactions,
       decisions: demo.decisions,
+      taxpayerFacts: seededTaxpayerFacts,
+      withholdingRecords: seededWithholdingRecords,
     });
 
     const resolvedDraft = runtime.invoke('tax.filing.compute_draft', {
@@ -185,6 +232,8 @@ describe('in-memory runtime filing flow', () => {
       },
       transactions: demo.transactions,
       decisions: demo.decisions,
+      taxpayerFacts: seededTaxpayerFacts,
+      withholdingRecords: seededWithholdingRecords,
     });
 
     const draftResult = runtime.invoke('tax.filing.compute_draft', {

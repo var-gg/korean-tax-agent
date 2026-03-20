@@ -310,7 +310,7 @@ Suggested tool:
     }
   },
   "pendingUserAction": "Log in to HomeTax and complete the required authentication steps.",
-  "nextRecommendedAction": "tax.sources.resume_sync",
+  "nextRecommendedAction": "tax.browser.resume_hometax_assist",
   "audit": {
     "eventType": "source_connected_consent_granted",
     "eventId": "evt_source_connect_001"

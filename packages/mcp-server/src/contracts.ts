@@ -468,6 +468,24 @@ export type StartHomeTaxAssistData = {
   authRequired: boolean;
 };
 
+export type ResumeHomeTaxAssistInput = {
+  workspaceId: string;
+  assistSessionId?: string;
+};
+
+export type ResumeHomeTaxAssistData = {
+  assistSessionId: string;
+  draftId: string;
+  checkpointType: CheckpointType;
+  authRequired: boolean;
+  pendingUserAction?: string;
+  handoff: {
+    provider: string;
+    targetSection?: string;
+    recommendedTool: 'tax.browser.resume_hometax_assist';
+  };
+};
+
 /**
  * Canonical workspace runtime snapshot for operator/UI rendering.
  *
@@ -624,5 +642,9 @@ export interface KoreanTaxMCPContracts {
   'tax.browser.start_hometax_assist': {
     input: StartHomeTaxAssistInput;
     output: MCPResponseEnvelope<StartHomeTaxAssistData>;
+  };
+  'tax.browser.resume_hometax_assist': {
+    input: ResumeHomeTaxAssistInput;
+    output: MCPResponseEnvelope<ResumeHomeTaxAssistData>;
   };
 }

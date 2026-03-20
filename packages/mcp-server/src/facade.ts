@@ -31,6 +31,7 @@ export const SUPPORTED_RUNTIME_TOOLS: SupportedRuntimeToolName[] = [
   'tax.filing.refresh_official_data',
   'tax.filing.prepare_hometax',
   'tax.browser.start_hometax_assist',
+  'tax.browser.resume_hometax_assist',
 ];
 
 export function isSupportedRuntimeToolName(name: string): name is SupportedRuntimeToolName {
@@ -176,6 +177,7 @@ function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<
     'tax.filing.refresh_official_data': ['workspaceId'],
     'tax.filing.prepare_hometax': ['workspaceId', 'draftId'],
     'tax.browser.start_hometax_assist': ['workspaceId', 'draftId', 'mode'],
+    'tax.browser.resume_hometax_assist': ['workspaceId'],
   };
 
   const requiredFields = requiredFieldsByTool[name] ?? [];

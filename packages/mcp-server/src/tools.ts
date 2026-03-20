@@ -479,7 +479,7 @@ export function taxSourcesSync(input: SyncSourceInput): MCPResponseEnvelope<Sync
       step: 'await_export_or_auth_completion',
       percent: 25,
     },
-    nextRecommendedAction: 'tax.sources.resume_sync',
+    nextRecommendedAction: 'tax.browser.resume_hometax_assist',
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_sync_blocked',
@@ -1013,25 +1013,19 @@ export function taxFilingComputeDraft(
   transactions: LedgerTransaction[],
   decisions: ClassificationDecision[],
   reviewItems: ReviewItem[],
+  taxpayerFacts: TaxpayerFact[] = [],
+  withholdingRecords: WithholdingRecord[] = [],
+  coverageGaps: CoverageGap[] = [],
+  existingFieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
 ): MCPResponseEnvelope<ComputeDraftData> {
   const filingYear = input.workspaceId.match(/(20\d{2})/)?.[1];
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
-  const scopedDecisions = decisions.filter((decision) => scopedTransactions.some((tx) => tx.transactionId === decision.entityId));
-  const taxpayerFacts: TaxpayerFact[] = [
-    {
-      factId: `fact_${input.workspaceId}_filing_posture`,
-      workspaceId: input.workspaceId,
-      category: 'filing_path',
-      factKey: 'filing_posture',
-      value: scopedTransactions.some((tx) => tx.normalizedDirection === 'income') ? 'income_present' : 'unknown',
-      status: scopedTransactions.length > 0 ? 'inferred' : 'missing',
-      sourceOfTruth: scopedTransactions.length > 0 ? 'inferred' : 'user_asserted',
-      confidence: scopedTransactions.length > 0 ? 0.6 : 0,
-      evidenceRefs: scopedTransactions.flatMap((tx) => tx.evidenceRefs),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
-  const withholdingRecords: WithholdingRecord[] = [];
+  const transactionIds = new Set(scopedTransactions.map((tx) => tx.transactionId));
+  const scopedDecisions = decisions.filter((decision) => transactionIds.has(decision.entityId));
+  const scopedReviewItems = reviewItems.filter((item) => item.workspaceId === input.workspaceId);
+  const scopedTaxpayerFacts = taxpayerFacts.filter((fact) => fact.workspaceId === input.workspaceId);
+  const scopedWithholdingRecords = withholdingRecords.filter((record) => record.workspaceId === input.workspaceId);
+  const openCoverageGaps = coverageGaps.filter((gap) => gap.workspaceId === input.workspaceId && gap.state === 'open');
 
   const draft = computeDraftFromLedger({
     workspaceId: input.workspaceId,
@@ -1039,32 +1033,35 @@ export function taxFilingComputeDraft(
     draftVersion: input.draftMode === 'new_version' ? 2 : 1,
     transactions: scopedTransactions,
     decisions: scopedDecisions,
-    reviewItems,
-    withholdingRecords,
-    assumptions: input.includeAssumptions ? ['Initial draft assumptions placeholder'] : [],
+    reviewItems: scopedReviewItems,
+    withholdingRecords: scopedWithholdingRecords,
+    assumptions: input.includeAssumptions ? ['Computed from persisted runtime state.'] : [],
   });
   const filingPathDetection = detectFilingPath({
-    taxpayerFacts,
+    taxpayerFacts: scopedTaxpayerFacts,
     transactions: scopedTransactions,
-    withholdingRecords,
-    reviewItems,
+    withholdingRecords: scopedWithholdingRecords,
+    reviewItems: scopedReviewItems,
+    coverageGaps: openCoverageGaps,
   });
   const calibratedReadiness = deriveCalibratedReadiness({
     supportTier: filingPathDetection.supportTier,
     filingPathKind: filingPathDetection.filingPathKind,
-    reviewItems,
+    reviewItems: scopedReviewItems,
+    coverageGaps: openCoverageGaps,
     draft: {
       draftId: draft.draftId,
-      fieldValues: draft.fieldValues,
+      fieldValues: mergeComputedFieldValuesWithRuntimeState(draft.fieldValues, existingFieldValues),
     },
   });
   const readinessSummary = deriveReadinessSummary({
     supportTier: filingPathDetection.supportTier,
     filingPathKind: filingPathDetection.filingPathKind,
-    reviewItems,
+    reviewItems: scopedReviewItems,
+    coverageGaps: openCoverageGaps,
     draft: {
       draftId: draft.draftId,
-      fieldValues: draft.fieldValues,
+      fieldValues: mergeComputedFieldValuesWithRuntimeState(draft.fieldValues, existingFieldValues),
     },
   });
   const audit = createAuditEvent({
@@ -1074,6 +1071,15 @@ export function taxFilingComputeDraft(
     entityRefs: [draft.draftId],
     summary: `Computed draft ${draft.draftId}.`,
   });
+
+  draft.fieldValues = mergeComputedFieldValuesWithRuntimeState(draft.fieldValues, existingFieldValues);
+  draft.blockerCodes = readinessSummary.blockerCodes;
+  draft.estimateReadiness = readinessSummary.estimateReadiness;
+  draft.draftReadiness = readinessSummary.draftReadiness;
+  draft.submissionReadiness = readinessSummary.submissionReadiness;
+  draft.comparisonSummaryState = readinessSummary.comparisonSummaryState;
+  draft.freshnessState = readinessSummary.freshnessState;
+  draft.majorUnknowns = readinessSummary.majorUnknowns;
 
   const computeBlockingReason = deriveComputeDraftBlockingReason(readinessSummary);
 
@@ -1090,8 +1096,8 @@ export function taxFilingComputeDraft(
       withholdingSummary: draft.withholdingSummary,
       estimateConfidence: draft.estimateConfidence,
       blockerCodes: draft.blockerCodes,
-      taxpayerFacts,
-      withholdingRecords,
+      taxpayerFacts: scopedTaxpayerFacts,
+      withholdingRecords: scopedWithholdingRecords,
       fieldValues: draft.fieldValues,
       supportTier: readinessSummary.supportTier,
       filingPathKind: readinessSummary.filingPathKind,
@@ -1251,31 +1257,7 @@ export function taxFilingPrepareHomeTax(
   browserAssistReady: boolean;
   fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
 }> {
-  const fieldValues = existingFieldValues.length > 0
-    ? existingFieldValues
-    : [
-        {
-          filingFieldValueId: `field_${input.draftId}_income_total`,
-          draftId: input.draftId,
-          sectionKey: 'income',
-          fieldKey: 'total_income',
-          value: null,
-          sourceOfTruth: 'imported' as const,
-          comparisonState: 'not_compared' as const,
-          freshnessState: 'current_enough' as const,
-        },
-        {
-          filingFieldValueId: `field_${input.draftId}_withholding_total`,
-          draftId: input.draftId,
-          sectionKey: 'withholding',
-          fieldKey: 'total_withheld_tax',
-          value: null,
-          sourceOfTruth: 'official' as const,
-          requiresManualEntry: true,
-          comparisonState: 'manual_only' as const,
-          freshnessState: 'refresh_recommended' as const,
-        },
-      ];
+  const fieldValues = existingFieldValues;
   const readinessSummary = deriveReadinessSummary({
     supportTier: readinessHints?.supportTier ?? 'undetermined',
     filingPathKind: readinessHints?.filingPathKind ?? 'unknown',
@@ -1299,13 +1281,11 @@ export function taxFilingPrepareHomeTax(
     ok: prepareBlockingReason === undefined,
     status: prepareBlockingReason === undefined ? 'completed' : 'blocked',
     data: {
-      sectionMapping: {
-        income: 'mapped_placeholder',
-        expenses: 'mapped_placeholder',
-        withholding: 'mapped_placeholder',
-      },
-      requiredManualFields: ['withholding.total_withheld_tax'],
-      blockedFields: readinessSummary.blockerCodes,
+      sectionMapping: buildHomeTaxSectionMapping(fieldValues),
+      requiredManualFields: fieldValues.filter((field) => field.requiresManualEntry).map((field) => `${field.sectionKey}.${field.fieldKey}`),
+      blockedFields: fieldValues
+        .filter((field) => field.comparisonState === 'mismatch' || field.comparisonState === 'not_compared')
+        .map((field) => `${field.sectionKey}.${field.fieldKey}`),
       browserAssistReady: prepareBlockingReason === undefined,
       fieldValues,
     },
@@ -1344,7 +1324,7 @@ export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MC
     checkpointType: 'authentication',
     checkpointId: `checkpoint_hometax_auth_${input.workspaceId}_${input.draftId}`,
     pendingUserAction: derivePendingUserAction({ checkpointType: 'authentication', sourceType: 'hometax' }),
-    nextRecommendedAction: 'tax.sources.resume_sync',
+    nextRecommendedAction: 'tax.browser.resume_hometax_assist',
     audit: {
       eventType: audit.eventType,
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_browser_assist_started',
@@ -1366,6 +1346,32 @@ function deriveComputeDraftBlockingReason(readiness: { blockerCodes: string[]; d
   if (readiness.blockerCodes.includes('missing_material_coverage')) return 'missing_material_coverage';
   if (readiness.blockerCodes.includes('unsupported_filing_path')) return 'unsupported_filing_path';
   return 'draft_not_ready';
+}
+
+export function taxBrowserResumeHomeTaxAssist(
+  input: import('./contracts.js').ResumeHomeTaxAssistInput,
+  session: import('../../core/src/types.js').BrowserAssistSession,
+): MCPResponseEnvelope<import('./contracts.js').ResumeHomeTaxAssistData> {
+  return {
+    ok: true,
+    status: session.authState === 'completed' ? 'in_progress' : 'awaiting_auth',
+    data: {
+      assistSessionId: session.assistSessionId,
+      draftId: session.draftId,
+      checkpointType: session.checkpointType,
+      authRequired: session.authState !== 'completed',
+      pendingUserAction: session.pendingUserAction,
+      handoff: {
+        provider: session.provider ?? 'hometax',
+        targetSection: session.lastKnownSection ?? 'hometax_entry_start',
+        recommendedTool: 'tax.browser.resume_hometax_assist',
+      },
+    },
+    requiresAuth: session.authState !== 'completed',
+    checkpointType: session.checkpointType,
+    pendingUserAction: session.pendingUserAction ?? derivePendingUserAction({ checkpointType: session.checkpointType, sourceType: 'hometax' }),
+    nextRecommendedAction: 'tax.browser.resume_hometax_assist',
+  };
 }
 
 function buildObservedFields(
@@ -1398,6 +1404,44 @@ function derivePrepareHomeTaxBlockingReason(readiness: { blockerCodes: string[];
   if (readiness.blockerCodes.includes('unsupported_filing_path')) return 'unsupported_filing_path';
   if (readiness.blockerCodes.includes('submission_not_ready')) return 'submission_not_ready';
   return 'submission_not_ready';
+}
+
+function mergeComputedFieldValuesWithRuntimeState(
+  computedFieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
+  runtimeFieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
+): import('../../core/src/types.js').FilingFieldValue[] {
+  const runtimeMap = new Map(runtimeFieldValues.map((field) => [`${field.sectionKey}:${field.fieldKey}`, field]));
+  return computedFieldValues.map((field) => {
+    const persisted = runtimeMap.get(`${field.sectionKey}:${field.fieldKey}`);
+    return persisted
+      ? {
+          ...field,
+          portalObservedValue: persisted.portalObservedValue,
+          comparisonState: persisted.comparisonState ?? field.comparisonState,
+          freshnessState: persisted.freshnessState ?? field.freshnessState,
+          requiresManualEntry: persisted.requiresManualEntry ?? field.requiresManualEntry,
+          mismatchSeverity: persisted.mismatchSeverity,
+        }
+      : field;
+  });
+}
+
+function buildHomeTaxSectionMapping(fieldValues: import('../../core/src/types.js').FilingFieldValue[]): Record<string, unknown> {
+  const grouped = new Map<string, { mappedFields: Array<Record<string, unknown>>; manualFields: string[]; blockedFields: string[] }>();
+  for (const field of fieldValues) {
+    const current = grouped.get(field.sectionKey) ?? { mappedFields: [], manualFields: [], blockedFields: [] };
+    const fieldRef = `${field.sectionKey}.${field.fieldKey}`;
+    current.mappedFields.push({
+      fieldKey: field.fieldKey,
+      value: field.value,
+      comparisonState: field.comparisonState ?? 'not_compared',
+      sourceOfTruth: field.sourceOfTruth,
+    });
+    if (field.requiresManualEntry) current.manualFields.push(fieldRef);
+    if (field.comparisonState === 'mismatch' || field.comparisonState === 'not_compared') current.blockedFields.push(fieldRef);
+    grouped.set(field.sectionKey, current);
+  }
+  return Object.fromEntries(grouped.entries());
 }
 
 function extractWorkspaceIdFromSourceId(sourceId?: string): string {

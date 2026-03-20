@@ -9,6 +9,8 @@ import type {
   SourceArtifact,
   SourceConnection,
   SyncAttempt,
+  TaxpayerFact,
+  WithholdingRecord,
 } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
@@ -24,6 +26,40 @@ const demo = rawDemo as {
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
 };
+
+
+const seededTaxpayerFacts: TaxpayerFact[] = [
+  {
+    factId: `fact_${demo.workspaceId}_taxpayer_type`,
+    workspaceId: demo.workspaceId,
+    category: 'taxpayer_profile',
+    factKey: 'taxpayer_type',
+    value: 'mixed_income_individual',
+    status: 'confirmed',
+    sourceOfTruth: 'user_asserted',
+    confidence: 0.95,
+    evidenceRefs: [],
+    updatedAt: '2026-03-20T08:00:00Z',
+  },
+];
+
+const seededWithholdingRecords: WithholdingRecord[] = [
+  {
+    withholdingRecordId: `withholding_${demo.workspaceId}_1`,
+    workspaceId: demo.workspaceId,
+    filingYear: demo.workspace.filingYear,
+    payerName: 'Demo Platform',
+    grossAmount: 3000000,
+    withheldTaxAmount: 99000,
+    localTaxAmount: 9900,
+    currency: 'KRW',
+    sourceType: 'hometax',
+    sourceOfTruth: 'official',
+    extractionConfidence: 0.98,
+    evidenceRefs: [],
+    capturedAt: '2026-03-20T08:00:00Z',
+  },
+];
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -42,6 +78,8 @@ const runtime = new InMemoryKoreanTaxMCPRuntime({
   evidenceDocuments: demo.evidenceDocuments,
   transactions: demo.transactions,
   decisions: demo.decisions,
+  taxpayerFacts: seededTaxpayerFacts,
+  withholdingRecords: seededWithholdingRecords,
 });
 
 const inspectResult = runtime.invoke('tax.setup.inspect_environment', {});
@@ -212,6 +250,15 @@ const assistResult = runtime.invoke('tax.browser.start_hometax_assist', {
 
 assert(assistResult.status === 'awaiting_auth', 'browser assist should begin at auth checkpoint');
 assert(assistResult.checkpointType === 'authentication', 'browser assist checkpointType should be authentication');
+assert(assistResult.nextRecommendedAction === 'tax.browser.resume_hometax_assist', 'browser assist should recommend resume_hometax_assist');
+
+const resumeAssistResult = runtime.invoke('tax.browser.resume_hometax_assist', {
+  workspaceId: demo.workspaceId,
+  assistSessionId: assistResult.data.assistSessionId,
+});
+
+assert(resumeAssistResult.ok === true, 'resume_hometax_assist should resolve the active assist session');
+assert(resumeAssistResult.data.handoff.recommendedTool === 'tax.browser.resume_hometax_assist', 'resume_hometax_assist should preserve resume handoff');
 
 console.log(
   JSON.stringify(
@@ -235,6 +282,7 @@ console.log(
         resolveMismatchStatus: resolveMismatchResult.status,
         prepareStatus: prepareResult.status,
         assistStatus: assistResult.status,
+        resumeAssistStatus: resumeAssistResult.status,
       },
     },
     null,
