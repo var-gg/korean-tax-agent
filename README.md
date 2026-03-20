@@ -93,11 +93,12 @@ Implemented prototype coverage currently includes:
 - filing-path detection,
 - review queue generation and resolution,
 - draft computation with persisted readiness metadata,
-- official-data refresh,
-- HomeTax comparison,
+- a simulated `tax.filing.refresh_official_data` step that updates runtime freshness/readiness state,
+- `tax.filing.compare_with_hometax` using caller-supplied `portalObservedFields`,
 - mismatch-to-review escalation,
 - mismatch resolution applied back to the draft,
-- HomeTax preparation and browser-assist handoff,
+- `tax.filing.prepare_hometax`,
+- `tax.browser.start_hometax_assist` / `tax.browser.resume_hometax_assist` handoff state,
 - minimum browser-assist session lifecycle and host-handoff bridge.
 
 A minimum real-browser bridge is included through `SystemBrowserRuntimeAdapter`. The repo now also has a generic browser-host runtime seam, capability reporting, and a first concrete `OpenClawBrowserHostExecutor` adapter that can run either against the in-repo relay stub or a production-style `OpenClawBrowserToolTransport` bound to an external OpenClaw runtime/client path for the stable open/runtime-state/checkpoint-handoff slice. T6 added a thin command-bridge runtime script (`scripts/openclaw-browser-runtime.ts`) plus a live-style control-server client for that path. T7 added narrow snapshot-backed inspection and reconnect/rebind support; T8 lifts that into a host-agnostic target-resolution contract plus normalized inspection metadata so recovery evidence and inspection results are no longer adapter-local heuristics. T9 added an audited DOM action slice, T10 made action readiness explicit, T11 formalizes snapshot artifact identity/versioning so snapshot-backed refs are bound to a concrete snapshot artifact (`snapshotContext.artifact.{artifactId,version,capturedAt}`) instead of generic inspection presence, and T12 adds structured recovery advice on explicit snapshot-bound action failures. T13 adds a narrow host-agnostic explicit rebinding submission contract so callers can submit a fresh snapshot-derived locator/ref plus fresh snapshot artifact/version after that advice, have the submission validated/recorded explicitly in readiness and receipts, and reuse it without any hidden auto-rebinding or retries. T14 adds a narrow host-agnostic provenance/evidence contract for snapshot-derived locators/refs so inspection outputs, recovery advice, rebinding submissions, and action receipts can say which inspection context and snapshot artifact produced a locator, and audit that explicit rebinding without introducing acquisition orchestration or auto-recovery. T15 makes fresh locator acquisition itself caller-visible by letting inspection return typed snapshot-derived locator candidates with snapshot identity plus provenance/evidence, T16 adds deterministic caller-visible guidance metadata (`guidance.ranking/signals/rationale`) for manual comparison only, and T17 adds caller-visible candidate staleness/invalidation metadata (`candidate.staleness`) so callers can see whether an inspected snapshot-derived candidate is still tied to the currently bound snapshot artifact/version or has gone stale after snapshot turnover. That metadata is status only: the manual loop is still inspect candidates, compare them yourself, notice stale/current annotations, choose one, submit explicit rebinding, then act. Failures still carry inspectable `recoveryAdvice` metadata describing whether the next manual step is to reinspect the current target, reacquire a fresh snapshot artifact, or rebind a locator/ref against that fresh snapshot—without auto-recovery, hidden retries, or orchestration loops. Full browser automation and HomeTax field-level interaction are still pending. 
@@ -122,20 +123,27 @@ When a Korean companion does not exist, the English original is linked explicitl
 
 ## Prototype workflow snapshot
 
-The current prototype filing loop is:
-1. `tax.profile.detect_filing_path`
-2. `tax.classify.run`
-3. `tax.classify.list_review_items`
-4. `tax.filing.compute_draft`
-5. `tax.classify.resolve_review_item`
-6. `tax.filing.compute_draft` (recompute)
-7. `tax.filing.refresh_official_data`
-8. `tax.filing.compare_with_hometax`
-9. if mismatches exist: create review items and resolve them
-10. `tax.filing.prepare_hometax`
-11. `tax.browser.start_hometax_assist`
+The current callable prototype filing loop is:
+1. `tax.setup.init_config`
+2. `tax.sources.plan_collection`
+3. `tax.sources.connect`
+4. `tax.sources.sync`
+5. `tax.sources.resume_sync`
+6. `tax.ledger.normalize`
+7. `tax.profile.detect_filing_path`
+8. `tax.classify.run`
+9. `tax.classify.list_review_items`
+10. `tax.filing.compute_draft`
+11. `tax.classify.resolve_review_item` when review items are open
+12. `tax.filing.compute_draft` again after review resolution
+13. `tax.filing.refresh_official_data` to refresh runtime freshness state
+14. `tax.filing.compare_with_hometax` with caller-supplied `portalObservedFields`
+15. if mismatches exist: resolve comparison review items and recompute/prepare as needed
+16. `tax.filing.prepare_hometax`
+17. `tax.browser.start_hometax_assist`
+18. `tax.browser.resume_hometax_assist`
 
-Step 11 is a **workflow handoff** into an external browser-capable agent/runtime. It does not mean the MCP server itself becomes the browser controller.
+Steps 17-18 are a **workflow handoff** into an external browser-capable agent/runtime. They do not mean the MCP server itself becomes the browser controller or performs field-level HomeTax automation on its own.
 
 Unsupported scope stays unsupported even if an external agent exists:
 - MCP does **not** browse HomeTax directly
@@ -146,9 +154,10 @@ Unsupported scope stays unsupported even if an external agent exists:
 The external AI agent must stop and ask for more input/action when any of the following appears:
 - `missing_consent`
 - `missing_auth`
+- `export_required`
 - `missing_material_coverage` such as missing withholding or missing expense evidence
 - `awaiting_review_decision`
-- `comparison_incomplete` or material HomeTax mismatches
+- `comparison_incomplete` or material HomeTax mismatches that create review items
 - unsupported filing path or unsupported HomeTax state
 
 For runnable examples, use:

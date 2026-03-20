@@ -335,9 +335,7 @@ describe('external AI agent integration contract', () => {
       portalObservedFields: [{
         fieldKey: targetField.fieldKey,
         sectionKey: targetField.sectionKey,
-        observedValue: portalObservedValue,
-        observedAt: '2026-03-20T09:00:00Z',
-        evidenceRef: 'browser://snapshot/section-income',
+        portalObservedValue,
       }],
     });
 
@@ -351,5 +349,85 @@ describe('external AI agent integration contract', () => {
     expect(filingSummary.data.blockers).toContain('awaiting_review_decision');
     expect(filingSummary.data.nextRecommendedAction).toBe('tax.classify.list_review_items');
     expectCallableNextAction(filingSummary.data.nextRecommendedAction);
+  });
+
+  it('surfaces the required blocked-path states for an external agent', () => {
+    const missingConsentRuntime = createSeededRuntime({ consentRecords: [] });
+    const missingConsent = missingConsentRuntime.invoke('tax.sources.connect', {
+      workspaceId: demo.workspaceId,
+      sourceType: 'hometax',
+      requestedScope: ['read_documents', 'prepare_import'],
+    });
+    expect(missingConsent.blockingReason).toBe('missing_consent');
+
+    const missingAuthRuntime = createSeededRuntime();
+    const missingAuth = missingAuthRuntime.invoke('tax.sources.connect', {
+      workspaceId: demo.workspaceId,
+      sourceType: 'hometax',
+      requestedScope: ['read_documents', 'prepare_import'],
+    });
+    expect(missingAuth.status).toBe('awaiting_auth');
+    expect(missingAuth.requiresAuth).toBe(true);
+    expect(missingAuth.checkpointType).toBe('authentication');
+    expect(missingAuth.readinessState?.readiness.submissionReadiness).toBe('blocked');
+
+    const exportRequired = missingAuthRuntime.invoke('tax.sources.sync', {
+      sourceId: missingAuth.data.sourceId,
+      syncMode: 'full',
+    });
+    expect(exportRequired.blockingReason).toBe('export_required');
+
+    const missingWithholdingRuntime = createSeededRuntime({ withholdingRecords: [] });
+    missingWithholdingRuntime.invoke('tax.classify.run', {
+      workspaceId: demo.workspaceId,
+      rulesetVersion: 'blocked-path-v1',
+    });
+    const openReviews = missingWithholdingRuntime.invoke('tax.classify.list_review_items', {
+      workspaceId: demo.workspaceId,
+    });
+    const awaitingReview = missingWithholdingRuntime.invoke('tax.filing.compute_draft', {
+      workspaceId: demo.workspaceId,
+      draftMode: 'refresh',
+      includeAssumptions: true,
+    });
+    expect(awaitingReview.blockingReason).toBe('awaiting_review_decision');
+
+    missingWithholdingRuntime.invoke('tax.classify.resolve_review_item', {
+      reviewItemIds: openReviews.data.items.map((item) => item.reviewItemId),
+      selectedOption: 'exclude_from_expense',
+      rationale: 'clear review blockers before checking coverage blockers',
+      approverIdentity: 'external_agent_test',
+    });
+
+    const missingWithholding = missingWithholdingRuntime.invoke('tax.filing.compute_draft', {
+      workspaceId: demo.workspaceId,
+      draftMode: 'new_version',
+      includeAssumptions: true,
+    });
+    expect(missingWithholding.blockingReason).toBe('missing_material_coverage');
+    expect(missingWithholding.readiness?.blockerCodes).toContain('missing_material_coverage');
+
+    const comparisonMismatchRuntime = createSeededRuntime();
+    const mismatchDraft = comparisonMismatchRuntime.invoke('tax.filing.compute_draft', {
+      workspaceId: demo.workspaceId,
+      draftMode: 'new_version',
+      includeAssumptions: true,
+    });
+    const mismatchField = comparisonMismatchRuntime.getDraft(demo.workspaceId)?.fieldValues?.[0]!;
+    const mismatchValue = typeof mismatchField.value === 'number' ? Number(mismatchField.value) + 123456 : 'PORTAL_MISMATCH_VALUE';
+    const comparisonMismatch = comparisonMismatchRuntime.invoke('tax.filing.compare_with_hometax', {
+      workspaceId: demo.workspaceId,
+      draftId: mismatchDraft.data.draftId,
+      comparisonMode: 'visible_portal',
+      sectionKeys: [mismatchField.sectionKey],
+      portalObservedFields: [{
+        sectionKey: mismatchField.sectionKey,
+        fieldKey: mismatchField.fieldKey,
+        portalObservedValue: mismatchValue,
+      }],
+    });
+    expect(comparisonMismatch.data.materialMismatches.length).toBeGreaterThan(0);
+    expect(comparisonMismatch.nextRecommendedAction).toBe('tax.classify.list_review_items');
+    expect(comparisonMismatchRuntime.listReviewItems(demo.workspaceId).some((item) => item.reasonCode === 'hometax_material_mismatch')).toBe(true);
   });
 });

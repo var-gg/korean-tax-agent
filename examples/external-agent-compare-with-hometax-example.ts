@@ -79,7 +79,7 @@ const draftResult = runtime.invoke('tax.filing.compute_draft', {
 });
 
 const field = (runtime.getDraft(demo.workspaceId)?.fieldValues ?? [])[0] as FilingFieldValue;
-const observedValue = typeof field.value === 'number' ? Number(field.value) + 200000 : 'PORTAL_OVERRIDE_VALUE';
+const portalObservedValue = typeof field.value === 'number' ? Number(field.value) + 200000 : 'PORTAL_OVERRIDE_VALUE';
 
 const compareResult = runtime.invoke('tax.filing.compare_with_hometax', {
   workspaceId: demo.workspaceId,
@@ -90,16 +90,14 @@ const compareResult = runtime.invoke('tax.filing.compare_with_hometax', {
     {
       fieldKey: field.fieldKey,
       sectionKey: field.sectionKey,
-      observedValue,
-      observedAt: '2026-03-20T09:30:00Z',
-      evidenceRef: 'browser://snapshot/hometax-income-summary',
+      portalObservedValue,
     },
   ],
 });
 
 console.log(JSON.stringify({
   example: 'external-agent-compare-with-hometax',
-  note: 'The external AI agent observed HomeTax values in the browser and passed them into MCP as structured portalObservedFields.',
+  note: 'The external AI agent observed HomeTax values in the browser and passed only the normalized portalObservedFields payload into MCP.',
   nextRecommendedAction: compareResult.nextRecommendedAction,
   materialMismatches: compareResult.data.materialMismatches,
   createdReviewItems: runtime.listReviewItems(demo.workspaceId).filter((item) => item.reasonCode === 'hometax_material_mismatch'),
