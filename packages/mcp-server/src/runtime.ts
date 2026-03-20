@@ -1,5 +1,20 @@
 import { deriveCalibratedReadiness, deriveReadinessSummary, sortActiveBlockers } from '../../core/src/readiness.js';
-import type { BlockingReason, ClassificationDecision, ConsentRecord, CoverageGap, FilingWorkspace, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt } from '../../core/src/types.js';
+import type {
+  AuthCheckpoint,
+  BlockingReason,
+  BrowserAssistSession,
+  ClassificationDecision,
+  ConsentRecord,
+  CoverageGap,
+  FilingFieldValue,
+  FilingWorkspace,
+  LedgerTransaction,
+  ReviewItem,
+  SourceConnection,
+  SyncAttempt,
+  TaxpayerFact,
+  WithholdingRecord,
+} from '../../core/src/types.js';
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
@@ -85,11 +100,15 @@ export type RuntimeStore = {
   sources: Map<string, SourceConnection>;
   syncAttempts: Map<string, SyncAttempt>;
   coverageGapsByWorkspace: Map<string, CoverageGap[]>;
+  taxpayerFacts: Map<string, TaxpayerFact[]>;
+  withholdingRecords: Map<string, WithholdingRecord[]>;
+  authCheckpoints: Map<string, AuthCheckpoint>;
+  filingFieldValues: Map<string, FilingFieldValue[]>;
   transactions: Map<string, LedgerTransaction>;
   decisions: Map<string, ClassificationDecision>;
   reviewItems: Map<string, ReviewItem>;
   draftsByWorkspace: Map<string, ComputeDraftData>;
-  assistSessionsByWorkspace: Map<string, StartHomeTaxAssistData>;
+  assistSessionsByWorkspace: Map<string, BrowserAssistSession>;
 };
 
 export type CreateRuntimeOptions = {
@@ -98,6 +117,10 @@ export type CreateRuntimeOptions = {
   sources?: SourceConnection[];
   syncAttempts?: SyncAttempt[];
   coverageGapsByWorkspace?: Record<string, Array<CoverageGap | string>>;
+  taxpayerFacts?: TaxpayerFact[];
+  withholdingRecords?: WithholdingRecord[];
+  authCheckpoints?: AuthCheckpoint[];
+  filingFieldValues?: FilingFieldValue[];
   transactions?: LedgerTransaction[];
   decisions?: ClassificationDecision[];
   reviewItems?: ReviewItem[];
@@ -110,6 +133,10 @@ export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeS
     sources: new Map((options.sources ?? []).map((source) => [source.sourceId, source])),
     syncAttempts: new Map((options.syncAttempts ?? []).map((attempt) => [attempt.syncAttemptId, attempt])),
     coverageGapsByWorkspace: new Map(Object.entries(options.coverageGapsByWorkspace ?? {}).map(([workspaceId, gaps]) => [workspaceId, normalizeCoverageGaps(workspaceId, gaps)])),
+    taxpayerFacts: groupByWorkspace(options.taxpayerFacts ?? [], (fact) => fact.workspaceId),
+    withholdingRecords: groupByWorkspace(options.withholdingRecords ?? [], (record) => record.workspaceId),
+    authCheckpoints: new Map((options.authCheckpoints ?? []).map((checkpoint) => [checkpoint.authCheckpointId, checkpoint])),
+    filingFieldValues: new Map(),
     transactions: new Map((options.transactions ?? []).map((tx) => [tx.transactionId, tx])),
     decisions: new Map((options.decisions ?? []).map((decision) => [decision.decisionId, decision])),
     reviewItems: new Map((options.reviewItems ?? []).map((item) => [item.reviewItemId, item])),
@@ -222,6 +249,46 @@ export class InMemoryKoreanTaxMCPRuntime {
     return this.store.workspaces.get(workspaceId);
   }
 
+  getTaxpayerFacts(workspaceId: string): TaxpayerFact[] {
+    return this.store.taxpayerFacts.get(workspaceId) ?? [];
+  }
+
+  getWithholdingRecords(workspaceId: string): WithholdingRecord[] {
+    return this.store.withholdingRecords.get(workspaceId) ?? [];
+  }
+
+  getFilingFieldValues(workspaceId: string): FilingFieldValue[] {
+    return this.store.filingFieldValues.get(workspaceId) ?? [];
+  }
+
+  getAuthCheckpoints(workspaceId: string): AuthCheckpoint[] {
+    return Array.from(this.store.authCheckpoints.values()).filter((checkpoint) => checkpoint.workspaceId === workspaceId);
+  }
+
+  getBrowserAssistSession(workspaceId: string): BrowserAssistSession | undefined {
+    return this.store.assistSessionsByWorkspace.get(workspaceId);
+  }
+
+  getWorkspaceDerivedStatus(workspaceId: string): {
+    status: FilingWorkspace['status'];
+    lastBlockingReason?: FilingWorkspace['lastBlockingReason'];
+    lastCollectionStatus?: FilingWorkspace['lastCollectionStatus'];
+    openCoverageGapCount: number;
+    currentDraftId?: string;
+    nextRecommendedAction?: string;
+  } {
+    this.syncWorkspaceSnapshot(workspaceId);
+    const workspace = this.ensureWorkspace(workspaceId);
+    return {
+      status: workspace.status,
+      lastBlockingReason: workspace.lastBlockingReason,
+      lastCollectionStatus: workspace.lastCollectionStatus,
+      openCoverageGapCount: workspace.openCoverageGapCount ?? 0,
+      currentDraftId: workspace.currentDraftId,
+      nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
+    };
+  }
+
   private ensureWorkspace(workspaceId: string): FilingWorkspace {
     const existing = this.store.workspaces.get(workspaceId);
     if (existing) return existing;
@@ -250,6 +317,9 @@ export class InMemoryKoreanTaxMCPRuntime {
     const coverageGaps = this.store.coverageGapsByWorkspace.get(workspaceId) ?? [];
     const openCoverageGapCount = coverageGaps.filter((gap) => gap.state === 'open').length;
     const latestSyncAttempt = this.listSyncAttempts().filter((attempt) => attempt.workspaceId === workspaceId).sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0];
+    const latestAuthCheckpoint = this.getAuthCheckpoints(workspaceId).sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0];
+    const fieldValues = this.getFilingFieldValues(workspaceId);
+    const browserAssistSession = this.getBrowserAssistSession(workspaceId);
 
     const calibratedRuntime = deriveCalibratedReadiness({
       supportTier: draft?.supportTier ?? workspace.supportTier,
@@ -259,7 +329,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       draft: draft
         ? {
             draftId: draft.draftId,
-            fieldValues: draft.fieldValues,
+            fieldValues: fieldValues.length > 0 ? fieldValues : draft.fieldValues,
           }
         : undefined,
       comparisonSummaryState: draft?.comparisonSummaryState ?? workspace.comparisonSummaryState,
@@ -271,15 +341,17 @@ export class InMemoryKoreanTaxMCPRuntime {
     this.store.workspaces.set(workspaceId, {
       ...workspace,
       status: hints.status
-        ?? (draft?.submissionReadiness === 'submission_assist_ready'
-          ? 'ready_for_hometax_assist'
-          : draft?.draftReadiness === 'draft_ready'
-            ? 'draft_ready_for_review'
-            : unresolvedReviewCount > 0
-              ? 'review_pending'
-              : latestSyncAttempt
-                ? 'collecting_sources'
-                : workspace.status),
+        ?? (browserAssistSession && !browserAssistSession.endedAt
+          ? 'submission_in_progress'
+          : draft?.submissionReadiness === 'submission_assist_ready'
+            ? 'ready_for_hometax_assist'
+            : draft?.draftReadiness === 'draft_ready'
+              ? 'draft_ready_for_review'
+              : unresolvedReviewCount > 0
+                ? 'review_pending'
+                : latestSyncAttempt || (latestAuthCheckpoint && latestAuthCheckpoint.state !== 'completed')
+                  ? 'collecting_sources'
+                  : workspace.status),
       supportTier: calibratedRuntime.supportTier,
       filingPathKind: calibratedRuntime.filingPathKind,
       estimateReadiness: draft?.estimateReadiness ?? workspace.estimateReadiness,
@@ -312,8 +384,12 @@ export class InMemoryKoreanTaxMCPRuntime {
       lastBlockingReason: hints.lastBlockingReason
         ?? prioritizeBlockingReason(calibratedRuntime.blockerCodes)
         ?? latestSyncAttempt?.blockingReason
+        ?? (latestAuthCheckpoint && latestAuthCheckpoint.state !== 'completed' ? 'missing_auth' : undefined)
         ?? workspace.lastBlockingReason,
-      lastCollectionStatus: hints.lastCollectionStatus ?? latestSyncAttempt?.state ?? workspace.lastCollectionStatus,
+      lastCollectionStatus: hints.lastCollectionStatus
+        ?? latestSyncAttempt?.state
+        ?? (latestAuthCheckpoint && latestAuthCheckpoint.state !== 'completed' ? 'awaiting_user_action' : undefined)
+        ?? workspace.lastCollectionStatus,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -345,11 +421,17 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private getCollectionStatus(input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData> {
-    return taxSourcesGetCollectionStatus(
+    const result = taxSourcesGetCollectionStatus(
       input,
       this.listSources(input.workspaceId),
       this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
     );
+    const derived = this.getWorkspaceDerivedStatus(input.workspaceId);
+    return {
+      ...result,
+      blockingReason: derived.lastBlockingReason,
+      nextRecommendedAction: derived.nextRecommendedAction ?? result.nextRecommendedAction,
+    };
   }
 
   private getWorkspaceStatus(input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData> {
@@ -483,6 +565,21 @@ export class InMemoryKoreanTaxMCPRuntime {
     };
 
     this.store.sources.set(nextSource.sourceId, nextSource);
+
+    if (result.data.checkpointId) {
+      const authCheckpoint: AuthCheckpoint = {
+        authCheckpointId: result.data.checkpointId,
+        workspaceId: input.workspaceId,
+        sourceId: nextSource.sourceId,
+        provider: input.sourceType,
+        authMethod: input.sourceType === 'hometax' ? 'browser_assist' : 'manual',
+        checkpointType: result.data.checkpointType,
+        state: result.status === 'awaiting_auth' ? 'pending' : 'completed',
+        startedAt: new Date().toISOString(),
+      };
+      this.store.authCheckpoints.set(authCheckpoint.authCheckpointId, authCheckpoint);
+    }
+
     this.syncWorkspaceSnapshot(input.workspaceId, {
       lastBlockingReason: result.blockingReason,
       status: 'collecting_sources',
@@ -522,6 +619,23 @@ export class InMemoryKoreanTaxMCPRuntime {
     };
 
     this.store.syncAttempts.set(syncAttempt.syncAttemptId, syncAttempt);
+
+    if (result.checkpointId) {
+      const existingCheckpoint = this.store.authCheckpoints.get(result.checkpointId);
+      const authCheckpoint: AuthCheckpoint = {
+        authCheckpointId: result.checkpointId,
+        workspaceId: syncAttempt.workspaceId,
+        sourceId: input.sourceId,
+        provider: source?.sourceType ?? 'unknown',
+        authMethod: source?.collectionMode === 'browser_assist' ? 'browser_assist' : 'manual',
+        checkpointType: result.checkpointType,
+        state: result.status === 'awaiting_user_action' ? 'in_progress' : 'completed',
+        startedAt: existingCheckpoint?.startedAt ?? new Date().toISOString(),
+        sessionBinding: syncAttempt.syncAttemptId,
+      };
+      this.store.authCheckpoints.set(authCheckpoint.authCheckpointId, authCheckpoint);
+    }
+
     this.syncWorkspaceSnapshot(syncAttempt.workspaceId, {
       lastBlockingReason: result.blockingReason,
       lastCollectionStatus: syncAttempt.state,
@@ -552,6 +666,18 @@ export class InMemoryKoreanTaxMCPRuntime {
 
     this.store.syncAttempts.set(completedAttempt.syncAttemptId, completedAttempt);
 
+    if (input.checkpointId) {
+      const existingCheckpoint = this.store.authCheckpoints.get(input.checkpointId);
+      if (existingCheckpoint) {
+        this.store.authCheckpoints.set(input.checkpointId, {
+          ...existingCheckpoint,
+          state: 'completed',
+          completedAt: new Date().toISOString(),
+          sessionBinding: completedAttempt.syncAttemptId,
+        });
+      }
+    }
+
     const sourceId = result.data.sourceId;
     if (sourceId) {
       const source = this.store.sources.get(sourceId);
@@ -567,6 +693,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       }
     }
 
+    this.reconcileCoverageGapsForWorkspace(completedAttempt.workspaceId);
     this.syncWorkspaceSnapshot(completedAttempt.workspaceId, {
       lastCollectionStatus: completedAttempt.state,
       status: 'collecting',
@@ -577,6 +704,13 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private normalizeLedger(input: NormalizeLedgerInput): MCPResponseEnvelope<NormalizeLedgerData> {
     const result = taxLedgerNormalize(input, Array.from(this.store.transactions.values()));
+    const scopedTransactions = Array.from(this.store.transactions.values()).filter((tx) => tx.workspaceId === input.workspaceId);
+    const taxpayerFacts = buildRuntimeTaxpayerFacts(input.workspaceId, scopedTransactions);
+    const withholdingRecords = buildRuntimeWithholdingRecords(input.workspaceId, scopedTransactions);
+
+    this.store.taxpayerFacts.set(input.workspaceId, taxpayerFacts);
+    this.store.withholdingRecords.set(input.workspaceId, withholdingRecords);
+    this.reconcileCoverageGapsForWorkspace(input.workspaceId);
     this.syncWorkspaceSnapshot(input.workspaceId, {
       status: result.data.transactionCount > 0 ? 'normalizing' : 'collecting',
     });
@@ -588,7 +722,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       input,
       Array.from(this.store.transactions.values()),
       this.listReviewItems(input.workspaceId),
-      [],
+      this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
     );
     this.syncWorkspaceSnapshot(input.workspaceId);
     return result;
@@ -719,6 +853,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         capturedAt: new Date().toISOString(),
       },
     });
+    this.store.filingFieldValues.set(workspaceId, nextFieldValues);
   }
 
   private computeDraft(input: ComputeDraftInput): MCPResponseEnvelope<ComputeDraftData> {
@@ -729,6 +864,10 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.listReviewItems(input.workspaceId),
     );
     this.store.draftsByWorkspace.set(input.workspaceId, result.data);
+    this.store.taxpayerFacts.set(input.workspaceId, result.data.taxpayerFacts ?? this.getTaxpayerFacts(input.workspaceId));
+    this.store.withholdingRecords.set(input.workspaceId, result.data.withholdingRecords ?? this.getWithholdingRecords(input.workspaceId));
+    this.store.filingFieldValues.set(input.workspaceId, result.data.fieldValues ?? []);
+    this.reconcileCoverageGapsForWorkspace(input.workspaceId);
     this.syncWorkspaceSnapshot(input.workspaceId);
     return result;
   }
@@ -738,6 +877,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const result = taxFilingCompareWithHomeTax(input, draft?.fieldValues ?? []);
 
     if (draft && result.data.fieldValues && result.readinessState && result.readiness) {
+      this.store.filingFieldValues.set(input.workspaceId, result.data.fieldValues);
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         fieldValues: result.data.fieldValues,
@@ -783,10 +923,12 @@ export class InMemoryKoreanTaxMCPRuntime {
     const result = taxFilingRefreshOfficialData(input, draft ? { draftId: draft.draftId, fieldValues: draft.fieldValues } : undefined);
 
     if (draft?.fieldValues && result.readinessState && result.readiness) {
+      const refreshedFieldValues = draft.fieldValues.map((field) => ({ ...field, freshnessState: 'current_enough' as const }));
+      this.store.filingFieldValues.set(input.workspaceId, refreshedFieldValues);
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         draftId: result.data.recomputedDraftId ?? draft.draftId,
-        fieldValues: draft.fieldValues.map((field) => ({ ...field, freshnessState: 'current_enough' })),
+        fieldValues: refreshedFieldValues,
         blockerCodes: result.readiness.blockerCodes,
         supportTier: result.readiness.supportTier,
         filingPathKind: result.readiness.filingPathKind,
@@ -834,12 +976,70 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private startHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {
     const result = taxBrowserStartHomeTaxAssist(input);
-    this.store.assistSessionsByWorkspace.set(input.workspaceId, result.data);
+    const browserAssistSession: BrowserAssistSession = {
+      assistSessionId: result.data.assistSessionId,
+      workspaceId: input.workspaceId,
+      draftId: input.draftId,
+      provider: 'hometax',
+      checkpointType: result.data.checkpointType,
+      authState: result.requiresAuth ? 'pending' : 'completed',
+      pendingUserAction: result.pendingUserAction,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.store.assistSessionsByWorkspace.set(input.workspaceId, browserAssistSession);
+
+    if (result.checkpointId) {
+      this.store.authCheckpoints.set(result.checkpointId, {
+        authCheckpointId: result.checkpointId,
+        workspaceId: input.workspaceId,
+        sourceId: `assist:${result.data.assistSessionId}`,
+        provider: 'hometax',
+        authMethod: 'browser_assist',
+        checkpointType: result.data.checkpointType,
+        state: result.requiresAuth ? 'pending' : 'completed',
+        startedAt: browserAssistSession.startedAt,
+        sessionBinding: result.data.assistSessionId,
+      });
+    }
+
     this.syncWorkspaceSnapshot(input.workspaceId, {
       lastBlockingReason: result.blockingReason,
       status: 'submission_in_progress',
     });
     return result;
+  }
+
+  private reconcileCoverageGapsForWorkspace(workspaceId: string): void {
+    const existingGaps = this.store.coverageGapsByWorkspace.get(workspaceId) ?? [];
+    const preservedGaps = existingGaps.filter((gap) => gap.gapType !== 'missing_withholding_record');
+    const hasIncomeTransactions = Array.from(this.store.transactions.values()).some((tx) => tx.workspaceId === workspaceId && tx.normalizedDirection === 'income');
+    const withholdingRecords = this.getWithholdingRecords(workspaceId);
+
+    if (hasIncomeTransactions && withholdingRecords.length === 0) {
+      preservedGaps.push({
+        gapId: `gap_${workspaceId}_missing_withholding_record_runtime`,
+        workspaceId,
+        gapType: 'missing_withholding_record',
+        severity: 'medium',
+        description: 'Income activity exists but no withholding record has been collected yet.',
+        affectedArea: 'withholding',
+        affectedDomains: ['withholdingPrepaidTax'],
+        materiality: 'medium',
+        blocksEstimate: false,
+        blocksDraft: true,
+        blocksSubmission: true,
+        recommendedNextSource: 'hometax',
+        recommendedNextAction: 'tax.sources.plan_collection',
+        relatedSourceIds: this.listSources(workspaceId).filter((source) => source.sourceType === 'hometax').map((source) => source.sourceId),
+        sourceRefs: withholdingRecords.flatMap((record) => record.evidenceRefs),
+        state: 'open',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    this.store.coverageGapsByWorkspace.set(workspaceId, preservedGaps);
   }
 }
 
@@ -1290,4 +1490,67 @@ function extractWorkspaceIdFromSourceId(sourceId?: string): string {
   if (!sourceId) return 'unknown_workspace';
   const match = sourceId.match(/^source_[^_]+_(.+)$/);
   return match?.[1] ?? 'unknown_workspace';
+}
+
+function groupByWorkspace<T>(items: T[], getWorkspaceId: (item: T) => string): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const workspaceId = getWorkspaceId(item);
+    const current = grouped.get(workspaceId) ?? [];
+    current.push(item);
+    grouped.set(workspaceId, current);
+  }
+  return grouped;
+}
+
+function buildRuntimeTaxpayerFacts(workspaceId: string, transactions: LedgerTransaction[]): TaxpayerFact[] {
+  if (transactions.length === 0) return [];
+  return [
+    {
+      factId: `fact_${workspaceId}_income_presence`,
+      workspaceId,
+      category: 'filing_path',
+      factKey: 'income_presence',
+      value: transactions.some((tx) => tx.normalizedDirection === 'income'),
+      status: 'inferred',
+      sourceOfTruth: 'inferred',
+      confidence: 0.7,
+      evidenceRefs: transactions.flatMap((tx) => tx.evidenceRefs),
+      note: `Derived from ${transactions.length} normalized transaction(s).`,
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      factId: `fact_${workspaceId}_expense_presence`,
+      workspaceId,
+      category: 'deduction_eligibility',
+      factKey: 'expense_presence',
+      value: transactions.some((tx) => tx.normalizedDirection === 'expense'),
+      status: 'inferred',
+      sourceOfTruth: 'inferred',
+      confidence: 0.7,
+      evidenceRefs: transactions.flatMap((tx) => tx.evidenceRefs),
+      note: `Derived from ${transactions.length} normalized transaction(s).`,
+      updatedAt: new Date().toISOString(),
+    },
+  ];
+}
+
+function buildRuntimeWithholdingRecords(workspaceId: string, transactions: LedgerTransaction[]): WithholdingRecord[] {
+  const sourceTransactions = transactions.filter((tx) => tx.normalizedDirection === 'income' && tx.evidenceRefs.length > 0);
+  return sourceTransactions.map((transaction, index) => ({
+    withholdingRecordId: `withholding_${workspaceId}_${index + 1}`,
+    workspaceId,
+    filingYear: Number(transaction.occurredAt.slice(0, 4)),
+    incomeSourceRef: transaction.transactionId,
+    payerName: transaction.counterparty,
+    grossAmount: transaction.amount,
+    withheldTaxAmount: 0,
+    currency: transaction.currency,
+    sourceType: 'hometax',
+    sourceOfTruth: 'inferred',
+    extractionConfidence: 0.2,
+    reviewStatus: 'needs_review',
+    evidenceRefs: transaction.evidenceRefs,
+    capturedAt: transaction.occurredAt,
+  }));
 }

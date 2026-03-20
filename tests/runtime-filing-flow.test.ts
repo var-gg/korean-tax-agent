@@ -9,7 +9,7 @@ const demo = rawDemo as {
   consentRecords: ConsentRecord[];
   sources: SourceConnection[];
   syncAttempts: SyncAttempt[];
-  coverageGaps: Array<{ description: string }>;
+  coverageGaps: import('../packages/core/src/types.js').CoverageGap[];
   transactions: LedgerTransaction[];
   decisions: ClassificationDecision[];
 };
@@ -22,7 +22,7 @@ describe('in-memory runtime filing flow', () => {
       sources: demo.sources,
       syncAttempts: demo.syncAttempts,
       coverageGapsByWorkspace: {
-        [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
+        [demo.workspaceId]: demo.coverageGaps,
       },
       transactions: demo.transactions,
       decisions: demo.decisions,
@@ -80,6 +80,9 @@ describe('in-memory runtime filing flow', () => {
     expect(runtime.getDraft(demo.workspaceId)?.supportTier).toBe(resolvedDraft.readiness?.supportTier);
     expect(runtime.getDraft(demo.workspaceId)?.filingPathKind).toBe(resolvedDraft.readiness?.filingPathKind);
     expect(runtime.getDraft(demo.workspaceId)?.draftReadiness).toBe('draft_ready');
+    expect(runtime.getTaxpayerFacts(demo.workspaceId).length).toBeGreaterThan(0);
+    expect(runtime.getWithholdingRecords(demo.workspaceId)).toEqual(resolvedDraft.data.withholdingRecords ?? []);
+    expect(runtime.getFilingFieldValues(demo.workspaceId)).toEqual(resolvedDraft.data.fieldValues ?? []);
 
     const refreshResult = runtime.invoke('tax.filing.refresh_official_data', {
       workspaceId: demo.workspaceId,
@@ -118,6 +121,17 @@ describe('in-memory runtime filing flow', () => {
     expect(prepareResult.readiness?.submissionReadiness).toBe('submission_assist_ready');
     expect(runtime.getWorkspace(demo.workspaceId)?.submissionReadiness).toBe('submission_assist_ready');
     expect(runtime.getWorkspace(demo.workspaceId)?.status).toBe('ready_for_hometax_assist');
+
+    const assistResult = runtime.invoke('tax.browser.start_hometax_assist', {
+      workspaceId: demo.workspaceId,
+      draftId: resolvedDraft.data.draftId,
+      mode: 'fill_assist',
+    });
+
+    expect(assistResult.status).toBe('awaiting_auth');
+    expect(runtime.getBrowserAssistSession(demo.workspaceId)?.assistSessionId).toBe(assistResult.data.assistSessionId);
+    expect(runtime.getAuthCheckpoints(demo.workspaceId).some((checkpoint) => checkpoint.sessionBinding === assistResult.data.assistSessionId)).toBe(true);
+    expect(runtime.getWorkspace(demo.workspaceId)?.status).toBe('submission_in_progress');
   });
 
   it('creates review items when hometax comparison finds material mismatches', () => {
@@ -127,7 +141,7 @@ describe('in-memory runtime filing flow', () => {
       sources: demo.sources,
       syncAttempts: demo.syncAttempts,
       coverageGapsByWorkspace: {
-        [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
+        [demo.workspaceId]: demo.coverageGaps,
       },
       transactions: demo.transactions,
       decisions: demo.decisions,
@@ -167,7 +181,7 @@ describe('in-memory runtime filing flow', () => {
       sources: demo.sources,
       syncAttempts: demo.syncAttempts,
       coverageGapsByWorkspace: {
-        [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
+        [demo.workspaceId]: demo.coverageGaps,
       },
       transactions: demo.transactions,
       decisions: demo.decisions,
@@ -217,3 +231,4 @@ describe('in-memory runtime filing flow', () => {
     expect(updatedDraft?.comparisonSummaryState).not.toBe('material_mismatch');
   });
 });
+

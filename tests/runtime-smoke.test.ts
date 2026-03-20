@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { InMemoryKoreanTaxMCPRuntime } from '../packages/mcp-server/src/runtime.js';
-import type { ConsentRecord, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
+import type { ConsentRecord, CoverageGap, SourceConnection, SyncAttempt } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
   workspaceId: string;
@@ -9,7 +9,8 @@ const demo = rawDemo as {
   consentRecords: ConsentRecord[];
   sources: SourceConnection[];
   syncAttempts: SyncAttempt[];
-  coverageGaps: Array<{ description: string }>;
+  coverageGaps: CoverageGap[];
+  transactions: import('../packages/core/src/types.js').LedgerTransaction[];
 };
 
 describe('in-memory runtime', () => {
@@ -44,7 +45,7 @@ describe('in-memory runtime', () => {
       sources: demo.sources.filter((source) => source.sourceType !== 'hometax'),
       syncAttempts: [],
       coverageGapsByWorkspace: {
-        [demo.workspaceId]: demo.coverageGaps.map((gap) => gap.description),
+        [demo.workspaceId]: demo.coverageGaps,
       },
       transactions: demo.transactions,
     });
@@ -95,5 +96,36 @@ describe('in-memory runtime', () => {
     expect(normalizeResult.status).toBe('completed');
     expect(normalizeResult.data.transactionCount).toBe(3);
     expect(normalizeResult.nextRecommendedAction).toBe('tax.classify.run');
+  });
+
+  it('returns typed coverage gaps and single-read derived status from runtime state', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime({
+      consentRecords: demo.consentRecords,
+      sources: demo.sources,
+      coverageGapsByWorkspace: {
+        [demo.workspaceId]: demo.coverageGaps,
+      },
+      transactions: demo.transactions,
+    });
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId: demo.workspaceId,
+      artifactIds: ['artifact_csv_1'],
+    });
+
+    const collectionStatus = runtime.invoke('tax.sources.get_collection_status', { workspaceId: demo.workspaceId });
+    expect(collectionStatus.data.coverageGaps.length).toBeGreaterThan(0);
+    expect(collectionStatus.data.coverageGaps.every((gap) => typeof gap === 'object' && typeof gap.gapType === 'string')).toBe(true);
+    expect(collectionStatus.data.coverageGaps.every((gap) => Array.isArray(gap.relatedSourceIds))).toBe(true);
+
+    const workspaceStatus = runtime.invoke('tax.workspace.get_status', { workspaceId: demo.workspaceId });
+    expect(workspaceStatus.data.workspace.openCoverageGapCount).toBeGreaterThan(0);
+    expect(workspaceStatus.data.workspace.lastBlockingReason).toBe('comparison_incomplete');
+    expect(workspaceStatus.data.nextRecommendedAction).toBe('tax.filing.compare_with_hometax');
+
+    const derived = runtime.getWorkspaceDerivedStatus(demo.workspaceId);
+    expect(derived.openCoverageGapCount).toBe(workspaceStatus.data.workspace.openCoverageGapCount);
+    expect(['comparison_incomplete', 'missing_material_coverage']).toContain(derived.lastBlockingReason);
+    expect(typeof derived.nextRecommendedAction).toBe('string');
   });
 });
