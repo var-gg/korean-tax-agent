@@ -49,9 +49,19 @@ describe('mcp facade', () => {
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.setup.init_config');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.plan_collection');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.connect');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.list');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.sources.disconnect');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.import.upload_transactions');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.import.upload_documents');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.import.submit_extracted_receipt_fields');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.import.import_hometax_materials');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.browser.get_checkpoint');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.browser.stop_hometax_assist');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.workspace.get_status');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.get_summary');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.ledger.normalize');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.ledger.list_transactions');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.ledger.link_evidence');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compute_draft');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.compare_with_hometax');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.refresh_official_data');
@@ -91,6 +101,50 @@ describe('mcp facade', () => {
     expect(statusResult.ok).toBe(true);
     expect(Array.isArray(statusResult.data.connectedSources)).toBe(true);
 
+    const listResult = facade.invokeTool({
+      name: 'tax.sources.list',
+      input: { workspaceId: demo.workspaceId, includeDisabled: true, includeSyncSummary: true },
+    });
+
+    expect(listResult.ok).toBe(true);
+    expect(Array.isArray(listResult.data.sources)).toBe(true);
+
+    const disconnectInvalid = facade.invokeTool({
+      name: 'tax.sources.disconnect',
+      input: { workspaceId: demo.workspaceId },
+    });
+
+    expect(disconnectInvalid.ok).toBe(false);
+    expect(disconnectInvalid.errorCode).toBe('invalid_input');
+
+    const importTransactionsResult = facade.invokeTool({
+      name: 'tax.import.upload_transactions',
+      input: { workspaceId: demo.workspaceId, refs: [{ ref: 'upload://bank/demo.csv' }], formatHints: ['bank_csv'] },
+    });
+    expect(importTransactionsResult.ok).toBe(true);
+    expect(importTransactionsResult.nextRecommendedAction).toBe('tax.ledger.normalize');
+
+    const importReceiptFieldsInvalid = facade.invokeTool({
+      name: 'tax.import.submit_extracted_receipt_fields',
+      input: { workspaceId: demo.workspaceId, submissions: [] },
+    });
+    expect(importReceiptFieldsInvalid.ok).toBe(false);
+    expect(importReceiptFieldsInvalid.errorCode).toBe('invalid_input');
+
+    const browserCheckpointInvalid = facade.invokeTool({
+      name: 'tax.browser.get_checkpoint',
+      input: { workspaceId: demo.workspaceId },
+    });
+    expect(browserCheckpointInvalid.ok).toBe(false);
+    expect(browserCheckpointInvalid.errorCode).toBe('invalid_input');
+
+    const browserStopInvalid = facade.invokeTool({
+      name: 'tax.browser.stop_hometax_assist',
+      input: { workspaceId: demo.workspaceId },
+    });
+    expect(browserStopInvalid.ok).toBe(false);
+    expect(browserStopInvalid.errorCode).toBe('invalid_input');
+
     const pathResult = facade.invokeTool({
       name: 'tax.profile.detect_filing_path',
       input: { workspaceId: demo.workspaceId },
@@ -105,6 +159,20 @@ describe('mcp facade', () => {
       name: 'tax.ledger.normalize',
       input: { workspaceId: demo.workspaceId, artifactIds: ['artifact_csv_1'] },
     });
+
+    const listTransactionsResult = facade.invokeTool({
+      name: 'tax.ledger.list_transactions',
+      input: { workspaceId: demo.workspaceId, limit: 5, offset: 0 },
+    });
+    expect(listTransactionsResult.ok).toBe(true);
+    expect(Array.isArray(listTransactionsResult.data.rows)).toBe(true);
+
+    const invalidLinkEvidence = facade.invokeTool({
+      name: 'tax.ledger.link_evidence',
+      input: { workspaceId: demo.workspaceId, transactionIds: ['tx_1'] },
+    });
+    expect(invalidLinkEvidence.ok).toBe(false);
+    expect(invalidLinkEvidence.errorCode).toBe('invalid_input');
 
     expect(normalizeResult.ok).toBe(true);
     expect(normalizeResult.data.transactionCount).toBe(3);

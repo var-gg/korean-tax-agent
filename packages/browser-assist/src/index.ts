@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { SnapshotPersistenceAdapter } from '../../core/src/persistence.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -433,6 +434,11 @@ export interface BrowserAssistRuntimeAdapter {
 export interface BrowserAssistSessionStore {
   getSession(sessionId: string): Promise<BrowserAssistSession | undefined> | BrowserAssistSession | undefined;
   saveSession(session: BrowserAssistSession): Promise<void> | void;
+}
+
+export interface BrowserAssistSessionStoreSnapshot {
+  schemaVersion: 1;
+  sessions: BrowserAssistSession[];
 }
 
 export interface BrowserAssistService {
@@ -1047,6 +1053,34 @@ export class InMemoryBrowserAssistSessionStore implements BrowserAssistSessionSt
 
   async saveSession(session: BrowserAssistSession): Promise<void> {
     this.sessions.set(session.id, cloneValue(session));
+  }
+}
+
+export class PersistentBrowserAssistSessionStore implements BrowserAssistSessionStore {
+  private readonly sessions = new Map<string, BrowserAssistSession>();
+  private readonly persistence: SnapshotPersistenceAdapter<BrowserAssistSessionStoreSnapshot>;
+
+  constructor(persistence: SnapshotPersistenceAdapter<BrowserAssistSessionStoreSnapshot>) {
+    this.persistence = persistence;
+    const snapshot = this.persistence.load();
+    if (snapshot?.schemaVersion === 1) {
+      for (const session of snapshot.sessions ?? []) {
+        this.sessions.set(session.id, cloneValue(session));
+      }
+    }
+  }
+
+  async getSession(sessionId: string): Promise<BrowserAssistSession | undefined> {
+    const session = this.sessions.get(sessionId);
+    return session ? cloneValue(session) : undefined;
+  }
+
+  async saveSession(session: BrowserAssistSession): Promise<void> {
+    this.sessions.set(session.id, cloneValue(session));
+    this.persistence.save({
+      schemaVersion: 1,
+      sessions: Array.from(this.sessions.values()).map((current) => cloneValue(current)),
+    });
   }
 }
 

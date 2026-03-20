@@ -25,6 +25,12 @@ const runtime = new InMemoryKoreanTaxMCPRuntime({
   transactions: demo.transactions,
 });
 
+const importResult = runtime.invoke('tax.import.import_hometax_materials', {
+  workspaceId: demo.workspaceId,
+  refs: [{ ref: 'upload://artifact_wht_1', artifactId: 'artifact_wht_1' }],
+  materialMetadata: [{ ref: 'upload://artifact_wht_1', materialTypeHint: 'hometax_export' }],
+});
+
 const result = runtime.invoke('tax.ledger.normalize', {
   workspaceId: demo.workspaceId,
   artifactIds: ['artifact_wht_1'],
@@ -70,6 +76,8 @@ const result = runtime.invoke('tax.ledger.normalize', {
 console.log(JSON.stringify({
   example: 'external-agent-artifact-ingestion',
   note: 'The external AI agent did browser/file/OCR work first, then sent artifact refs + structured payloads into MCP.',
+  importNextRecommendedAction: importResult.nextRecommendedAction,
+  importedArtifacts: importResult.data.artifactIds,
   nextRecommendedAction: result.nextRecommendedAction,
   withholdingRecordsCreated: result.data.withholdingRecordsCreated,
   coverageGapsCreated: result.data.coverageGapsCreated,

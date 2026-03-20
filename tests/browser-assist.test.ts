@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import {
   BrowserAssistSessionError,
@@ -11,12 +14,14 @@ import {
   OpenClawBrowserControlServerClient,
   OpenClawBrowserRuntimeCommandClient,
   OpenClawBrowserToolTransport,
+  PersistentBrowserAssistSessionStore,
   handleOpenClawBrowserRuntimeCommand,
   RecordingBrowserRuntimeAdapter,
   SystemBrowserRuntimeAdapter,
   createBrowserAssistService,
   createBrowserAssistToolAdapter,
 } from '../packages/browser-assist/src/index.js';
+import { JsonFileSnapshotPersistenceAdapter } from '../packages/core/src/persistence.js';
 
 function sequence<T>(values: T[]) {
   let index = 0;
@@ -180,6 +185,32 @@ describe('browser assist', () => {
     expect(completed.session.runtimeState.activeCheckpointId).toBeNull();
     expect(runtime.handoffs).toHaveLength(2);
     expect(completed.session.events.at(-1)?.type).toBe('session-completed');
+  });
+
+  it('reloads persisted browser-assist sessions across store restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'browser-assist-store-'));
+    const persistence = new JsonFileSnapshotPersistenceAdapter<any>({ path: join(dir, 'browser-assist-sessions.json') });
+    const createService = () => createBrowserAssistService({
+      store: new PersistentBrowserAssistSessionStore(persistence),
+      runtime: new RecordingBrowserRuntimeAdapter({
+        now: sequence(['2026-03-16T00:10:00.500Z', '2026-03-16T00:10:01.500Z']),
+      }),
+      now: sequence(['2026-03-16T00:10:00.000Z', '2026-03-16T00:10:01.000Z']),
+      createId: sequence(['session-persist', 'checkpoint-auth-persist', 'checkpoint-review-persist']),
+    });
+
+    const service = createService();
+    const started = await service.startHomeTaxAssist({
+      targetUrl: 'https://hometax.go.kr/persist',
+      requestedBy: 'persist-test',
+      filingDraftId: 'draft-persist',
+    });
+
+    const restartedService = createService();
+    const restored = await restartedService.getHomeTaxAssistStatus(started.session.id);
+    expect(restored.session.id).toBe(started.session.id);
+    expect(restored.session.filingDraftId).toBe('draft-persist');
+    expect(restored.activeCheckpoint?.code).toBe('user-authentication');
   });
 
   it('blocks resume after stop', async () => {

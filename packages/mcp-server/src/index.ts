@@ -8,6 +8,7 @@ export * from './contracts.js';
 export * from './tools.js';
 export * from './runtime.js';
 export * from './facade.js';
+export * from './tool-manifest.js';
 
 export interface StubBrowserHostExecutorOptions {
   now?: () => string;

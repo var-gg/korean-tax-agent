@@ -156,6 +156,9 @@ describe('in-memory runtime filing flow', () => {
     expect(Array.isArray(prepareResult.data.manualOnlyFields)).toBe(true);
     expect(Array.isArray(prepareResult.data.blockedFields)).toBe(true);
     expect(Array.isArray(prepareResult.data.comparisonNeededFields)).toBe(true);
+    expect(prepareResult.data.orderedSections.length).toBeGreaterThan(0);
+    expect(prepareResult.data.handoff.orderedSections.length).toBe(prepareResult.data.orderedSections.length);
+    expect(prepareResult.data.handoff.manualVerificationChecklist.length).toBeGreaterThan(0);
     expect(Object.values(prepareResult.data.sectionMapping)[0]).toMatchObject({
       sectionKey: expect.any(String),
       fieldRefs: expect.any(Array),
@@ -176,6 +179,7 @@ describe('in-memory runtime filing flow', () => {
 
     expect(assistResult.status).toBe('awaiting_auth');
     expect(assistResult.nextRecommendedAction).toBe('tax.browser.resume_hometax_assist');
+    expect(assistResult.data.handoff?.orderedSections.length).toBeGreaterThan(0);
     expect(runtime.getBrowserAssistSession(demo.workspaceId)?.assistSessionId).toBe(assistResult.data.assistSessionId);
     expect(runtime.getAuthCheckpoints(demo.workspaceId).some((checkpoint) => checkpoint.sessionBinding === assistResult.data.assistSessionId)).toBe(true);
     expect(runtime.getWorkspace(demo.workspaceId)?.status).toBe('submission_in_progress');
@@ -188,6 +192,37 @@ describe('in-memory runtime filing flow', () => {
     expect(resumeAssistResult.ok).toBe(true);
     expect(resumeAssistResult.data.assistSessionId).toBe(assistResult.data.assistSessionId);
     expect(resumeAssistResult.data.handoff.recommendedTool).toBe('tax.browser.resume_hometax_assist');
+    expect(resumeAssistResult.data.handoff.entryPlan?.orderedSections.length).toBeGreaterThan(0);
+  });
+
+  it('downgrades prepare plan when review items remain open', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime({
+      consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
+      sources: demo.sources,
+      syncAttempts: demo.syncAttempts,
+      coverageGapsByWorkspace: { [demo.workspaceId]: demo.coverageGaps },
+      transactions: demo.transactions,
+      decisions: demo.decisions,
+      taxpayerFacts: seededTaxpayerFacts,
+      withholdingRecords: seededWithholdingRecords,
+    });
+
+    const draft = runtime.invoke('tax.filing.compute_draft', {
+      workspaceId: demo.workspaceId,
+      draftMode: 'refresh',
+      includeAssumptions: true,
+    });
+    const prepare = runtime.invoke('tax.filing.prepare_hometax', {
+      workspaceId: demo.workspaceId,
+      draftId: draft.data.draftId,
+    });
+
+    expect(prepare.ok).toBe(false);
+    expect(prepare.status).toBe('blocked');
+    expect(prepare.blockingReason).toBe('comparison_incomplete');
+    expect(prepare.data.handoff.blockingItems).toContain('comparison_incomplete');
+    expect(prepare.nextRecommendedAction).toBe('tax.filing.compare_with_hometax');
   });
 
   it('creates review items when hometax comparison finds material mismatches', () => {
@@ -230,6 +265,14 @@ describe('in-memory runtime filing flow', () => {
     expect(compareResult.data.materialMismatches.length).toBeGreaterThan(0);
     expect(compareResult.nextRecommendedAction).toBe('tax.classify.list_review_items');
     expect(runtime.listReviewItems(demo.workspaceId).some((item) => item.reasonCode === 'hometax_material_mismatch')).toBe(true);
+
+    const prepare = runtime.invoke('tax.filing.prepare_hometax', {
+      workspaceId: demo.workspaceId,
+      draftId: resolvedDraft.data.draftId,
+    });
+    expect(prepare.ok).toBe(false);
+    expect(prepare.data.handoff.mismatchSummary.hasUnresolvedMismatch).toBe(true);
+    expect(prepare.data.handoff.immediateUserConfirmations.some((item) => item.includes('mismatch'))).toBe(true);
   });
 
   it('applies resolved hometax mismatch reviews back to the draft', () => {

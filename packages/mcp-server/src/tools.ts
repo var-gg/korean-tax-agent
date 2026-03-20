@@ -38,8 +38,20 @@ import type {
   ConnectSourceData,
   ConnectSourceInput,
   DetectFilingPathData,
+  DisconnectSourceData,
+  DisconnectSourceInput,
+  ImportHomeTaxMaterialsData,
+  ImportHomeTaxMaterialsInput,
+  ListSourcesData,
+  ListSourcesInput,
   DetectFilingPathInput,
   GetCollectionStatusInput,
+  SubmitExtractedReceiptFieldsData,
+  SubmitExtractedReceiptFieldsInput,
+  UploadDocumentsData,
+  UploadDocumentsInput,
+  UploadTransactionsData,
+  UploadTransactionsInput,
   InitConfigData,
   InitConfigInput,
   InspectEnvironmentData,
@@ -311,6 +323,247 @@ export function taxSourcesGetCollectionStatus(
       coverageGaps,
     }),
     nextRecommendedAction: pendingCheckpoints.length > 0 ? 'tax.sources.resume_sync' : 'tax.sources.plan_collection',
+  };
+}
+
+export function taxSourcesList(
+  input: ListSourcesInput,
+  sources: SourceConnection[] = [],
+  syncAttempts: Array<{
+    syncAttemptId: string;
+    sourceId: string;
+    state: string;
+    endedAt?: string;
+    blockingReason?: string;
+  }> = [],
+): MCPResponseEnvelope<ListSourcesData> {
+  const visibleSources = sources.filter((source) => input.includeDisabled || source.metadata?.futureSyncBlocked !== true);
+  const dataSources = visibleSources.map((source) => {
+    const latestAttempt = syncAttempts
+      .filter((attempt) => attempt.sourceId === source.sourceId)
+      .sort((a, b) => (b.endedAt ?? '').localeCompare(a.endedAt ?? ''))[0];
+
+    return {
+      sourceId: source.sourceId,
+      sourceType: source.sourceType,
+      sourceState: source.state ?? source.connectionStatus ?? 'planned',
+      availability: source.metadata?.futureSyncBlocked === true ? 'disconnected' as const : 'available' as const,
+      syncSummary: input.includeSyncSummary
+        ? {
+            lastSyncAttemptId: latestAttempt?.syncAttemptId,
+            lastSyncAttemptState: latestAttempt?.state as NonNullable<ListSourcesData['sources'][number]['syncSummary']>['lastSyncAttemptState'],
+            lastSyncAt: source.lastSyncAt,
+            lastSuccessfulSyncAt: source.lastSuccessfulSyncAt,
+            blockingReason: (latestAttempt?.blockingReason ?? source.lastBlockingReason) as NonNullable<ListSourcesData['sources'][number]['syncSummary']>['blockingReason'],
+          }
+        : undefined,
+      nextRecommendedAction: source.metadata?.futureSyncBlocked === true
+        ? 'tax.sources.connect'
+        : ((source.state === 'awaiting_auth' || source.state === 'blocked') ? 'tax.sources.resume_sync' : 'tax.sources.sync'),
+    };
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId: input.workspaceId,
+      sources: dataSources,
+    },
+    nextRecommendedAction: dataSources.some((source) => source.availability === 'disconnected') ? 'tax.sources.connect' : 'tax.sources.sync',
+  };
+}
+
+export function taxSourcesDisconnect(
+  input: DisconnectSourceInput,
+  source: SourceConnection,
+): MCPResponseEnvelope<DisconnectSourceData> {
+  const disconnectedAt = new Date().toISOString();
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'source_connected',
+    actorType: 'agent',
+    entityRefs: [source.sourceId],
+    summary: `Disconnected source ${source.sourceId} from future syncs.`,
+    metadata: {
+      reason: input.reason,
+      recordsRetained: true,
+    },
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId: input.workspaceId,
+      sourceId: source.sourceId,
+      disconnected: true,
+      sourceState: source.state ?? source.connectionStatus ?? 'completed',
+      recordsRetained: true,
+      warning: '기존 imported records는 유지됨. future sync/resume만 차단됩니다.',
+      disconnectedAt,
+    },
+    warnings: [
+      {
+        code: 'records_retained',
+        message: 'Existing artifacts, documents, transactions, withholding records, and audit history are retained.',
+        severity: 'low',
+      },
+    ],
+    progress: {
+      phase: 'source_connection',
+      step: 'disconnect_source',
+      percent: 100,
+    },
+    nextRecommendedAction: 'tax.sources.list',
+    audit: {
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_disconnected',
+    },
+  };
+}
+
+export function taxImportUploadTransactions(input: UploadTransactionsInput): MCPResponseEnvelope<UploadTransactionsData> {
+  const acceptedRefs = dedupeRefs(input.refs);
+  const artifactIds = acceptedRefs.map((ref) => ref.artifactId ?? buildImportedArtifactId(input.workspaceId, ref.ref, 'transactions'));
+  const ready = artifactIds.length > 0;
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'import_completed',
+    actorType: 'agent',
+    entityRefs: artifactIds,
+    summary: `Registered ${artifactIds.length} transaction import artifact ref(s).`,
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId: input.workspaceId,
+      artifactIds,
+      ingestionSummary: {
+        acceptedRefCount: acceptedRefs.length,
+        deduplicatedRefCount: input.refs.length - acceptedRefs.length,
+        formatHints: input.formatHints ?? [],
+        storedArtifactCount: artifactIds.length,
+      },
+      normalizeReadiness: ready ? 'ready' : 'needs_more_input',
+    },
+    blockingReason: ready ? undefined : 'insufficient_metadata',
+    warnings: ready ? undefined : [{ code: 'no_refs', message: 'No import refs were provided for transaction ingestion.', severity: 'medium' }],
+    progress: { phase: 'import_ingestion', step: 'register_transaction_refs', percent: 100 },
+    nextRecommendedAction: ready ? 'tax.ledger.normalize' : 'tax.sources.plan_collection',
+    audit: {
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_import_transactions_registered',
+    },
+  };
+}
+
+export function taxImportUploadDocuments(input: UploadDocumentsInput): MCPResponseEnvelope<UploadDocumentsData> {
+  const acceptedRefs = dedupeRefs(input.refs);
+  const hinted = new Map((input.documentHints ?? []).map((hint) => [hint.ref, hint]));
+  const documentIds = acceptedRefs.map((ref) => buildImportedDocumentId(input.workspaceId, ref.ref));
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'artifact_parsed',
+    actorType: 'agent',
+    entityRefs: documentIds,
+    summary: `Registered ${documentIds.length} document ref(s) for later normalization.`,
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId: input.workspaceId,
+      documentIds,
+      ingestionSummary: {
+        acceptedRefCount: acceptedRefs.length,
+        hintedDocumentCount: acceptedRefs.filter((ref) => hinted.has(ref.ref)).length,
+        storedDocumentCount: documentIds.length,
+      },
+    },
+    warnings: acceptedRefs.length === 0 ? [{ code: 'no_refs', message: 'No document refs were provided.', severity: 'medium' }] : undefined,
+    blockingReason: acceptedRefs.length === 0 ? 'insufficient_metadata' : undefined,
+    progress: { phase: 'import_ingestion', step: 'register_document_refs', percent: 100 },
+    nextRecommendedAction: acceptedRefs.length > 0 ? 'tax.ledger.normalize' : 'tax.sources.plan_collection',
+    audit: {
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_import_documents_registered',
+    },
+  };
+}
+
+export function taxImportSubmitExtractedReceiptFields(input: SubmitExtractedReceiptFieldsInput): MCPResponseEnvelope<SubmitExtractedReceiptFieldsData> {
+  const accepted = input.submissions.filter((submission) => Object.keys(submission.fields ?? {}).length > 0);
+  const updatedDocumentIds = accepted.filter((submission) => submission.documentId).map((submission) => submission.documentId as string);
+  const createdDocumentIds = accepted.filter((submission) => !submission.documentId).map((submission) => submission.documentId ?? buildImportedDocumentId(input.workspaceId, submission.documentRef ?? submission.artifactRef ?? 'receipt_fields'));
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'artifact_parsed',
+    actorType: 'agent',
+    entityRefs: [...updatedDocumentIds, ...createdDocumentIds],
+    summary: `Registered extracted receipt fields for ${accepted.length} submission(s).`,
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId: input.workspaceId,
+      acceptedSubmissionCount: accepted.length,
+      updatedDocumentIds,
+      createdDocumentIds,
+    },
+    warnings: accepted.length === 0 ? [{ code: 'no_structured_fields', message: 'No structured receipt fields were provided.', severity: 'medium' }] : undefined,
+    blockingReason: accepted.length === 0 ? 'insufficient_metadata' : undefined,
+    progress: { phase: 'import_ingestion', step: 'store_extracted_receipt_fields', percent: 100 },
+    nextRecommendedAction: accepted.length > 0 ? 'tax.ledger.normalize' : 'tax.sources.plan_collection',
+    audit: {
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_receipt_fields_registered',
+    },
+  };
+}
+
+export function taxImportHomeTaxMaterials(input: ImportHomeTaxMaterialsInput): MCPResponseEnvelope<ImportHomeTaxMaterialsData> {
+  const acceptedRefs = dedupeRefs(input.refs);
+  const metadataByRef = new Map((input.materialMetadata ?? []).map((entry) => [entry.ref, entry]));
+  const recognizedMaterials = acceptedRefs.map((ref) => {
+    const artifactId = ref.artifactId ?? buildImportedArtifactId(input.workspaceId, ref.ref, 'hometax');
+    const recognizedType = recognizeHomeTaxMaterialType(ref.ref, metadataByRef.get(ref.ref)?.materialTypeHint);
+    const supported = recognizedType !== 'unknown';
+    return { ref: ref.ref, artifactId, recognizedType, supported };
+  });
+  const audit = createAuditEvent({
+    workspaceId: input.workspaceId,
+    eventType: 'import_completed',
+    actorType: 'agent',
+    entityRefs: recognizedMaterials.map((item) => item.artifactId),
+    summary: `Registered ${recognizedMaterials.length} HomeTax material ref(s).`,
+  });
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      workspaceId: input.workspaceId,
+      artifactIds: recognizedMaterials.map((item) => item.artifactId),
+      recognizedMaterials,
+    },
+    warnings: recognizedMaterials.filter((item) => !item.supported).map((item) => ({
+      code: 'unsupported_hometax_material',
+      message: `Unsupported HomeTax material for ref ${item.ref}.`,
+      severity: 'medium' as const,
+    })),
+    blockingReason: recognizedMaterials.length === 0 ? 'insufficient_metadata' : undefined,
+    progress: { phase: 'import_ingestion', step: 'register_hometax_material_refs', percent: 100 },
+    nextRecommendedAction: recognizedMaterials.some((item) => item.supported) ? 'tax.ledger.normalize' : 'tax.sources.plan_collection',
+    audit: {
+      eventType: audit.eventType,
+      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_hometax_materials_registered',
+    },
   };
 }
 
@@ -763,6 +1016,34 @@ export function taxLedgerNormalize(
       eventId: audit.eventId ?? audit.auditEventId ?? 'evt_ledger_normalized',
     },
   };
+}
+
+function dedupeRefs<T extends { ref: string }>(refs: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const ref of refs) {
+    if (seen.has(ref.ref)) continue;
+    seen.add(ref.ref);
+    result.push(ref);
+  }
+  return result;
+}
+
+function buildImportedArtifactId(workspaceId: string, ref: string, prefix: string): string {
+  return `artifact_${slugify(prefix)}_${slugify(workspaceId)}_${slugify(ref)}`;
+}
+
+function buildImportedDocumentId(workspaceId: string, ref: string): string {
+  return `doc_${slugify(workspaceId)}_${slugify(ref)}`;
+}
+
+function recognizeHomeTaxMaterialType(ref: string, hinted?: string): 'hometax_export' | 'tax_statement' | 'income_statement' | 'taxpayer_overview' | 'unknown' {
+  const text = `${hinted ?? ''} ${ref}`.toLowerCase();
+  if (text.includes('overview') || text.includes('summary')) return 'taxpayer_overview';
+  if (text.includes('income')) return 'income_statement';
+  if (text.includes('statement')) return 'tax_statement';
+  if (text.includes('hometax') || text.includes('export') || text.includes('지급명세') || text.includes('원천징수')) return 'hometax_export';
+  return 'unknown';
 }
 
 function slugify(value: string): string {
@@ -1286,17 +1567,19 @@ export function taxFilingPrepareHomeTax(
 
   const prepareBlockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
 
-  const derivedPreparation = deriveHomeTaxPreparationState(fieldValues);
+  const derivedPreparation = deriveHomeTaxPreparationState(fieldValues, reviewItems, prepareBlockingReason);
 
   return {
     ok: prepareBlockingReason === undefined,
     status: prepareBlockingReason === undefined ? 'completed' : 'blocked',
     data: {
       sectionMapping: derivedPreparation.sectionMapping,
+      orderedSections: derivedPreparation.orderedSections,
       manualOnlyFields: derivedPreparation.manualOnlyFields,
       blockedFields: derivedPreparation.blockedFields,
       comparisonNeededFields: derivedPreparation.comparisonNeededFields,
       browserAssistReady: prepareBlockingReason === undefined,
+      handoff: derivedPreparation.handoff,
       fieldValues,
     },
     readiness: readinessSummary,
@@ -1335,6 +1618,7 @@ export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MC
       assistSessionId: `assist_${input.workspaceId}_${input.draftId}`,
       checkpointType: 'authentication',
       authRequired: true,
+      handoff: undefined,
     },
     requiresAuth: true,
     checkpointType: 'authentication',
@@ -1381,6 +1665,7 @@ export function taxBrowserResumeHomeTaxAssist(
         provider: session.provider ?? 'hometax',
         targetSection: session.lastKnownSection ?? 'hometax_entry_start',
         recommendedTool: 'tax.browser.resume_hometax_assist',
+        entryPlan: undefined,
       },
     },
     requiresAuth: session.authState !== 'completed',
@@ -1442,19 +1727,29 @@ function mergeComputedFieldValuesWithRuntimeState(
   });
 }
 
-function deriveHomeTaxPreparationState(fieldValues: import('../../core/src/types.js').FilingFieldValue[]): PrepareHomeTaxData {
+function deriveHomeTaxPreparationState(
+  fieldValues: import('../../core/src/types.js').FilingFieldValue[],
+  reviewItems: ReviewItem[],
+  prepareBlockingReason?: import('../../core/src/types.js').BlockingReason,
+): Pick<PrepareHomeTaxData, 'sectionMapping' | 'orderedSections' | 'manualOnlyFields' | 'blockedFields' | 'comparisonNeededFields' | 'handoff' | 'browserAssistReady' | 'fieldValues'> {
   const grouped = new Map<string, PrepareHomeTaxData['sectionMapping'][string]>();
   const manualOnlyFields: string[] = [];
   const blockedFields: string[] = [];
   const comparisonNeededFields: string[] = [];
+  const mismatchFields: string[] = [];
+  const openReviewItems = reviewItems.filter((item) => item.resolutionState !== 'resolved' && item.resolutionState !== 'dismissed');
+  const highSeverityReviewItems = openReviewItems.filter((item) => item.severity === 'high' || item.severity === 'critical');
+  const mismatchReviewItems = openReviewItems.filter((item) => item.reasonCode === 'hometax_material_mismatch');
+  const immediateUserConfirmations = ['consent/login/final judgment must remain user-confirmed'];
 
   for (const field of fieldValues) {
     const fieldRef = `${field.sectionKey}.${field.fieldKey}`;
     const comparisonState = field.comparisonState ?? 'not_compared';
     const requiresManualEntry = field.requiresManualEntry === true;
     const comparisonNeeded = !requiresManualEntry && (comparisonState === 'not_compared' || comparisonState === undefined);
-    const blocked = comparisonState === 'mismatch' || comparisonNeeded;
-
+    const hasMismatch = comparisonState === 'mismatch';
+    const fieldReviewOpen = mismatchReviewItems.some((item) => item.linkedEntityIds?.includes(`${field.sectionKey}:${field.fieldKey}`));
+    const blocked = hasMismatch || comparisonNeeded || fieldReviewOpen || Boolean(prepareBlockingReason);
     const current = grouped.get(field.sectionKey) ?? {
       sectionKey: field.sectionKey,
       fieldRefs: [],
@@ -1462,8 +1757,11 @@ function deriveHomeTaxPreparationState(fieldValues: import('../../core/src/types
       manualOnlyFields: [],
       blockedFields: [],
       comparisonNeededFields: [],
+      mismatchFields: [],
+      blockingItems: [],
     };
 
+    const sourceProvenanceRefs = Array.isArray(field.evidenceRefs) ? field.evidenceRefs : [];
     current.fieldRefs.push(fieldRef);
     current.mappedFields.push({
       fieldKey: field.fieldKey,
@@ -1474,6 +1772,16 @@ function deriveHomeTaxPreparationState(fieldValues: import('../../core/src/types
       requiresManualEntry,
       blocked,
       comparisonNeeded,
+      sourceProvenanceRefs,
+      mismatchState: fieldReviewOpen ? 'review_required' : hasMismatch ? 'mismatch' : comparisonNeeded ? 'not_compared' : 'matched',
+      reviewStatus: fieldReviewOpen ? 'open' : 'none',
+      entryInstruction: requiresManualEntry
+        ? '사용자가 HomeTax 화면에서 직접 확인 후 수기 입력'
+        : hasMismatch
+          ? '초안값과 HomeTax 관측값 불일치. 검토 후 입력 여부 결정'
+          : comparisonNeeded
+            ? 'HomeTax 표시값과 대조 후 입력'
+            : '초안 기준으로 입력 후 화면값 재확인',
     });
 
     if (requiresManualEntry) {
@@ -1488,16 +1796,65 @@ function deriveHomeTaxPreparationState(fieldValues: import('../../core/src/types
       current.comparisonNeededFields.push(fieldRef);
       comparisonNeededFields.push(fieldRef);
     }
+    if (hasMismatch || fieldReviewOpen) {
+      current.mismatchFields.push(fieldRef);
+      mismatchFields.push(fieldRef);
+    }
 
     grouped.set(field.sectionKey, current);
   }
 
+  const orderedSections = Array.from(grouped.values())
+    .sort((a, b) => a.sectionKey.localeCompare(b.sectionKey))
+    .map((section, index) => ({
+      order: index + 1,
+      sectionKey: section.sectionKey,
+      checkpointType: section.blockedFields.length > 0 ? 'review_judgment' as const : 'data_entry' as const,
+      fieldRefs: section.fieldRefs,
+      mappedFields: section.mappedFields,
+      manualOnlyFields: section.manualOnlyFields,
+      blockedFields: section.blockedFields,
+      comparisonNeededFields: section.comparisonNeededFields,
+      mismatchFields: section.mismatchFields,
+      blockingItems: [
+        ...(section.blockedFields.length > 0 ? [`${section.sectionKey} section has blocked fields`] : []),
+      ],
+    }));
+
+  const blockingItems = [
+    ...(prepareBlockingReason ? [prepareBlockingReason] : []),
+    ...(highSeverityReviewItems.length > 0 ? ['high_severity_review_items_open'] : []),
+    ...(mismatchReviewItems.length > 0 ? ['unresolved_hometax_mismatches'] : []),
+  ];
+
+  if (highSeverityReviewItems.length > 0) immediateUserConfirmations.push('high severity review items require human judgment');
+  if (mismatchReviewItems.length > 0) immediateUserConfirmations.push('unresolved mismatch fields require user decision before final filing');
+  if (prepareBlockingReason === 'official_data_refresh_required') immediateUserConfirmations.push('official data refresh needed before compare/recompute');
+  immediateUserConfirmations.push('final submission judgment must be made by the user');
+
   return {
     sectionMapping: Object.fromEntries(grouped.entries()),
+    orderedSections,
     manualOnlyFields,
     blockedFields,
     comparisonNeededFields,
-    browserAssistReady: false,
+    browserAssistReady: blockingItems.length === 0,
+    handoff: {
+      orderedSections,
+      mismatchSummary: {
+        hasUnresolvedMismatch: mismatchReviewItems.length > 0 || mismatchFields.length > 0,
+        hasHighSeverityReview: highSeverityReviewItems.length > 0,
+        openReviewItemIds: openReviewItems.map((item) => item.reviewItemId),
+        unresolvedMismatchFieldRefs: mismatchFields,
+      },
+      manualVerificationChecklist: [
+        '입력 전 각 섹션의 초안값과 HomeTax 표시값을 대조',
+        '수기 입력 필드는 원천 증빙과 합계가 일치하는지 확인',
+        '최종 제출 전 review/mismatch/blocker 상태 재확인',
+      ],
+      blockingItems,
+      immediateUserConfirmations,
+    },
     fieldValues,
   };
 }

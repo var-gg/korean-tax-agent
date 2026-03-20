@@ -4,6 +4,7 @@ import type {
   BlockingReason,
   BrowserAssistSession,
   ClassificationDecision,
+  CheckpointType,
   ConsentRecord,
   CoverageGap,
   EvidenceDocument,
@@ -18,9 +19,14 @@ import type {
   WithholdingRecord,
   AuditEvent,
 } from '../../core/src/types.js';
+import type { SnapshotPersistenceAdapter } from '../../core/src/persistence.js';
 import type {
   CollectionStatusData,
   CompareWithHomeTaxData,
+  DisconnectSourceData,
+  DisconnectSourceInput,
+  ImportHomeTaxMaterialsData,
+  ImportHomeTaxMaterialsInput,
   GetFilingSummaryData,
   GetFilingSummaryInput,
   GetWorkspaceStatusData,
@@ -30,6 +36,8 @@ import type {
   ComputeDraftInput,
   ConnectSourceData,
   ConnectSourceInput,
+  ListSourcesData,
+  ListSourcesInput,
   DetectFilingPathData,
   DetectFilingPathInput,
   GetCollectionStatusInput,
@@ -37,7 +45,17 @@ import type {
   InitConfigInput,
   InspectEnvironmentData,
   InspectEnvironmentInput,
+  GetHomeTaxCheckpointData,
+  GetHomeTaxCheckpointInput,
   KoreanTaxMCPContracts,
+  LinkEvidenceData,
+  LinkEvidenceInput,
+  ListTransactionsData,
+  ListTransactionsInput,
+  StopHomeTaxAssistData,
+  StopHomeTaxAssistInput,
+  SubmitExtractedReceiptFieldsData,
+  SubmitExtractedReceiptFieldsInput,
   MCPResponseEnvelope,
   NormalizeLedgerData,
   NormalizeLedgerInput,
@@ -52,6 +70,10 @@ import type {
   ResumeSyncData,
   ResumeSyncInput,
   RunClassificationData,
+  UploadDocumentsData,
+  UploadDocumentsInput,
+  UploadTransactionsData,
+  UploadTransactionsInput,
   RunClassificationInput,
   StartHomeTaxAssistData,
   StartHomeTaxAssistInput,
@@ -68,12 +90,18 @@ import {
   taxFilingComputeDraft,
   taxFilingPrepareHomeTax,
   taxFilingRefreshOfficialData,
+  taxImportHomeTaxMaterials,
+  taxImportSubmitExtractedReceiptFields,
+  taxImportUploadDocuments,
+  taxImportUploadTransactions,
   taxLedgerNormalize,
   taxProfileDetectFilingPath,
   taxSetupInitConfig,
   taxSetupInspectEnvironment,
   taxSourcesConnect,
+  taxSourcesDisconnect,
   taxSourcesGetCollectionStatus,
+  taxSourcesList,
   taxSourcesPlanCollection,
   taxSourcesResumeSync,
   taxSourcesSync,
@@ -87,9 +115,17 @@ export type SupportedRuntimeToolName =
   | 'tax.workspace.get_status'
   | 'tax.filing.get_summary'
   | 'tax.sources.connect'
+  | 'tax.sources.list'
+  | 'tax.sources.disconnect'
+  | 'tax.import.upload_transactions'
+  | 'tax.import.upload_documents'
+  | 'tax.import.submit_extracted_receipt_fields'
+  | 'tax.import.import_hometax_materials'
   | 'tax.sources.sync'
   | 'tax.sources.resume_sync'
   | 'tax.ledger.normalize'
+  | 'tax.ledger.list_transactions'
+  | 'tax.ledger.link_evidence'
   | 'tax.profile.detect_filing_path'
   | 'tax.classify.run'
   | 'tax.classify.list_review_items'
@@ -99,7 +135,9 @@ export type SupportedRuntimeToolName =
   | 'tax.filing.refresh_official_data'
   | 'tax.filing.prepare_hometax'
   | 'tax.browser.start_hometax_assist'
-  | 'tax.browser.resume_hometax_assist';
+  | 'tax.browser.resume_hometax_assist'
+  | 'tax.browser.get_checkpoint'
+  | 'tax.browser.stop_hometax_assist';
 
 export type RuntimeStore = {
   consentRecords: ConsentRecord[];
@@ -123,6 +161,29 @@ export type RuntimeStore = {
   assistSessionsByWorkspace: Map<string, BrowserAssistSession>;
 };
 
+export type DurableRuntimeSnapshot = {
+  schemaVersion: 1;
+  consentRecords: ConsentRecord[];
+  workspaces: FilingWorkspace[];
+  sources: SourceConnection[];
+  syncAttempts: SyncAttempt[];
+  coverageGapsByWorkspace: Record<string, CoverageGap[]>;
+  taxpayerFactsByWorkspace: Record<string, TaxpayerFact[]>;
+  withholdingRecordsByWorkspace: Record<string, WithholdingRecord[]>;
+  sourceArtifacts: SourceArtifact[];
+  evidenceDocuments: EvidenceDocument[];
+  auditEvents: AuditEvent[];
+  authCheckpoints: AuthCheckpoint[];
+  filingFieldValues: FilingFieldValue[];
+  fieldValuesByDraft: Record<string, FilingFieldValue[]>;
+  normalizationLinksByWorkspace: Record<string, { artifactId: string; documentIds: string[]; transactionIds: string[]; withholdingRecordIds: string[] }[]>;
+  transactions: LedgerTransaction[];
+  decisions: ClassificationDecision[];
+  reviewItems: ReviewItem[];
+  draftsByWorkspace: Record<string, ComputeDraftData>;
+  assistSessions: BrowserAssistSession[];
+};
+
 export type CreateRuntimeOptions = {
   consentRecords?: ConsentRecord[];
   workspaces?: FilingWorkspace[];
@@ -139,9 +200,13 @@ export type CreateRuntimeOptions = {
   authCheckpoints?: AuthCheckpoint[];
   filingFieldValues?: FilingFieldValue[];
   fieldValuesByDraft?: Record<string, FilingFieldValue[]>;
+  normalizationLinksByWorkspace?: Record<string, { artifactId: string; documentIds: string[]; transactionIds: string[]; withholdingRecordIds: string[] }[]>;
   transactions?: LedgerTransaction[];
   decisions?: ClassificationDecision[];
   reviewItems?: ReviewItem[];
+  draftsByWorkspace?: Record<string, ComputeDraftData>;
+  assistSessions?: BrowserAssistSession[];
+  persistence?: SnapshotPersistenceAdapter<DurableRuntimeSnapshot>;
 };
 
 export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeStore {
@@ -177,20 +242,27 @@ export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeS
     authCheckpoints: new Map((options.authCheckpoints ?? []).map((checkpoint) => [checkpoint.authCheckpointId, checkpoint])),
     fieldValuesByDraft: seededFieldValuesByDraft,
     fieldValueDraftIdsByWorkspace,
-    normalizationLinksByWorkspace: new Map(),
+    normalizationLinksByWorkspace: new Map(Object.entries(options.normalizationLinksByWorkspace ?? {})),
     transactions: new Map((options.transactions ?? []).map((tx) => [tx.transactionId, tx])),
     decisions: new Map((options.decisions ?? []).map((decision) => [decision.decisionId, decision])),
     reviewItems: new Map((options.reviewItems ?? []).map((item) => [item.reviewItemId, item])),
-    draftsByWorkspace: new Map(),
-    assistSessionsByWorkspace: new Map(),
+    draftsByWorkspace: new Map(Object.entries(options.draftsByWorkspace ?? {})),
+    assistSessionsByWorkspace: new Map((options.assistSessions ?? []).map((session) => [session.workspaceId, session])),
   };
 }
 
 export class InMemoryKoreanTaxMCPRuntime {
   readonly store: RuntimeStore;
+  private readonly persistence?: SnapshotPersistenceAdapter<DurableRuntimeSnapshot>;
 
   constructor(options: CreateRuntimeOptions = {}) {
-    this.store = createRuntimeStore(options);
+    const snapshot = options.persistence?.load();
+    const seededOptions = snapshot ? runtimeOptionsFromSnapshot(snapshot, options) : options;
+    this.store = createRuntimeStore(seededOptions);
+    this.persistence = options.persistence;
+    if (this.persistence && snapshot) {
+      this.persistState();
+    }
   }
 
   invoke(name: 'tax.setup.inspect_environment', input: InspectEnvironmentInput): MCPResponseEnvelope<InspectEnvironmentData>;
@@ -200,9 +272,17 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.workspace.get_status', input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData>;
   invoke(name: 'tax.filing.get_summary', input: GetFilingSummaryInput): MCPResponseEnvelope<GetFilingSummaryData>;
   invoke(name: 'tax.sources.connect', input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData>;
+  invoke(name: 'tax.sources.list', input: ListSourcesInput): MCPResponseEnvelope<ListSourcesData>;
+  invoke(name: 'tax.sources.disconnect', input: DisconnectSourceInput): MCPResponseEnvelope<DisconnectSourceData>;
+  invoke(name: 'tax.import.upload_transactions', input: UploadTransactionsInput): MCPResponseEnvelope<UploadTransactionsData>;
+  invoke(name: 'tax.import.upload_documents', input: UploadDocumentsInput): MCPResponseEnvelope<UploadDocumentsData>;
+  invoke(name: 'tax.import.submit_extracted_receipt_fields', input: SubmitExtractedReceiptFieldsInput): MCPResponseEnvelope<SubmitExtractedReceiptFieldsData>;
+  invoke(name: 'tax.import.import_hometax_materials', input: ImportHomeTaxMaterialsInput): MCPResponseEnvelope<ImportHomeTaxMaterialsData>;
   invoke(name: 'tax.sources.sync', input: SyncSourceInput): MCPResponseEnvelope<SyncSourceData>;
   invoke(name: 'tax.sources.resume_sync', input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData>;
   invoke(name: 'tax.ledger.normalize', input: NormalizeLedgerInput): MCPResponseEnvelope<NormalizeLedgerData>;
+  invoke(name: 'tax.ledger.list_transactions', input: ListTransactionsInput): MCPResponseEnvelope<ListTransactionsData>;
+  invoke(name: 'tax.ledger.link_evidence', input: LinkEvidenceInput): MCPResponseEnvelope<LinkEvidenceData>;
   invoke(name: 'tax.profile.detect_filing_path', input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData>;
   invoke(name: 'tax.classify.run', input: RunClassificationInput): MCPResponseEnvelope<RunClassificationData>;
   invoke(name: 'tax.classify.list_review_items', input: { workspaceId: string }): MCPResponseEnvelope<{ items: ReviewItem[]; summary: ReturnType<typeof taxClassifyListReviewItems>['data']['summary'] }>;
@@ -213,54 +293,109 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.filing.prepare_hometax', input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData>;
   invoke(name: 'tax.browser.start_hometax_assist', input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData>;
   invoke(name: 'tax.browser.resume_hometax_assist', input: ResumeHomeTaxAssistInput): MCPResponseEnvelope<ResumeHomeTaxAssistData>;
+  invoke(name: 'tax.browser.get_checkpoint', input: GetHomeTaxCheckpointInput): MCPResponseEnvelope<GetHomeTaxCheckpointData>;
+  invoke(name: 'tax.browser.stop_hometax_assist', input: StopHomeTaxAssistInput): MCPResponseEnvelope<StopHomeTaxAssistData>;
   invoke<TName extends SupportedRuntimeToolName>(
     name: TName,
     input: KoreanTaxMCPContracts[TName]['input'],
   ): KoreanTaxMCPContracts[TName]['output'] {
+    let result: KoreanTaxMCPContracts[TName]['output'];
     switch (name) {
       case 'tax.setup.inspect_environment':
-        return this.inspectEnvironment(input as InspectEnvironmentInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.inspectEnvironment(input as InspectEnvironmentInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.setup.init_config':
-        return this.initConfig(input as InitConfigInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.initConfig(input as InitConfigInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.sources.plan_collection':
-        return this.planCollection(input as KoreanTaxMCPContracts['tax.sources.plan_collection']['input']) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.planCollection(input as KoreanTaxMCPContracts['tax.sources.plan_collection']['input']) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.sources.get_collection_status':
-        return this.getCollectionStatus(input as GetCollectionStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.getCollectionStatus(input as GetCollectionStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.workspace.get_status':
-        return this.getWorkspaceStatus(input as GetWorkspaceStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.getWorkspaceStatus(input as GetWorkspaceStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.filing.get_summary':
-        return this.getFilingSummary(input as GetFilingSummaryInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.getFilingSummary(input as GetFilingSummaryInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.sources.connect':
-        return this.connectSource(input as ConnectSourceInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.connectSource(input as ConnectSourceInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.sources.list':
+        result = this.listWorkspaceSources(input as ListSourcesInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.sources.disconnect':
+        result = this.disconnectSource(input as DisconnectSourceInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.import.upload_transactions':
+        result = this.uploadTransactions(input as UploadTransactionsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.import.upload_documents':
+        result = this.uploadDocuments(input as UploadDocumentsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.import.submit_extracted_receipt_fields':
+        result = this.submitExtractedReceiptFields(input as SubmitExtractedReceiptFieldsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.import.import_hometax_materials':
+        result = this.importHomeTaxMaterials(input as ImportHomeTaxMaterialsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.sources.sync':
-        return this.syncSource(input as SyncSourceInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.syncSource(input as SyncSourceInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.sources.resume_sync':
-        return this.resumeSync(input as ResumeSyncInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.resumeSync(input as ResumeSyncInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.ledger.normalize':
-        return this.normalizeLedger(input as NormalizeLedgerInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.normalizeLedger(input as NormalizeLedgerInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.ledger.list_transactions':
+        result = this.listTransactions(input as ListTransactionsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.ledger.link_evidence':
+        result = this.linkEvidence(input as LinkEvidenceInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.profile.detect_filing_path':
-        return this.detectFilingPath(input as DetectFilingPathInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.detectFilingPath(input as DetectFilingPathInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.classify.run':
-        return this.runClassification(input as RunClassificationInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.runClassification(input as RunClassificationInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.classify.list_review_items':
-        return this.getReviewQueue(input as { workspaceId: string }) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.getReviewQueue(input as { workspaceId: string }) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.classify.resolve_review_item':
-        return this.resolveReviewItems(input as ResolveReviewItemInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.resolveReviewItems(input as ResolveReviewItemInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.filing.compute_draft':
-        return this.computeDraft(input as ComputeDraftInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.computeDraft(input as ComputeDraftInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.filing.compare_with_hometax':
-        return this.compareWithHomeTax(input as CompareWithHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.compareWithHomeTax(input as CompareWithHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.filing.refresh_official_data':
-        return this.refreshOfficialData(input as RefreshOfficialDataInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.refreshOfficialData(input as RefreshOfficialDataInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.filing.prepare_hometax':
-        return this.prepareHomeTax(input as PrepareHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.prepareHomeTax(input as PrepareHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.browser.start_hometax_assist':
-        return this.startHomeTaxAssist(input as StartHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.startHomeTaxAssist(input as StartHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.browser.resume_hometax_assist':
-        return this.resumeHomeTaxAssist(input as ResumeHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
+        result = this.resumeHomeTaxAssist(input as ResumeHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.browser.get_checkpoint':
+        result = this.getHomeTaxCheckpoint(input as GetHomeTaxCheckpointInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.browser.stop_hometax_assist':
+        result = this.stopHomeTaxAssist(input as StopHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       default:
         throw new Error(`Unsupported runtime tool: ${String(name)}`);
     }
+    this.persistState();
+    return result;
   }
 
   listSources(workspaceId?: string): SourceConnection[] {
@@ -319,6 +454,22 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   getBrowserAssistSession(workspaceId: string): BrowserAssistSession | undefined {
     return this.store.assistSessionsByWorkspace.get(workspaceId);
+  }
+
+  exportSnapshot(): DurableRuntimeSnapshot {
+    return createRuntimeSnapshot(this.store);
+  }
+
+  private persistState(): void {
+    this.persistence?.save(this.exportSnapshot());
+  }
+
+  private findAssistSession(assistSessionId: string, workspaceId?: string): BrowserAssistSession | undefined {
+    if (workspaceId) {
+      const session = this.store.assistSessionsByWorkspace.get(workspaceId);
+      if (session?.assistSessionId === assistSessionId) return session;
+    }
+    return Array.from(this.store.assistSessionsByWorkspace.values()).find((candidate) => candidate.assistSessionId === assistSessionId);
   }
 
   getWorkspaceDerivedStatus(workspaceId: string): {
@@ -600,6 +751,171 @@ export class InMemoryKoreanTaxMCPRuntime {
     };
   }
 
+  private listWorkspaceSources(input: ListSourcesInput): MCPResponseEnvelope<ListSourcesData> {
+    return taxSourcesList(
+      input,
+      this.listSources(input.workspaceId),
+      this.listSyncAttempts().filter((attempt) => attempt.workspaceId === input.workspaceId),
+    );
+  }
+
+  private disconnectSource(input: DisconnectSourceInput): MCPResponseEnvelope<DisconnectSourceData> {
+    const source = this.store.sources.get(input.sourceId);
+    if (!source || source.workspaceId !== input.workspaceId) {
+      return {
+        ok: false,
+        status: 'failed',
+        data: {
+          workspaceId: input.workspaceId,
+          sourceId: input.sourceId,
+          disconnected: false,
+          sourceState: 'planned' as const,
+          recordsRetained: true,
+          warning: '기존 imported records는 유지되며, 요청한 source를 workspace에서 찾지 못했습니다.',
+        },
+        errorCode: 'source_not_found',
+        errorMessage: `Source ${input.sourceId} was not found in workspace ${input.workspaceId}.`,
+        blockingReason: 'insufficient_metadata',
+        nextRecommendedAction: 'tax.sources.list',
+      };
+    }
+
+    const result = taxSourcesDisconnect(input, source);
+    this.store.sources.set(input.sourceId, {
+      ...source,
+      metadata: {
+        ...(source.metadata ?? {}),
+        futureSyncBlocked: true,
+        availability: 'disconnected',
+        disconnectedAt: result.data.disconnectedAt,
+        disconnectReason: input.reason,
+      },
+      updatedAt: result.data.disconnectedAt ?? new Date().toISOString(),
+    });
+    this.syncWorkspaceSnapshot(input.workspaceId);
+    return result;
+  }
+
+  private uploadTransactions(input: UploadTransactionsInput): MCPResponseEnvelope<UploadTransactionsData> {
+    const result = taxImportUploadTransactions(input);
+    for (const [index, ref] of input.refs.entries()) {
+      const artifactId = result.data.artifactIds[index] ?? `artifact_missing_${index + 1}`;
+      if (this.store.sourceArtifacts.has(artifactId)) continue;
+      this.store.sourceArtifacts.set(artifactId, {
+        artifactId,
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId ?? `source_import_${input.workspaceId}`,
+        artifactType: inferArtifactTypeFromRef(ref.ref, ref.contentType, input.formatHints),
+        ingestedAt: new Date().toISOString(),
+        parseStatus: 'pending',
+        parseState: 'pending',
+        contentRef: ref.ref,
+        provenance: {
+          importTool: 'tax.import.upload_transactions',
+          importMetadata: input.importMetadata,
+          formatHints: input.formatHints ?? [],
+          sourceType: input.sourceType,
+          refMetadata: ref.metadata,
+        },
+      });
+    }
+    return result;
+  }
+
+  private uploadDocuments(input: UploadDocumentsInput): MCPResponseEnvelope<UploadDocumentsData> {
+    const result = taxImportUploadDocuments(input);
+    const hints = new Map((input.documentHints ?? []).map((hint) => [hint.ref, hint]));
+    for (const [index, ref] of input.refs.entries()) {
+      const documentId = result.data.documentIds[index];
+      if (!documentId || this.store.evidenceDocuments.has(documentId)) continue;
+      const hint = hints.get(ref.ref);
+      this.store.evidenceDocuments.set(documentId, {
+        documentId,
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId ?? `source_import_${input.workspaceId}`,
+        documentType: hint?.documentType ?? inferDocumentTypeFromImportRef(ref.ref),
+        issuedAt: hint?.issuedAt,
+        issuer: hint?.issuer,
+        amount: hint?.amount,
+        currency: hint?.currency,
+        fileRef: ref.ref,
+        extractionStatus: 'pending',
+        extractedFields: {
+          importTool: 'tax.import.upload_documents',
+          importMetadata: input.importMetadata,
+          hintMetadata: hint?.metadata,
+          refMetadata: ref.metadata,
+        },
+        linkedTransactionIds: hint?.linkedTransactionRefs ?? [],
+      });
+    }
+    return result;
+  }
+
+  private submitExtractedReceiptFields(input: SubmitExtractedReceiptFieldsInput): MCPResponseEnvelope<SubmitExtractedReceiptFieldsData> {
+    const result = taxImportSubmitExtractedReceiptFields(input);
+    const createdIds = new Set(result.data.createdDocumentIds);
+    for (const submission of input.submissions) {
+      const documentId = submission.documentId
+        ?? (submission.documentRef ? buildImportedDocumentIdForRuntime(input.workspaceId, submission.documentRef) : undefined)
+        ?? (submission.artifactRef ? buildImportedDocumentIdForRuntime(input.workspaceId, submission.artifactRef) : undefined);
+      if (!documentId) continue;
+      const current = this.store.evidenceDocuments.get(documentId);
+      this.store.evidenceDocuments.set(documentId, {
+        documentId,
+        workspaceId: input.workspaceId,
+        sourceId: current?.sourceId ?? `source_import_${input.workspaceId}`,
+        artifactId: current?.artifactId ?? submission.artifactId,
+        documentType: current?.documentType ?? submission.documentTypeHint ?? 'receipt',
+        fileRef: current?.fileRef ?? submission.documentRef ?? submission.artifactRef ?? documentId,
+        extractionStatus: 'extracted',
+        linkedTransactionIds: current?.linkedTransactionIds ?? [],
+        extractedFields: {
+          ...(current?.extractedFields ?? {}),
+          ...submission.fields,
+          extractorMetadata: input.extractorMetadata,
+          ingestionMode: 'ref_only_structured_fields',
+        },
+        issuedAt: current?.issuedAt,
+        issuer: current?.issuer,
+        amount: current?.amount,
+        currency: current?.currency,
+      });
+      if (createdIds.has(documentId) && !current) {
+        // noop; explicit branch kept for deterministic behavior/readability
+      }
+    }
+    return result;
+  }
+
+  private importHomeTaxMaterials(input: ImportHomeTaxMaterialsInput): MCPResponseEnvelope<ImportHomeTaxMaterialsData> {
+    const result = taxImportHomeTaxMaterials(input);
+    const metadataByRef = new Map((input.materialMetadata ?? []).map((entry) => [entry.ref, entry]));
+    for (const item of result.data.recognizedMaterials) {
+      if (this.store.sourceArtifacts.has(item.artifactId)) continue;
+      const metadata = metadataByRef.get(item.ref);
+      this.store.sourceArtifacts.set(item.artifactId, {
+        artifactId: item.artifactId,
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId ?? `source_hometax_${input.workspaceId}`,
+        artifactType: inferArtifactTypeFromRef(item.ref, undefined, ['hometax']),
+        ingestedAt: new Date().toISOString(),
+        parseStatus: item.supported ? 'pending' : 'failed',
+        parseState: item.supported ? 'pending' : 'failed',
+        contentRef: item.ref,
+        provenance: {
+          importTool: 'tax.import.import_hometax_materials',
+          importMetadata: input.importMetadata,
+          recognizedType: item.recognizedType,
+          supported: item.supported,
+          observedSection: metadata?.observedSection,
+          metadata: metadata?.metadata,
+        },
+      });
+    }
+    return result;
+  }
+
   private connectSource(input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData> {
     const result = taxSourcesConnect(input, this.store.consentRecords);
 
@@ -640,8 +956,12 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private syncSource(input: SyncSourceInput): MCPResponseEnvelope<SyncSourceData> {
-    const result = taxSourcesSync(input);
     const source = this.store.sources.get(input.sourceId);
+    if (source && source.metadata?.futureSyncBlocked === true) {
+      return buildDisconnectedSourceSyncEnvelope(source, input.syncMode);
+    }
+
+    const result = taxSourcesSync(input);
 
     if (source && result.data.sourceState) {
       this.store.sources.set(input.sourceId, {
@@ -697,6 +1017,12 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private resumeSync(input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData> {
+    const disconnectedSourceId = input.sourceId ?? Array.from(this.store.syncAttempts.values()).find((attempt) => attempt.syncAttemptId === input.syncSessionId)?.sourceId;
+    const disconnectedSource = disconnectedSourceId ? this.store.sources.get(disconnectedSourceId) : undefined;
+    if (disconnectedSource && disconnectedSource.metadata?.futureSyncBlocked === true) {
+      return buildDisconnectedSourceResumeEnvelope(disconnectedSource, input);
+    }
+
     const result = taxSourcesResumeSync(input);
     const attemptId = result.data.syncSessionId;
     const existingAttempt = Array.from(this.store.syncAttempts.values()).find(
@@ -805,6 +1131,164 @@ export class InMemoryKoreanTaxMCPRuntime {
       status: result.data.transactionCount > 0 || result.data.documentCount > 0 ? 'normalizing' : 'collecting',
     });
     return result;
+  }
+
+  private listTransactions(input: ListTransactionsInput): MCPResponseEnvelope<ListTransactionsData> {
+    const limit = Math.max(1, Math.min(input.limit ?? 50, 200));
+    const offset = Math.max(0, input.offset ?? 0);
+    const allRows = Array.from(this.store.transactions.values())
+      .filter((tx) => tx.workspaceId === input.workspaceId)
+      .filter((tx) => !input.dateFrom || tx.occurredAt >= input.dateFrom)
+      .filter((tx) => !input.dateTo || tx.occurredAt <= input.dateTo)
+      .filter((tx) => !input.direction || tx.normalizedDirection === input.direction)
+      .filter((tx) => !input.reviewStatus || (tx.reviewStatus ?? 'unreviewed') === input.reviewStatus)
+      .map((tx) => {
+        const evidenceRefs = [...tx.evidenceRefs];
+        const evidenceLinkStatus = evidenceRefs.length === 0 ? 'unlinked' : 'linked';
+        return {
+          transactionId: tx.transactionId,
+          occurredAt: tx.occurredAt,
+          postedAt: tx.postedAt,
+          amount: tx.amount,
+          currency: tx.currency,
+          normalizedDirection: tx.normalizedDirection,
+          counterparty: tx.counterparty,
+          description: tx.description,
+          reviewStatus: tx.reviewStatus,
+          evidenceLink: {
+            status: evidenceLinkStatus as 'linked' | 'unlinked' | 'partial',
+            evidenceRefs,
+            documentCount: evidenceRefs.length,
+          },
+        };
+      })
+      .filter((row) => !input.evidenceStatus || row.evidenceLink.status === input.evidenceStatus);
+
+    const normalizationMissing = allRows.length === 0 && Array.from(this.store.sourceArtifacts.values()).some((artifact) => artifact.workspaceId === input.workspaceId);
+    const rows = allRows.slice(offset, offset + limit);
+    return {
+      ok: true,
+      status: 'completed',
+      data: {
+        workspaceId: input.workspaceId,
+        rows,
+        page: {
+          total: allRows.length,
+          limit,
+          offset,
+          returned: rows.length,
+        },
+      },
+      warnings: normalizationMissing ? [{ code: 'normalization_incomplete', message: 'Imported artifacts exist but no normalized transactions are available yet.', severity: 'medium' }] : undefined,
+      nextRecommendedAction: normalizationMissing ? 'tax.ledger.normalize' : (allRows.some((row) => row.evidenceLink.status === 'unlinked') ? 'tax.ledger.link_evidence' : 'tax.classify.run'),
+    };
+  }
+
+  private linkEvidence(input: LinkEvidenceInput): MCPResponseEnvelope<LinkEvidenceData> {
+    const warnings: NonNullable<MCPResponseEnvelope<LinkEvidenceData>['warnings']> = [];
+    const validTransactions = input.transactionIds
+      .map((id) => this.store.transactions.get(id))
+      .filter((tx): tx is LedgerTransaction => Boolean(tx));
+    const validDocuments = input.documentIds
+      .map((id) => this.store.evidenceDocuments.get(id))
+      .filter((doc): doc is EvidenceDocument => Boolean(doc));
+
+    for (const txId of input.transactionIds) {
+      const tx = this.store.transactions.get(txId);
+      if (!tx) {
+        warnings.push({ code: 'invalid_transaction_id', message: `Transaction ${txId} was not found.`, severity: 'medium' });
+      } else if (tx.workspaceId !== input.workspaceId) {
+        warnings.push({ code: 'cross_workspace_transaction', message: `Transaction ${txId} belongs to a different workspace.`, severity: 'high' });
+      }
+    }
+    for (const docId of input.documentIds) {
+      const doc = this.store.evidenceDocuments.get(docId);
+      if (!doc) {
+        warnings.push({ code: 'invalid_document_id', message: `Document ${docId} was not found.`, severity: 'medium' });
+      } else if (doc.workspaceId !== input.workspaceId) {
+        warnings.push({ code: 'cross_workspace_document', message: `Document ${docId} belongs to a different workspace.`, severity: 'high' });
+      }
+    }
+
+    const scopedTransactions = validTransactions.filter((tx) => tx.workspaceId === input.workspaceId);
+    const scopedDocuments = validDocuments.filter((doc) => doc.workspaceId === input.workspaceId);
+    const affectedTransactionIds: string[] = [];
+    const affectedDocumentIds = scopedDocuments.map((doc) => doc.documentId);
+    const createdReviewItems: ReviewItem[] = [];
+
+    for (const tx of scopedTransactions) {
+      const nextEvidenceRefs = input.linkMode === 'replace'
+        ? affectedDocumentIds
+        : Array.from(new Set([...tx.evidenceRefs, ...affectedDocumentIds]));
+      this.store.transactions.set(tx.transactionId, {
+        ...tx,
+        evidenceRefs: nextEvidenceRefs,
+      });
+      affectedTransactionIds.push(tx.transactionId);
+
+      if (
+        nextEvidenceRefs.length === 0
+        || nextEvidenceRefs.length !== affectedDocumentIds.length
+        || (scopedTransactions.length > 1 && affectedDocumentIds.length === 1)
+      ) {
+        const reviewItem: ReviewItem = {
+          reviewItemId: `review_${input.workspaceId}_${tx.transactionId}_evidence_link`,
+          workspaceId: input.workspaceId,
+          reasonCode: 'evidence_link_review',
+          severity: 'medium',
+          question: `거래 ${tx.transactionId} 의 증빙 링크를 검토하세요.`,
+          candidateOptions: ['accept_links', 'replace_links', 'request_more_evidence'],
+          suggestedOption: nextEvidenceRefs.length === 0 ? 'request_more_evidence' : 'accept_links',
+          linkedEntityIds: [tx.transactionId, ...affectedDocumentIds],
+          impactEstimate: { linkMode: input.linkMode, evidenceRefs: nextEvidenceRefs },
+          resolutionState: 'open',
+        };
+        this.store.reviewItems.set(reviewItem.reviewItemId, reviewItem);
+        createdReviewItems.push(reviewItem);
+      }
+    }
+
+    for (const doc of scopedDocuments) {
+      const nextLinkedIds = input.linkMode === 'replace'
+        ? [...affectedTransactionIds]
+        : Array.from(new Set([...(doc.linkedTransactionIds ?? []), ...affectedTransactionIds]));
+      this.store.evidenceDocuments.set(doc.documentId, {
+        ...doc,
+        linkedTransactionIds: nextLinkedIds,
+      });
+    }
+
+    const normalizationLinks = this.store.normalizationLinksByWorkspace.get(input.workspaceId) ?? [];
+    this.store.normalizationLinksByWorkspace.set(input.workspaceId, [
+      ...normalizationLinks,
+      ...affectedTransactionIds.map((transactionId) => ({
+        artifactId: `manual_link_${transactionId}`,
+        documentIds: affectedDocumentIds,
+        transactionIds: [transactionId],
+        withholdingRecordIds: [],
+      })),
+    ]);
+    this.syncWorkspaceSnapshot(input.workspaceId);
+
+    return {
+      ok: warnings.some((warning) => warning.code.startsWith('cross_workspace')) ? false : true,
+      status: warnings.some((warning) => warning.code.startsWith('cross_workspace')) ? 'failed' : 'completed',
+      data: {
+        workspaceId: input.workspaceId,
+        linkMode: input.linkMode,
+        affectedTransactionIds,
+        affectedDocumentIds,
+        reviewItemIds: createdReviewItems.map((item) => item.reviewItemId),
+        evidenceLinks: affectedTransactionIds.map((transactionId) => ({
+          transactionId,
+          evidenceRefs: this.store.transactions.get(transactionId)?.evidenceRefs ?? [],
+        })),
+      },
+      warnings: warnings.length > 0 ? warnings : undefined,
+      errorCode: warnings.some((warning) => warning.code.startsWith('cross_workspace')) ? 'cross_workspace_link_rejected' : undefined,
+      errorMessage: warnings.some((warning) => warning.code.startsWith('cross_workspace')) ? 'Cross-workspace evidence linking is not allowed.' : undefined,
+      nextRecommendedAction: createdReviewItems.length > 0 ? 'tax.classify.list_review_items' : 'tax.classify.run',
+    };
   }
 
   private detectFilingPath(input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData> {
@@ -1062,6 +1546,12 @@ export class InMemoryKoreanTaxMCPRuntime {
         filingPathKind: draft?.filingPathKind ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown'),
       },
     );
+    if (draft) {
+      this.store.draftsByWorkspace.set(input.workspaceId, {
+        ...draft,
+        hometaxPreparation: result.data,
+      } as ComputeDraftData);
+    }
     this.syncWorkspaceSnapshot(input.workspaceId, {
       lastBlockingReason: result.blockingReason,
       status: result.ok ? 'ready_for_hometax_assist' : 'draft_ready_for_review',
@@ -1071,6 +1561,8 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private startHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {
     const result = taxBrowserStartHomeTaxAssist(input);
+    const prepared = this.prepareHomeTax({ workspaceId: input.workspaceId, draftId: input.draftId });
+    result.data.handoff = prepared.data.handoff;
     const browserAssistSession: BrowserAssistSession = {
       assistSessionId: result.data.assistSessionId,
       workspaceId: input.workspaceId,
@@ -1079,9 +1571,10 @@ export class InMemoryKoreanTaxMCPRuntime {
       checkpointType: result.data.checkpointType,
       authState: result.requiresAuth ? 'pending' : 'completed',
       pendingUserAction: result.pendingUserAction,
+      handoff: prepared.data.handoff,
       startedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
+    } as BrowserAssistSession;
     this.store.assistSessionsByWorkspace.set(input.workspaceId, browserAssistSession);
 
     if (result.checkpointId) {
@@ -1122,6 +1615,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           handoff: {
             provider: 'hometax',
             recommendedTool: 'tax.browser.resume_hometax_assist',
+            entryPlan: getDraftHomeTaxPreparation(this.getDraft(input.workspaceId))?.handoff,
           },
         },
         errorCode: 'assist_session_not_found',
@@ -1130,19 +1624,157 @@ export class InMemoryKoreanTaxMCPRuntime {
     }
 
     const result = taxBrowserResumeHomeTaxAssist(input, session);
+    const preparedHandoff = getDraftHomeTaxPreparation(this.getDraft(input.workspaceId))?.handoff;
+    result.data.handoff.entryPlan = preparedHandoff;
     this.store.assistSessionsByWorkspace.set(input.workspaceId, {
       ...session,
       checkpointType: result.data.checkpointType,
       authState: result.requiresAuth ? 'pending' : session.authState ?? 'completed',
       pendingUserAction: result.pendingUserAction,
+      handoff: preparedHandoff,
       lastKnownSection: result.data.handoff.targetSection,
       updatedAt: new Date().toISOString(),
-    });
+    } as BrowserAssistSession);
     this.syncWorkspaceSnapshot(input.workspaceId, {
       lastBlockingReason: result.blockingReason,
       status: 'submission_in_progress',
     });
     return result;
+  }
+
+  private getHomeTaxCheckpoint(input: GetHomeTaxCheckpointInput): MCPResponseEnvelope<GetHomeTaxCheckpointData> {
+    const session = this.findAssistSession(input.assistSessionId, input.workspaceId);
+    if (!session) {
+      return {
+        ok: false,
+        status: 'failed',
+        data: buildBrowserAssistCheckpointSnapshot({
+          assistSessionId: input.assistSessionId,
+          workspaceId: input.workspaceId ?? 'unknown_workspace',
+          draftId: this.getDraft(input.workspaceId ?? 'unknown_workspace')?.draftId ?? 'unknown_draft',
+          checkpointType: 'authentication',
+          stopped: false,
+          authRequired: true,
+          sessionRef: input.assistSessionId,
+          workspaceRef: input.workspaceId ?? 'unknown_workspace',
+          draftRef: this.getDraft(input.workspaceId ?? 'unknown_workspace')?.draftId ?? 'unknown_draft',
+          provider: 'hometax',
+          recommendedTool: 'tax.browser.get_checkpoint',
+          entryPlan: getDraftHomeTaxPreparation(this.getDraft(input.workspaceId ?? 'unknown_workspace'))?.handoff,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+        errorCode: 'assist_session_not_found',
+        errorMessage: `Assist session ${input.assistSessionId} was not found.`,
+        blockingReason: 'insufficient_metadata',
+        nextRecommendedAction: 'tax.browser.start_hometax_assist',
+      };
+    }
+
+    const stopped = Boolean(session.endedAt);
+    return {
+      ok: true,
+      status: stopped ? 'blocked' : (session.authState === 'completed' ? 'in_progress' : 'awaiting_auth'),
+      data: buildBrowserAssistCheckpointSnapshot({
+        assistSessionId: session.assistSessionId,
+        workspaceId: session.workspaceId,
+        draftId: session.draftId,
+        checkpointType: session.checkpointType,
+        stopped,
+        authRequired: session.authState !== 'completed',
+        blocker: stopped ? 'awaiting_final_approval' : (session.authState !== 'completed' ? 'missing_auth' : undefined),
+        pendingUserAction: stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : session.pendingUserAction,
+        sessionRef: session.assistSessionId,
+        workspaceRef: session.workspaceId,
+        draftRef: session.draftId,
+        provider: session.provider ?? 'hometax',
+        targetSection: session.lastKnownSection,
+        recommendedTool: stopped ? 'tax.browser.get_checkpoint' : 'tax.browser.resume_hometax_assist',
+        entryPlan: getDraftHomeTaxPreparation(this.getDraft(session.workspaceId))?.handoff,
+        startedAt: session.startedAt,
+        updatedAt: session.updatedAt,
+        endedAt: session.endedAt,
+        authState: session.authState,
+      }),
+      blockingReason: stopped ? 'awaiting_final_approval' : (session.authState !== 'completed' ? 'missing_auth' : undefined),
+      pendingUserAction: stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : session.pendingUserAction,
+      nextRecommendedAction: stopped ? 'tax.browser.start_hometax_assist' : 'tax.browser.resume_hometax_assist',
+    };
+  }
+
+  private stopHomeTaxAssist(input: StopHomeTaxAssistInput): MCPResponseEnvelope<StopHomeTaxAssistData> {
+    const session = this.findAssistSession(input.assistSessionId, input.workspaceId);
+    if (!session) {
+      return {
+        ok: false,
+        status: 'failed',
+        data: {
+          ...buildBrowserAssistCheckpointSnapshot({
+            assistSessionId: input.assistSessionId,
+            workspaceId: input.workspaceId ?? 'unknown_workspace',
+            draftId: this.getDraft(input.workspaceId ?? 'unknown_workspace')?.draftId ?? 'unknown_draft',
+            checkpointType: 'authentication',
+            stopped: true,
+            authRequired: true,
+            sessionRef: input.assistSessionId,
+            workspaceRef: input.workspaceId ?? 'unknown_workspace',
+            draftRef: this.getDraft(input.workspaceId ?? 'unknown_workspace')?.draftId ?? 'unknown_draft',
+            provider: 'hometax',
+            recommendedTool: 'tax.browser.get_checkpoint',
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }),
+          preservedContext: {
+            auditable: true,
+            canRestartFromSession: false,
+            preservedFields: ['assistSessionId', 'workspaceId'],
+          },
+        },
+        errorCode: 'assist_session_not_found',
+        errorMessage: `Assist session ${input.assistSessionId} was not found.`,
+        nextRecommendedAction: 'tax.browser.start_hometax_assist',
+      };
+    }
+
+    const stoppedAt = session.endedAt ?? new Date().toISOString();
+    const nextSession = { ...session, endedAt: stoppedAt, updatedAt: stoppedAt, pendingUserAction: '세션이 중단되었습니다.' };
+    this.store.assistSessionsByWorkspace.set(nextSession.workspaceId, nextSession);
+    this.syncWorkspaceSnapshot(nextSession.workspaceId, { lastBlockingReason: 'awaiting_final_approval', status: 'draft_ready_for_review' });
+
+    return {
+      ok: true,
+      status: 'completed',
+      data: {
+        ...buildBrowserAssistCheckpointSnapshot({
+          assistSessionId: nextSession.assistSessionId,
+          workspaceId: nextSession.workspaceId,
+          draftId: nextSession.draftId,
+          checkpointType: nextSession.checkpointType,
+          stopped: true,
+          authRequired: nextSession.authState !== 'completed',
+          blocker: 'awaiting_final_approval',
+          pendingUserAction: '세션이 중단되었습니다. 필요시 새 assist 세션을 시작하세요.',
+          sessionRef: nextSession.assistSessionId,
+          workspaceRef: nextSession.workspaceId,
+          draftRef: nextSession.draftId,
+          provider: nextSession.provider ?? 'hometax',
+          targetSection: nextSession.lastKnownSection,
+          recommendedTool: 'tax.browser.get_checkpoint',
+          startedAt: nextSession.startedAt,
+          updatedAt: nextSession.updatedAt,
+          endedAt: nextSession.endedAt,
+          authState: nextSession.authState,
+        }),
+        preservedContext: {
+          auditable: true,
+          canRestartFromSession: true,
+          preservedFields: ['assistSessionId', 'workspaceId', 'draftId', 'checkpointType', 'lastKnownSection', 'authState', 'startedAt', 'updatedAt', 'endedAt'],
+        },
+      },
+      progress: { phase: 'browser_assist', step: 'stop_session', percent: 100 },
+      audit: { eventType: 'browser_assist_stopped', eventId: `evt_browser_assist_stopped_${nextSession.assistSessionId}` },
+      nextRecommendedAction: 'tax.browser.start_hometax_assist',
+    };
   }
 
   private reconcileCoverageGapsForWorkspace(workspaceId: string): void {
@@ -1615,6 +2247,191 @@ function buildComparisonReviewItems(
     resolutionState: 'open',
     resolutionNote: 'Generated from HomeTax comparison mismatch.',
   }));
+}
+
+function getDraftHomeTaxPreparation(draft?: ComputeDraftData): PrepareHomeTaxData | undefined {
+  const candidate = draft as ComputeDraftData & { hometaxPreparation?: PrepareHomeTaxData } | undefined;
+  return candidate?.hometaxPreparation;
+}
+
+function createRuntimeSnapshot(store: RuntimeStore): DurableRuntimeSnapshot {
+  return {
+    schemaVersion: 1,
+    consentRecords: [...store.consentRecords],
+    workspaces: Array.from(store.workspaces.values()),
+    sources: Array.from(store.sources.values()),
+    syncAttempts: Array.from(store.syncAttempts.values()),
+    coverageGapsByWorkspace: mapToRecord(store.coverageGapsByWorkspace),
+    taxpayerFactsByWorkspace: mapToRecord(store.taxpayerFactsByWorkspace),
+    withholdingRecordsByWorkspace: mapToRecord(store.withholdingRecordsByWorkspace),
+    sourceArtifacts: Array.from(store.sourceArtifacts.values()),
+    evidenceDocuments: Array.from(store.evidenceDocuments.values()),
+    auditEvents: Array.from(store.auditEventsByWorkspace.values()).flat(),
+    authCheckpoints: Array.from(store.authCheckpoints.values()),
+    filingFieldValues: Array.from(store.fieldValuesByDraft.values()).flat(),
+    fieldValuesByDraft: mapToRecord(store.fieldValuesByDraft),
+    normalizationLinksByWorkspace: mapToRecord(store.normalizationLinksByWorkspace),
+    transactions: Array.from(store.transactions.values()),
+    decisions: Array.from(store.decisions.values()),
+    reviewItems: Array.from(store.reviewItems.values()),
+    draftsByWorkspace: mapToRecord(store.draftsByWorkspace),
+    assistSessions: Array.from(store.assistSessionsByWorkspace.values()),
+  };
+}
+
+function runtimeOptionsFromSnapshot(snapshot: DurableRuntimeSnapshot, overrides: CreateRuntimeOptions): CreateRuntimeOptions {
+  return {
+    ...overrides,
+    consentRecords: snapshot.consentRecords,
+    workspaces: snapshot.workspaces,
+    sources: snapshot.sources,
+    syncAttempts: snapshot.syncAttempts,
+    coverageGapsByWorkspace: snapshot.coverageGapsByWorkspace,
+    taxpayerFactsByWorkspace: snapshot.taxpayerFactsByWorkspace,
+    withholdingRecordsByWorkspace: snapshot.withholdingRecordsByWorkspace,
+    sourceArtifacts: snapshot.sourceArtifacts,
+    evidenceDocuments: snapshot.evidenceDocuments,
+    auditEvents: snapshot.auditEvents,
+    authCheckpoints: snapshot.authCheckpoints,
+    filingFieldValues: snapshot.filingFieldValues,
+    fieldValuesByDraft: snapshot.fieldValuesByDraft,
+    normalizationLinksByWorkspace: snapshot.normalizationLinksByWorkspace,
+    transactions: snapshot.transactions,
+    decisions: snapshot.decisions,
+    reviewItems: snapshot.reviewItems,
+    draftsByWorkspace: snapshot.draftsByWorkspace,
+    assistSessions: snapshot.assistSessions,
+  };
+}
+
+function mapToRecord<T>(map: Map<string, T>): Record<string, T> {
+  return Object.fromEntries(map.entries());
+}
+
+function buildBrowserAssistCheckpointSnapshot(input: {
+  assistSessionId: string;
+  workspaceId: string;
+  draftId: string;
+  checkpointType: CheckpointType;
+  stopped: boolean;
+  authRequired: boolean;
+  blocker?: BlockingReason;
+  pendingUserAction?: string;
+  sessionRef: string;
+  workspaceRef: string;
+  draftRef: string;
+  provider: string;
+  targetSection?: string;
+  recommendedTool: 'tax.browser.resume_hometax_assist' | 'tax.browser.get_checkpoint';
+  entryPlan?: GetHomeTaxCheckpointData['handoff']['entryPlan'];
+  startedAt: string;
+  updatedAt: string;
+  endedAt?: string;
+  authState?: string;
+}) {
+  return {
+    assistSessionId: input.assistSessionId,
+    workspaceId: input.workspaceId,
+    draftId: input.draftId,
+    checkpointType: input.checkpointType,
+    stopped: input.stopped,
+    authRequired: input.authRequired,
+    blocker: input.blocker,
+    pendingUserAction: input.pendingUserAction,
+    sessionRef: input.sessionRef,
+    workspaceRef: input.workspaceRef,
+    draftRef: input.draftRef,
+    handoff: {
+      provider: input.provider,
+      targetSection: input.targetSection,
+      recommendedTool: input.recommendedTool,
+      entryPlan: input.entryPlan,
+      safeContext: {
+        sessionStatus: input.stopped ? 'stopped' as const : 'active' as const,
+        lastKnownSection: input.targetSection,
+        authState: input.authState,
+        startedAt: input.startedAt,
+        updatedAt: input.updatedAt,
+        endedAt: input.endedAt,
+      },
+    },
+  };
+}
+
+function inferArtifactTypeFromRef(ref: string, contentType?: string, formatHints: string[] = []): SourceArtifact['artifactType'] {
+  const text = `${ref} ${contentType ?? ''} ${formatHints.join(' ')}`.toLowerCase();
+  if (text.includes('csv')) return 'csv';
+  if (text.includes('pdf')) return 'pdf';
+  if (text.includes('png') || text.includes('jpg') || text.includes('jpeg') || text.includes('image')) return 'image';
+  if (text.includes('html')) return 'html_snapshot';
+  if (text.includes('manual')) return 'manual_entry';
+  return 'json';
+}
+
+function inferDocumentTypeFromImportRef(ref: string): EvidenceDocument['documentType'] {
+  const text = ref.toLowerCase();
+  if (text.includes('receipt')) return 'receipt';
+  if (text.includes('invoice')) return 'invoice';
+  if (text.includes('withholding') || text.includes('원천징수')) return 'withholding_doc';
+  if (text.includes('hometax')) return 'hometax_export';
+  return 'other';
+}
+
+function buildImportedDocumentIdForRuntime(workspaceId: string, ref: string): string {
+  return `doc_${slugifyRuntime(workspaceId)}_${slugifyRuntime(ref)}`;
+}
+
+function slugifyRuntime(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
+}
+
+function buildDisconnectedSourceSyncEnvelope(source: SourceConnection, syncMode: SyncSourceInput['syncMode']): MCPResponseEnvelope<SyncSourceData> {
+  return {
+    ok: false,
+    status: 'blocked',
+    data: {
+      sourceState: (source.state ?? source.connectionStatus ?? 'completed') as SyncSourceData['sourceState'],
+      syncAttemptState: 'blocked',
+      importedArtifactCount: 0,
+      changedItemCount: 0,
+      fallbackOptions: ['tax.sources.list', 'tax.sources.connect'],
+    },
+    blockingReason: 'blocked_by_provider',
+    pendingUserAction: `Reconnect source ${source.sourceId} before attempting ${syncMode} sync again.`,
+    fallbackOptions: ['tax.sources.list', 'tax.sources.connect'],
+    nextRecommendedAction: 'tax.sources.list',
+    warnings: [
+      {
+        code: 'source_disconnected',
+        message: 'This source was disconnected for future syncs. Existing imported records are retained.',
+        severity: 'medium',
+      },
+    ],
+  };
+}
+
+function buildDisconnectedSourceResumeEnvelope(source: SourceConnection, input: ResumeSyncInput): MCPResponseEnvelope<ResumeSyncData> {
+  return {
+    ok: false,
+    status: 'blocked',
+    data: {
+      resumed: false,
+      sourceId: source.sourceId,
+      syncSessionId: input.syncSessionId ?? `sync_${source.sourceId}`,
+      importedArtifactCount: 0,
+    },
+    blockingReason: 'blocked_by_provider',
+    pendingUserAction: `Reconnect source ${source.sourceId} before resuming sync.`,
+    fallbackOptions: ['tax.sources.list', 'tax.sources.connect'],
+    nextRecommendedAction: 'tax.sources.list',
+    warnings: [
+      {
+        code: 'source_disconnected',
+        message: 'Resume is blocked because this source was disconnected for future syncs. Existing imported records are retained.',
+        severity: 'medium',
+      },
+    ],
+  };
 }
 
 function normalizeCoverageGaps(workspaceId: string, gaps: Array<CoverageGap | string>): CoverageGap[] {

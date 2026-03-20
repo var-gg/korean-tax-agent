@@ -247,6 +247,17 @@ Notes:
 Purpose:
 - list connected and available sources for a workspace
 
+Input:
+- workspace id
+- optional `includeDisabled`
+- optional `includeSyncSummary`
+
+Output:
+- source connection state
+- availability (`available` / `disconnected`)
+- latest sync summary when requested
+- next recommended action
+
 #### `tax.sources.sync`
 Purpose:
 - pull or refresh data from an already approved source
@@ -281,8 +292,19 @@ Output:
 Purpose:
 - disable a source connection for future syncs
 
+Input:
+- workspace id
+- source id
+- optional reason
+
+Output:
+- disconnect result
+- explicit retained-records warning
+- next recommended action
+
 Notes:
 - should not automatically delete prior imported records unless separately requested and approved
+- disconnected sources should block future `sync` / `resume_sync` calls with a clear MCP envelope rather than a thrown runtime exception
 
 ### imports
 
@@ -363,19 +385,41 @@ Purpose:
 
 Input:
 - workspace id
-- date range
-- direction
-- review status
-- limit/offset
+- optional date range
+- optional direction
+- optional review status
+- optional evidence status
+- optional limit/offset
+
+Output:
+- filtered transaction rows
+- paging metadata
+- explicit evidence-link status per row
+- normalization warning when imported artifacts exist but normalized transactions do not
+- next recommended action
+
+Status:
+- implemented in runtime/facade
 
 #### `tax.ledger.link_evidence`
 Purpose:
 - attach evidence documents to transactions manually or semi-automatically
 
 Input:
+- workspace id
 - transaction ids
 - document ids
-- link mode
+- link mode (`append` | `replace`)
+
+Output:
+- affected transaction/document ids
+- explicit transaction→evidence refs after linking
+- invalid id / cross-workspace warnings without throwing
+- generated review items for suspicious or incomplete links
+- next recommended action
+
+Status:
+- implemented in runtime/facade
 
 ### classification
 
@@ -468,6 +512,9 @@ Input:
 #### `tax.filing.export_package`
 Purpose:
 - produce human-reviewable export artifacts
+
+Status:
+- future/pending (documented, not implemented in runtime/facade)
 
 Possible outputs:
 - JSON package
@@ -583,19 +630,23 @@ Notes:
 
 #### `tax.filing.prepare_hometax`
 Purpose:
-- convert draft outputs into a HomeTax-assist-ready structure
+- convert draft outputs into a guided HomeTax handoff package
 - use persisted filing-path/readiness state to decide whether preparation is allowed
 
 Output:
-- section mapping
-- required manual fields
-- blocked/unsupported fields
-- comparison readiness
-- browser assist readiness
-- refresh requirement / freshness note
+- ordered sections/checkpoints
+- per-field entry tasks
+- source provenance refs
+- mismatch/review state
+- manual verification checklist
+- blocking items
+- immediate user-confirmation items (consent/login/final judgment)
+- browser-assist-compatible handoff payload
 
 Notes:
-- should remain blocked when comparison is incomplete, review remains unresolved, or official-data freshness is insufficient
+- this remains a guided handoff surface, not hidden DOM automation
+- should remain blocked when comparison is incomplete, review remains unresolved, material mismatches remain, or official-data freshness is insufficient
+- when official refresh is stale/problematic, route back through refresh/diff/recompute/compare rather than pretending submission is ready
 
 ### browser assist
 
@@ -612,20 +663,49 @@ Output:
 - assist session id
 - current checkpoint
 - auth required flag
+- guided handoff payload reused from `tax.filing.prepare_hometax`
 - handoff context for the external browser-capable agent/runtime
 
 #### `tax.browser.resume_hometax_assist`
 Purpose:
 - continue a paused assist session after auth, user action, or interruption
 - return durable handoff context (assistSessionId, draftId, checkpoint, pending action) for an external browser-capable agent
+- include the current guided entry plan so humans and browser agents can resume from the same structured context
 
 #### `tax.browser.stop_hometax_assist`
 Purpose:
 - stop the active assist session cleanly
 
+Input:
+- assist session id
+- optional workspace id
+
+Output:
+- current/final checkpoint snapshot
+- stopped status
+- preserved restart/audit context
+- next recommended action
+
+Status:
+- implemented as session-stop only; no DOM automation added
+
 #### `tax.browser.get_checkpoint`
 Purpose:
 - inspect current HomeTax progress, blockers, and pending user actions
+
+Input:
+- assist session id
+- optional workspace id
+
+Output:
+- current checkpoint snapshot
+- blocker / pending user action / auth-required state
+- session / workspace / draft identifiers
+- safe handoff context for an external browser agent
+- next recommended action
+
+Status:
+- implemented as read-only session inspection; no DOM automation added
 
 #### `tax.workspace.get_status`
 Purpose:
@@ -745,10 +825,20 @@ Minimum expected host methods:
 - `getRuntimeState()` maps status reads to runtime-side tab or session inspection
 - `handoffCheckpoint()` carries checkpoint context forward after authentication and page-ready transitions
 
-## Declared vs implemented note
+## Tool manifest / implementation status
 
-This spec intentionally includes some forward-looking tools.
-When a tool is documented here but not yet implemented in the runtime/facade, treat it as a contract gap or backlog item rather than as an already-supported capability.
-See [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md).
-og item rather than as an already-supported capability.
-See [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md).
+Implemented tools are tracked in the canonical tool manifest at:
+- `packages/mcp-server/src/tool-manifest.ts`
+
+Future/pending tools are tracked separately from implemented ones.
+
+Maintenance rule:
+- when adding a new MCP tool, update the canonical tool manifest first
+- then wire contracts/runtime/facade/docs/tests
+- drift tests should fail if manifest, facade, runtime, or docs fall out of sync
+
+Current future/pending examples:
+- `tax.filing.export_package`
+
+Reference:
+- [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md)

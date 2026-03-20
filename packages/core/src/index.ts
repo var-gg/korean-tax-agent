@@ -7,3 +7,4 @@ export * from './state.js';
 export * from './readiness.js';
 export * from './path.js';
 export * from './compare.js';
+export * from './persistence.js';

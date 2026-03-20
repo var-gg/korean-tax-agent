@@ -48,6 +48,49 @@ Runnable examples for this external-agent model:
 - [`examples/external-agent-compare-with-hometax-example.ts`](./examples/external-agent-compare-with-hometax-example.ts)
 - [`examples/external-agent-next-step-example.ts`](./examples/external-agent-next-step-example.ts)
 
+## Durable persistence (opt-in)
+
+Default behavior stays the same: the prototype runtime and browser-assist session store are still **in-memory by default**.
+
+If you want state to survive process restart, opt in to the shared JSON snapshot adapter:
+
+```ts
+import { JsonFileSnapshotPersistenceAdapter } from '@korean-tax-agent/core';
+import { InMemoryKoreanTaxMCPRuntime } from '@korean-tax-agent/mcp-server';
+import { PersistentBrowserAssistSessionStore } from '@korean-tax-agent/browser-assist';
+
+const runtimePersistence = new JsonFileSnapshotPersistenceAdapter({
+  path: './data/runtime-snapshot.json',
+});
+const browserAssistPersistence = new JsonFileSnapshotPersistenceAdapter({
+  path: './data/browser-assist-sessions.json',
+});
+
+const runtime = new InMemoryKoreanTaxMCPRuntime({
+  persistence: runtimePersistence,
+});
+
+const browserAssistStore = new PersistentBrowserAssistSessionStore(browserAssistPersistence);
+```
+
+Notes:
+- persistence is **opt-in**; no snapshot file is created unless you pass an adapter
+- writes are atomic (`temp` file + `rename`)
+- snapshot files include `schemaVersion`
+- no external DB or network dependency is added
+
+## MCP tool manifest maintenance
+
+The canonical single source of truth for MCP tool exposure is:
+- `packages/mcp-server/src/tool-manifest.ts`
+
+When adding a new tool:
+1. update the canonical manifest first
+2. add/update the contract in `contracts.ts`
+3. wire runtime support and facade exposure
+4. update docs status (`implemented` vs `future/pending`)
+5. run drift tests (`npm test`) and type checks (`npm run check`)
+
 ## Product message
 
 This project is not trying to be:
@@ -93,6 +136,7 @@ Implemented prototype coverage currently includes:
 - filing-path detection,
 - review queue generation and resolution,
 - draft computation with persisted readiness metadata,
+- opt-in durable JSON snapshot persistence for runtime state and browser-assist session state,
 - a simulated `tax.filing.refresh_official_data` step that updates runtime freshness/readiness state,
 - `tax.filing.compare_with_hometax` using caller-supplied `portalObservedFields`,
 - mismatch-to-review escalation,
@@ -124,24 +168,27 @@ When a Korean companion does not exist, the English original is linked explicitl
 ## Prototype workflow snapshot
 
 The current callable prototype filing loop is:
-1. `tax.setup.init_config`
-2. `tax.sources.plan_collection`
-3. `tax.sources.connect`
-4. `tax.sources.sync`
-5. `tax.sources.resume_sync`
-6. `tax.ledger.normalize`
-7. `tax.profile.detect_filing_path`
-8. `tax.classify.run`
-9. `tax.classify.list_review_items`
-10. `tax.filing.compute_draft`
-11. `tax.classify.resolve_review_item` when review items are open
-12. `tax.filing.compute_draft` again after review resolution
-13. `tax.filing.refresh_official_data` to refresh runtime freshness state
-14. `tax.filing.compare_with_hometax` with caller-supplied `portalObservedFields`
-15. if mismatches exist: resolve comparison review items and recompute/prepare as needed
-16. `tax.filing.prepare_hometax`
-17. `tax.browser.start_hometax_assist`
-18. `tax.browser.resume_hometax_assist`
+1. `tax.setup.inspect_environment`
+2. `tax.setup.init_config`
+3. `tax.sources.plan_collection`
+4. `tax.sources.connect`
+5. `tax.sources.list` (workspace source inventory / status view)
+6. `tax.sources.sync`
+7. `tax.sources.resume_sync`
+8. `tax.sources.disconnect` (future sync only; retained imports stay in place)
+9. `tax.ledger.normalize`
+10. `tax.profile.detect_filing_path`
+11. `tax.classify.run`
+12. `tax.classify.list_review_items`
+13. `tax.filing.compute_draft`
+14. `tax.classify.resolve_review_item` when review items are open
+15. `tax.filing.compute_draft` again after review resolution
+16. `tax.filing.refresh_official_data` to refresh runtime freshness state
+17. `tax.filing.compare_with_hometax` with caller-supplied `portalObservedFields`
+18. if mismatches exist: resolve comparison review items and recompute/prepare as needed
+19. `tax.filing.prepare_hometax`
+20. `tax.browser.start_hometax_assist`
+21. `tax.browser.resume_hometax_assist`
 
 Steps 17-18 are a **workflow handoff** into an external browser-capable agent/runtime. They do not mean the MCP server itself becomes the browser controller or performs field-level HomeTax automation on its own.
 

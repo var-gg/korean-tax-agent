@@ -200,6 +200,46 @@ export type ConnectSourceData = {
   fallbackOptions?: string[];
 };
 
+export type ListSourcesInput = {
+  workspaceId: string;
+  includeDisabled?: boolean;
+  includeSyncSummary?: boolean;
+};
+
+export type ListSourcesData = {
+  workspaceId: string;
+  sources: Array<{
+    sourceId: string;
+    sourceType: string;
+    sourceState: SourceState | string;
+    availability: 'available' | 'disconnected';
+    syncSummary?: {
+      lastSyncAttemptId?: string;
+      lastSyncAttemptState?: SyncAttemptState;
+      lastSyncAt?: string;
+      lastSuccessfulSyncAt?: string;
+      blockingReason?: BlockingReason;
+    };
+    nextRecommendedAction?: string;
+  }>;
+};
+
+export type DisconnectSourceInput = {
+  workspaceId: string;
+  sourceId: string;
+  reason?: string;
+};
+
+export type DisconnectSourceData = {
+  workspaceId: string;
+  sourceId: string;
+  disconnected: boolean;
+  sourceState: SourceState | string;
+  recordsRetained: boolean;
+  warning: string;
+  disconnectedAt?: string;
+};
+
 export type SyncSourceInput = {
   sourceId: string;
   syncMode: 'incremental' | 'full';
@@ -231,6 +271,115 @@ export type ResumeSyncData = {
   importedArtifactCount: number;
   nextCheckpointType?: CheckpointType;
   nextCheckpointId?: string;
+};
+
+export type ImportRef = {
+  ref: string;
+  artifactId?: string;
+  filename?: string;
+  contentType?: string;
+  sourceId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type UploadTransactionsInput = {
+  workspaceId: string;
+  refs: ImportRef[];
+  formatHints?: string[];
+  sourceId?: string;
+  sourceType?: SourceType | string;
+  importMetadata?: Record<string, unknown>;
+};
+
+export type UploadTransactionsData = {
+  workspaceId: string;
+  artifactIds: string[];
+  ingestionSummary: {
+    acceptedRefCount: number;
+    deduplicatedRefCount: number;
+    formatHints: string[];
+    storedArtifactCount: number;
+  };
+  normalizeReadiness: 'ready' | 'needs_more_input';
+};
+
+export type UploadDocumentsInput = {
+  workspaceId: string;
+  refs: ImportRef[];
+  documentHints?: Array<{
+    ref: string;
+    documentType?: DocumentType;
+    issuer?: string;
+    issuedAt?: string;
+    amount?: number;
+    currency?: string;
+    linkedTransactionRefs?: string[];
+    metadata?: Record<string, unknown>;
+  }>;
+  sourceId?: string;
+  sourceType?: SourceType | string;
+  importMetadata?: Record<string, unknown>;
+};
+
+export type UploadDocumentsData = {
+  workspaceId: string;
+  documentIds: string[];
+  ingestionSummary: {
+    acceptedRefCount: number;
+    hintedDocumentCount: number;
+    storedDocumentCount: number;
+  };
+};
+
+export type SubmitExtractedReceiptFieldsInput = {
+  workspaceId: string;
+  submissions: Array<{
+    artifactRef?: string;
+    artifactId?: string;
+    documentRef?: string;
+    documentId?: string;
+    fields: Record<string, unknown>;
+    documentTypeHint?: DocumentType;
+  }>;
+  extractorMetadata: {
+    extractorType: string;
+    extractorVersion?: string;
+    confidenceSummary?: Record<string, unknown>;
+    runId?: string;
+    metadata?: Record<string, unknown>;
+  };
+};
+
+export type SubmitExtractedReceiptFieldsData = {
+  workspaceId: string;
+  acceptedSubmissionCount: number;
+  updatedDocumentIds: string[];
+  createdDocumentIds: string[];
+};
+
+export type ImportHomeTaxMaterialsInput = {
+  workspaceId: string;
+  refs: ImportRef[];
+  materialMetadata?: Array<{
+    ref: string;
+    materialTypeHint?: DocumentType | 'income_statement' | 'taxpayer_overview' | 'unknown';
+    observedSection?: string;
+    issuedAt?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  sourceId?: string;
+  importMetadata?: Record<string, unknown>;
+};
+
+export type ImportHomeTaxMaterialsData = {
+  workspaceId: string;
+  artifactIds: string[];
+  recognizedMaterials: Array<{
+    ref: string;
+    artifactId: string;
+    recognizedType: DocumentType | 'income_statement' | 'taxpayer_overview' | 'unknown';
+    supported: boolean;
+  }>;
 };
 
 export type NormalizeLedgerExtractedPayload = {
@@ -300,6 +449,62 @@ export type NormalizeLedgerData = {
   normalizedArtifacts?: SourceArtifact[];
   normalizedDocuments?: EvidenceDocument[];
   normalizedTransactions?: import('../../core/src/types.js').LedgerTransaction[];
+};
+
+export type ListTransactionsInput = {
+  workspaceId: string;
+  dateFrom?: string;
+  dateTo?: string;
+  direction?: NormalizedDirection;
+  reviewStatus?: string;
+  evidenceStatus?: 'linked' | 'unlinked' | 'partial';
+  limit?: number;
+  offset?: number;
+};
+
+export type ListTransactionsData = {
+  workspaceId: string;
+  rows: Array<{
+    transactionId: string;
+    occurredAt: string;
+    postedAt?: string;
+    amount: number;
+    currency: string;
+    normalizedDirection: NormalizedDirection;
+    counterparty?: string;
+    description?: string;
+    reviewStatus?: string;
+    evidenceLink: {
+      status: 'linked' | 'unlinked' | 'partial';
+      evidenceRefs: string[];
+      documentCount: number;
+    };
+  }>;
+  page: {
+    total: number;
+    limit: number;
+    offset: number;
+    returned: number;
+  };
+};
+
+export type LinkEvidenceInput = {
+  workspaceId: string;
+  transactionIds: string[];
+  documentIds: string[];
+  linkMode: 'append' | 'replace';
+};
+
+export type LinkEvidenceData = {
+  workspaceId: string;
+  linkMode: 'append' | 'replace';
+  affectedTransactionIds: string[];
+  affectedDocumentIds: string[];
+  reviewItemIds: string[];
+  evidenceLinks: Array<{
+    transactionId: string;
+    evidenceRefs: string[];
+  }>;
 };
 
 export type DetectFilingPathInput = {
@@ -448,28 +653,64 @@ export type PrepareHomeTaxInput = {
   draftId: string;
 };
 
+export type HomeTaxEntryFieldTask = {
+  fieldKey: string;
+  fieldRef: string;
+  value: FilingFieldValue['value'];
+  comparisonState: FilingFieldValue['comparisonState'] | 'not_compared';
+  sourceOfTruth: FilingFieldValue['sourceOfTruth'];
+  requiresManualEntry: boolean;
+  blocked: boolean;
+  comparisonNeeded: boolean;
+  sourceProvenanceRefs: string[];
+  mismatchState: 'matched' | 'mismatch' | 'review_required' | 'not_compared';
+  reviewStatus: 'none' | 'open' | 'resolved';
+  entryInstruction: string;
+};
+
+export type HomeTaxEntrySectionPlan = {
+  order: number;
+  sectionKey: string;
+  checkpointType: CheckpointType | 'data_entry';
+  fieldRefs: string[];
+  mappedFields: HomeTaxEntryFieldTask[];
+  manualOnlyFields: string[];
+  blockedFields: string[];
+  comparisonNeededFields: string[];
+  mismatchFields: string[];
+  blockingItems: string[];
+};
+
+export type HomeTaxHandoffPayload = {
+  orderedSections: HomeTaxEntrySectionPlan[];
+  mismatchSummary: {
+    hasUnresolvedMismatch: boolean;
+    hasHighSeverityReview: boolean;
+    openReviewItemIds: string[];
+    unresolvedMismatchFieldRefs: string[];
+  };
+  manualVerificationChecklist: string[];
+  blockingItems: string[];
+  immediateUserConfirmations: string[];
+};
+
 export type PrepareHomeTaxData = {
   sectionMapping: Record<string, {
     sectionKey: string;
     fieldRefs: string[];
-    mappedFields: Array<{
-      fieldKey: string;
-      fieldRef: string;
-      value: FilingFieldValue['value'];
-      comparisonState: FilingFieldValue['comparisonState'] | 'not_compared';
-      sourceOfTruth: FilingFieldValue['sourceOfTruth'];
-      requiresManualEntry: boolean;
-      blocked: boolean;
-      comparisonNeeded: boolean;
-    }>;
+    mappedFields: HomeTaxEntryFieldTask[];
     manualOnlyFields: string[];
     blockedFields: string[];
     comparisonNeededFields: string[];
+    mismatchFields: string[];
+    blockingItems: string[];
   }>;
+  orderedSections: HomeTaxEntrySectionPlan[];
   manualOnlyFields: string[];
   blockedFields: string[];
   comparisonNeededFields: string[];
   browserAssistReady: boolean;
+  handoff: HomeTaxHandoffPayload;
   fieldValues?: FilingFieldValue[];
 };
 
@@ -483,6 +724,7 @@ export type StartHomeTaxAssistData = {
   assistSessionId: string;
   checkpointType: CheckpointType;
   authRequired: boolean;
+  handoff?: HomeTaxHandoffPayload;
 };
 
 export type ResumeHomeTaxAssistInput = {
@@ -500,6 +742,55 @@ export type ResumeHomeTaxAssistData = {
     provider: string;
     targetSection?: string;
     recommendedTool: 'tax.browser.resume_hometax_assist';
+    entryPlan?: HomeTaxHandoffPayload;
+  };
+};
+
+export type GetHomeTaxCheckpointInput = {
+  assistSessionId: string;
+  workspaceId?: string;
+};
+
+export type BrowserAssistCheckpointSnapshot = {
+  assistSessionId: string;
+  workspaceId: string;
+  draftId: string;
+  checkpointType: CheckpointType;
+  stopped: boolean;
+  authRequired: boolean;
+  blocker?: BlockingReason;
+  pendingUserAction?: string;
+  sessionRef: string;
+  workspaceRef: string;
+  draftRef: string;
+  handoff: {
+    provider: string;
+    targetSection?: string;
+    recommendedTool: 'tax.browser.resume_hometax_assist' | 'tax.browser.get_checkpoint';
+    entryPlan?: HomeTaxHandoffPayload;
+    safeContext: {
+      sessionStatus: 'active' | 'stopped';
+      lastKnownSection?: string;
+      authState?: string;
+      startedAt: string;
+      updatedAt: string;
+      endedAt?: string;
+    };
+  };
+};
+
+export type GetHomeTaxCheckpointData = BrowserAssistCheckpointSnapshot;
+
+export type StopHomeTaxAssistInput = {
+  assistSessionId: string;
+  workspaceId?: string;
+};
+
+export type StopHomeTaxAssistData = BrowserAssistCheckpointSnapshot & {
+  preservedContext: {
+    auditable: true;
+    canRestartFromSession: boolean;
+    preservedFields: string[];
   };
 };
 
@@ -612,6 +903,30 @@ export interface KoreanTaxMCPContracts {
     input: ConnectSourceInput;
     output: MCPResponseEnvelope<ConnectSourceData>;
   };
+  'tax.sources.list': {
+    input: ListSourcesInput;
+    output: MCPResponseEnvelope<ListSourcesData>;
+  };
+  'tax.sources.disconnect': {
+    input: DisconnectSourceInput;
+    output: MCPResponseEnvelope<DisconnectSourceData>;
+  };
+  'tax.import.upload_transactions': {
+    input: UploadTransactionsInput;
+    output: MCPResponseEnvelope<UploadTransactionsData>;
+  };
+  'tax.import.upload_documents': {
+    input: UploadDocumentsInput;
+    output: MCPResponseEnvelope<UploadDocumentsData>;
+  };
+  'tax.import.submit_extracted_receipt_fields': {
+    input: SubmitExtractedReceiptFieldsInput;
+    output: MCPResponseEnvelope<SubmitExtractedReceiptFieldsData>;
+  };
+  'tax.import.import_hometax_materials': {
+    input: ImportHomeTaxMaterialsInput;
+    output: MCPResponseEnvelope<ImportHomeTaxMaterialsData>;
+  };
   'tax.sources.sync': {
     input: SyncSourceInput;
     output: MCPResponseEnvelope<SyncSourceData>;
@@ -623,6 +938,14 @@ export interface KoreanTaxMCPContracts {
   'tax.ledger.normalize': {
     input: NormalizeLedgerInput;
     output: MCPResponseEnvelope<NormalizeLedgerData>;
+  };
+  'tax.ledger.list_transactions': {
+    input: ListTransactionsInput;
+    output: MCPResponseEnvelope<ListTransactionsData>;
+  };
+  'tax.ledger.link_evidence': {
+    input: LinkEvidenceInput;
+    output: MCPResponseEnvelope<LinkEvidenceData>;
   };
   'tax.profile.detect_filing_path': {
     input: DetectFilingPathInput;
@@ -663,5 +986,13 @@ export interface KoreanTaxMCPContracts {
   'tax.browser.resume_hometax_assist': {
     input: ResumeHomeTaxAssistInput;
     output: MCPResponseEnvelope<ResumeHomeTaxAssistData>;
+  };
+  'tax.browser.get_checkpoint': {
+    input: GetHomeTaxCheckpointInput;
+    output: MCPResponseEnvelope<GetHomeTaxCheckpointData>;
+  };
+  'tax.browser.stop_hometax_assist': {
+    input: StopHomeTaxAssistInput;
+    output: MCPResponseEnvelope<StopHomeTaxAssistData>;
   };
 }

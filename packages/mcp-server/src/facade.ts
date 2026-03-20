@@ -5,34 +5,14 @@ import {
   type CreateRuntimeOptions,
   type SupportedRuntimeToolName,
 } from './runtime.js';
+import { IMPLEMENTED_TOOL_NAMES } from './tool-manifest.js';
 
 export type InvokeToolRequest = {
   name: string;
   input?: Record<string, unknown>;
 };
 
-export const SUPPORTED_RUNTIME_TOOLS: SupportedRuntimeToolName[] = [
-  'tax.setup.inspect_environment',
-  'tax.setup.init_config',
-  'tax.sources.plan_collection',
-  'tax.sources.get_collection_status',
-  'tax.workspace.get_status',
-  'tax.filing.get_summary',
-  'tax.sources.connect',
-  'tax.sources.sync',
-  'tax.sources.resume_sync',
-  'tax.ledger.normalize',
-  'tax.profile.detect_filing_path',
-  'tax.classify.run',
-  'tax.classify.list_review_items',
-  'tax.classify.resolve_review_item',
-  'tax.filing.compute_draft',
-  'tax.filing.compare_with_hometax',
-  'tax.filing.refresh_official_data',
-  'tax.filing.prepare_hometax',
-  'tax.browser.start_hometax_assist',
-  'tax.browser.resume_hometax_assist',
-];
+export const SUPPORTED_RUNTIME_TOOLS: SupportedRuntimeToolName[] = [...IMPLEMENTED_TOOL_NAMES];
 
 export function isSupportedRuntimeToolName(name: string): name is SupportedRuntimeToolName {
   return SUPPORTED_RUNTIME_TOOLS.includes(name as SupportedRuntimeToolName);
@@ -165,9 +145,17 @@ function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<
     'tax.workspace.get_status': ['workspaceId'],
     'tax.filing.get_summary': ['workspaceId'],
     'tax.sources.connect': ['workspaceId', 'sourceType', 'requestedScope'],
+    'tax.sources.list': ['workspaceId'],
+    'tax.sources.disconnect': ['workspaceId', 'sourceId'],
+    'tax.import.upload_transactions': ['workspaceId', 'refs'],
+    'tax.import.upload_documents': ['workspaceId', 'refs'],
+    'tax.import.submit_extracted_receipt_fields': ['workspaceId', 'submissions', 'extractorMetadata'],
+    'tax.import.import_hometax_materials': ['workspaceId', 'refs'],
     'tax.sources.sync': ['sourceId', 'syncMode'],
     'tax.sources.resume_sync': [],
     'tax.ledger.normalize': ['workspaceId'],
+    'tax.ledger.list_transactions': ['workspaceId'],
+    'tax.ledger.link_evidence': ['workspaceId', 'transactionIds', 'documentIds', 'linkMode'],
     'tax.profile.detect_filing_path': ['workspaceId'],
     'tax.classify.run': ['workspaceId'],
     'tax.classify.list_review_items': ['workspaceId'],
@@ -178,6 +166,8 @@ function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<
     'tax.filing.prepare_hometax': ['workspaceId', 'draftId'],
     'tax.browser.start_hometax_assist': ['workspaceId', 'draftId', 'mode'],
     'tax.browser.resume_hometax_assist': ['workspaceId'],
+    'tax.browser.get_checkpoint': ['assistSessionId'],
+    'tax.browser.stop_hometax_assist': ['assistSessionId'],
   };
 
   const requiredFields = requiredFieldsByTool[name] ?? [];
