@@ -146,6 +146,10 @@ describe('in-memory runtime', () => {
 
     expect(normalizeResult.data.withholdingRecordsCreated).toHaveLength(1);
     expect(runtime.getWithholdingRecords(demo.workspaceId)).toHaveLength(1);
+    expect(runtime.store.taxpayerFactsByWorkspace.get(demo.workspaceId)?.length).toBeGreaterThan(0);
+    expect(runtime.store.withholdingRecordsByWorkspace.get(demo.workspaceId)?.length).toBe(1);
+    expect(runtime.store.normalizationLinksByWorkspace.get(demo.workspaceId)?.[0]?.artifactId).toBe('artifact_wht_1');
+    expect(runtime.store.normalizationLinksByWorkspace.get(demo.workspaceId)?.[0]?.documentIds).toContain('doc_home_tax_wht_doc');
     expect(normalizeResult.data.coverageGapsCreated.some((gap) => gap.gapType === 'missing_hometax_comparison')).toBe(true);
   });
 

@@ -107,13 +107,15 @@ export type RuntimeStore = {
   sources: Map<string, SourceConnection>;
   syncAttempts: Map<string, SyncAttempt>;
   coverageGapsByWorkspace: Map<string, CoverageGap[]>;
-  taxpayerFacts: Map<string, TaxpayerFact[]>;
-  withholdingRecords: Map<string, WithholdingRecord[]>;
+  taxpayerFactsByWorkspace: Map<string, TaxpayerFact[]>;
+  withholdingRecordsByWorkspace: Map<string, WithholdingRecord[]>;
   sourceArtifacts: Map<string, SourceArtifact>;
   evidenceDocuments: Map<string, EvidenceDocument>;
   auditEventsByWorkspace: Map<string, AuditEvent[]>;
   authCheckpoints: Map<string, AuthCheckpoint>;
-  filingFieldValues: Map<string, FilingFieldValue[]>;
+  fieldValuesByDraft: Map<string, FilingFieldValue[]>;
+  fieldValueDraftIdsByWorkspace: Map<string, string>;
+  normalizationLinksByWorkspace: Map<string, { artifactId: string; documentIds: string[]; transactionIds: string[]; withholdingRecordIds: string[] }[]>;
   transactions: Map<string, LedgerTransaction>;
   decisions: Map<string, ClassificationDecision>;
   reviewItems: Map<string, ReviewItem>;
@@ -128,31 +130,54 @@ export type CreateRuntimeOptions = {
   syncAttempts?: SyncAttempt[];
   coverageGapsByWorkspace?: Record<string, Array<CoverageGap | string>>;
   taxpayerFacts?: TaxpayerFact[];
+  taxpayerFactsByWorkspace?: Record<string, TaxpayerFact[]>;
   withholdingRecords?: WithholdingRecord[];
+  withholdingRecordsByWorkspace?: Record<string, WithholdingRecord[]>;
   sourceArtifacts?: SourceArtifact[];
   evidenceDocuments?: EvidenceDocument[];
   auditEvents?: AuditEvent[];
   authCheckpoints?: AuthCheckpoint[];
   filingFieldValues?: FilingFieldValue[];
+  fieldValuesByDraft?: Record<string, FilingFieldValue[]>;
   transactions?: LedgerTransaction[];
   decisions?: ClassificationDecision[];
   reviewItems?: ReviewItem[];
 };
 
 export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeStore {
+  const seededFieldValuesByDraft = new Map(Object.entries(options.fieldValuesByDraft ?? {}));
+  for (const field of options.filingFieldValues ?? []) {
+    const current = seededFieldValuesByDraft.get(field.draftId) ?? [];
+    current.push(field);
+    seededFieldValuesByDraft.set(field.draftId, current);
+  }
+
+  const fieldValueDraftIdsByWorkspace = new Map<string, string>();
+  for (const [draftId] of seededFieldValuesByDraft) {
+    fieldValueDraftIdsByWorkspace.set(extractWorkspaceIdFromDraftId(draftId), draftId);
+  }
+
   return {
     consentRecords: [...(options.consentRecords ?? [])],
     workspaces: new Map((options.workspaces ?? []).map((workspace) => [workspace.workspaceId, workspace])),
     sources: new Map((options.sources ?? []).map((source) => [source.sourceId, source])),
     syncAttempts: new Map((options.syncAttempts ?? []).map((attempt) => [attempt.syncAttemptId, attempt])),
     coverageGapsByWorkspace: new Map(Object.entries(options.coverageGapsByWorkspace ?? {}).map(([workspaceId, gaps]) => [workspaceId, normalizeCoverageGaps(workspaceId, gaps)])),
-    taxpayerFacts: groupByWorkspace(options.taxpayerFacts ?? [], (fact) => fact.workspaceId),
-    withholdingRecords: groupByWorkspace(options.withholdingRecords ?? [], (record) => record.workspaceId),
+    taxpayerFactsByWorkspace: mergeGroupedWorkspaceMaps(
+      new Map(Object.entries(options.taxpayerFactsByWorkspace ?? {})),
+      groupByWorkspace(options.taxpayerFacts ?? [], (fact) => fact.workspaceId),
+    ),
+    withholdingRecordsByWorkspace: mergeGroupedWorkspaceMaps(
+      new Map(Object.entries(options.withholdingRecordsByWorkspace ?? {})),
+      groupByWorkspace(options.withholdingRecords ?? [], (record) => record.workspaceId),
+    ),
     sourceArtifacts: new Map((options.sourceArtifacts ?? []).map((artifact) => [artifact.artifactId, artifact])),
     evidenceDocuments: new Map((options.evidenceDocuments ?? []).map((document) => [document.documentId, document])),
     auditEventsByWorkspace: groupByWorkspace(options.auditEvents ?? [], (event) => event.workspaceId),
     authCheckpoints: new Map((options.authCheckpoints ?? []).map((checkpoint) => [checkpoint.authCheckpointId, checkpoint])),
-    filingFieldValues: new Map(),
+    fieldValuesByDraft: seededFieldValuesByDraft,
+    fieldValueDraftIdsByWorkspace,
+    normalizationLinksByWorkspace: new Map(),
     transactions: new Map((options.transactions ?? []).map((tx) => [tx.transactionId, tx])),
     decisions: new Map((options.decisions ?? []).map((decision) => [decision.decisionId, decision])),
     reviewItems: new Map((options.reviewItems ?? []).map((item) => [item.reviewItemId, item])),
@@ -269,15 +294,23 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   getTaxpayerFacts(workspaceId: string): TaxpayerFact[] {
-    return this.store.taxpayerFacts.get(workspaceId) ?? [];
+    return this.store.taxpayerFactsByWorkspace.get(workspaceId) ?? [];
   }
 
   getWithholdingRecords(workspaceId: string): WithholdingRecord[] {
-    return this.store.withholdingRecords.get(workspaceId) ?? [];
+    return this.store.withholdingRecordsByWorkspace.get(workspaceId) ?? [];
   }
 
   getFilingFieldValues(workspaceId: string): FilingFieldValue[] {
-    return this.store.filingFieldValues.get(workspaceId) ?? [];
+    const draftId = this.store.fieldValueDraftIdsByWorkspace.get(workspaceId);
+    return draftId ? (this.store.fieldValuesByDraft.get(draftId) ?? []) : [];
+  }
+
+  private setFieldValuesForWorkspace(workspaceId: string, fieldValues: FilingFieldValue[]): void {
+    const draftId = fieldValues[0]?.draftId ?? this.store.fieldValueDraftIdsByWorkspace.get(workspaceId) ?? this.getDraft(workspaceId)?.draftId;
+    if (!draftId) return;
+    this.store.fieldValueDraftIdsByWorkspace.set(workspaceId, draftId);
+    this.store.fieldValuesByDraft.set(draftId, fieldValues);
   }
 
   getAuthCheckpoints(workspaceId: string): AuthCheckpoint[] {
@@ -739,13 +772,23 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.store.transactions.set(transaction.transactionId, transaction);
     }
 
+    const normalizedLinkage = (result.data.normalizedArtifacts ?? []).map((artifact) => ({
+      artifactId: artifact.artifactId,
+      documentIds: (result.data.normalizedDocuments ?? []).filter((document) => document.artifactId === artifact.artifactId).map((document) => document.documentId),
+      transactionIds: (result.data.normalizedTransactions ?? []).filter((transaction) => transaction.artifactId === artifact.artifactId).map((transaction) => transaction.transactionId),
+      withholdingRecordIds: [...result.data.withholdingRecordsCreated, ...result.data.withholdingRecordsUpdated]
+        .filter((record) => record.evidenceRefs.some((ref) => (result.data.normalizedDocuments ?? []).some((document) => document.artifactId === artifact.artifactId && document.documentId === ref)))
+        .map((record) => record.withholdingRecordId),
+    }));
+    this.store.normalizationLinksByWorkspace.set(input.workspaceId, mergeNormalizationLinks(this.store.normalizationLinksByWorkspace.get(input.workspaceId) ?? [], normalizedLinkage));
+
     const scopedTransactions = Array.from(this.store.transactions.values()).filter((tx) => tx.workspaceId === input.workspaceId);
-    const taxpayerFacts = buildRuntimeTaxpayerFacts(input.workspaceId, scopedTransactions);
+    const taxpayerFacts = buildRuntimeTaxpayerFacts(input.workspaceId, scopedTransactions, mergeWithholdingRecords(this.getWithholdingRecords(input.workspaceId), result.data.withholdingRecordsCreated, result.data.withholdingRecordsUpdated));
     const withholdingRecords = mergeWithholdingRecords(this.getWithholdingRecords(input.workspaceId), result.data.withholdingRecordsCreated, result.data.withholdingRecordsUpdated);
     const coverageGaps = mergeCoverageGaps(this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [], result.data.coverageGapsCreated);
 
-    this.store.taxpayerFacts.set(input.workspaceId, taxpayerFacts);
-    this.store.withholdingRecords.set(input.workspaceId, withholdingRecords);
+    this.store.taxpayerFactsByWorkspace.set(input.workspaceId, taxpayerFacts);
+    this.store.withholdingRecordsByWorkspace.set(input.workspaceId, withholdingRecords);
     this.store.coverageGapsByWorkspace.set(input.workspaceId, coverageGaps);
     this.appendAuditEvent(input.workspaceId, result.audit, {
       normalizationMode: input.normalizationMode ?? 'default',
@@ -900,7 +943,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         capturedAt: new Date().toISOString(),
       },
     });
-    this.store.filingFieldValues.set(workspaceId, nextFieldValues);
+    this.setFieldValuesForWorkspace(workspaceId, nextFieldValues);
   }
 
   private computeDraft(input: ComputeDraftInput): MCPResponseEnvelope<ComputeDraftData> {
@@ -915,9 +958,9 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.getFilingFieldValues(input.workspaceId),
     );
     this.store.draftsByWorkspace.set(input.workspaceId, result.data);
-    this.store.taxpayerFacts.set(input.workspaceId, result.data.taxpayerFacts ?? this.getTaxpayerFacts(input.workspaceId));
-    this.store.withholdingRecords.set(input.workspaceId, result.data.withholdingRecords ?? this.getWithholdingRecords(input.workspaceId));
-    this.store.filingFieldValues.set(input.workspaceId, result.data.fieldValues ?? []);
+    this.store.taxpayerFactsByWorkspace.set(input.workspaceId, result.data.taxpayerFacts ?? this.getTaxpayerFacts(input.workspaceId));
+    this.store.withholdingRecordsByWorkspace.set(input.workspaceId, result.data.withholdingRecords ?? this.getWithholdingRecords(input.workspaceId));
+    this.setFieldValuesForWorkspace(input.workspaceId, result.data.fieldValues ?? []);
     this.reconcileCoverageGapsForWorkspace(input.workspaceId);
     this.syncWorkspaceSnapshot(input.workspaceId);
     return result;
@@ -929,7 +972,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const result = taxFilingCompareWithHomeTax(input, fieldValues.length > 0 ? fieldValues : draft?.fieldValues ?? []);
 
     if (draft && result.data.fieldValues && result.readinessState && result.readiness) {
-      this.store.filingFieldValues.set(input.workspaceId, result.data.fieldValues);
+      this.setFieldValuesForWorkspace(input.workspaceId, result.data.fieldValues);
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         fieldValues: result.data.fieldValues,
@@ -976,7 +1019,7 @@ export class InMemoryKoreanTaxMCPRuntime {
 
     if (draft?.fieldValues && result.readinessState && result.readiness) {
       const refreshedFieldValues = draft.fieldValues.map((field) => ({ ...field, freshnessState: 'current_enough' as const }));
-      this.store.filingFieldValues.set(input.workspaceId, refreshedFieldValues);
+      this.setFieldValuesForWorkspace(input.workspaceId, refreshedFieldValues);
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
         draftId: result.data.recomputedDraftId ?? draft.draftId,
@@ -1159,6 +1202,15 @@ function mergeWithholdingRecords(existing: WithholdingRecord[], created: Withhol
 function mergeCoverageGaps(existing: CoverageGap[], created: CoverageGap[]): CoverageGap[] {
   const merged = new Map(existing.map((gap) => [gap.gapId, gap] as const));
   for (const gap of created) merged.set(gap.gapId, gap);
+  return Array.from(merged.values());
+}
+
+function mergeNormalizationLinks(
+  existing: { artifactId: string; documentIds: string[]; transactionIds: string[]; withholdingRecordIds: string[] }[],
+  created: { artifactId: string; documentIds: string[]; transactionIds: string[]; withholdingRecordIds: string[] }[],
+) {
+  const merged = new Map(existing.map((entry) => [entry.artifactId, entry] as const));
+  for (const entry of created) merged.set(entry.artifactId, entry);
   return Array.from(merged.values());
 }
 
@@ -1625,8 +1677,22 @@ function groupByWorkspace<T>(items: T[], getWorkspaceId: (item: T) => string): M
   return grouped;
 }
 
-function buildRuntimeTaxpayerFacts(workspaceId: string, transactions: LedgerTransaction[]): TaxpayerFact[] {
-  if (transactions.length === 0) return [];
+function mergeGroupedWorkspaceMaps<T>(primary: Map<string, T[]>, secondary: Map<string, T[]>): Map<string, T[]> {
+  const merged = new Map(primary);
+  for (const [workspaceId, values] of secondary) {
+    merged.set(workspaceId, [...(merged.get(workspaceId) ?? []), ...values]);
+  }
+  return merged;
+}
+
+function extractWorkspaceIdFromDraftId(draftId: string): string {
+  const match = draftId.match(/^draft_(.+)_v\d+$/);
+  return match?.[1] ?? draftId;
+}
+
+function buildRuntimeTaxpayerFacts(workspaceId: string, transactions: LedgerTransaction[], withholdingRecords: WithholdingRecord[] = []): TaxpayerFact[] {
+  if (transactions.length === 0 && withholdingRecords.length === 0) return [];
+  const allEvidenceRefs = [...transactions.flatMap((tx) => tx.evidenceRefs), ...withholdingRecords.flatMap((record) => record.evidenceRefs)];
   return [
     {
       factId: `fact_${workspaceId}_income_presence`,
@@ -1637,8 +1703,8 @@ function buildRuntimeTaxpayerFacts(workspaceId: string, transactions: LedgerTran
       status: 'inferred',
       sourceOfTruth: 'inferred',
       confidence: 0.7,
-      evidenceRefs: transactions.flatMap((tx) => tx.evidenceRefs),
-      note: `Derived from ${transactions.length} normalized transaction(s).`,
+      evidenceRefs: allEvidenceRefs,
+      note: `Derived from ${transactions.length} normalized transaction(s) and ${withholdingRecords.length} withholding record(s).`,
       updatedAt: new Date().toISOString(),
     },
     {
@@ -1650,8 +1716,21 @@ function buildRuntimeTaxpayerFacts(workspaceId: string, transactions: LedgerTran
       status: 'inferred',
       sourceOfTruth: 'inferred',
       confidence: 0.7,
-      evidenceRefs: transactions.flatMap((tx) => tx.evidenceRefs),
-      note: `Derived from ${transactions.length} normalized transaction(s).`,
+      evidenceRefs: allEvidenceRefs,
+      note: `Derived from ${transactions.length} normalized transaction(s) and ${withholdingRecords.length} withholding record(s).`,
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      factId: `fact_${workspaceId}_withholding_record_presence`,
+      workspaceId,
+      category: 'income_stream',
+      factKey: 'withholding_record_presence',
+      value: withholdingRecords.length > 0,
+      status: 'inferred',
+      sourceOfTruth: withholdingRecords.length > 0 ? 'official' : 'inferred',
+      confidence: withholdingRecords.length > 0 ? 0.9 : 0.5,
+      evidenceRefs: allEvidenceRefs,
+      note: `Derived from ${withholdingRecords.length} persisted withholding record(s).`,
       updatedAt: new Date().toISOString(),
     },
   ];

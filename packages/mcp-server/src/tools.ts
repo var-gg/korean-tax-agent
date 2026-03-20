@@ -605,6 +605,14 @@ export function taxLedgerNormalize(
       },
     });
 
+    for (const [transactionIndex, transaction] of (payload.transactions ?? []).entries()) {
+      const reservedTransactionId = transaction.externalId
+        ? `tx_${slugify(transaction.externalId)}`
+        : `tx_${slugify(artifactId)}_${normalizedTransactions.length + transactionIndex + 1}`;
+      if (transaction.externalId) transactionRefMap.set(`${artifactId}:${transaction.externalId}`, reservedTransactionId);
+      if (transaction.sourceReference) transactionRefMap.set(`${artifactId}:${transaction.sourceReference}`, reservedTransactionId);
+    }
+
     for (const document of payload.documents ?? []) {
       const documentId = document.externalId
         ? `doc_${slugify(document.externalId)}`

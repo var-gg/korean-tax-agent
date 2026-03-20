@@ -161,6 +161,9 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
   if (aggregate.excludedExpenseTotal > 0) {
     warnings.push(`excluded_expense_total:${aggregate.excludedExpenseTotal}`);
   }
+  if ((input.transactions ?? []).some((tx) => tx.normalizedDirection === 'income') && (input.withholdingRecords ?? []).length === 0) {
+    warnings.push('withholding_records_missing:runtime_state_required');
+  }
 
   const draft = buildDraft({
     workspaceId: input.workspaceId,
@@ -224,10 +227,10 @@ export function computeDraftFromLedger(input: ComputeDraftFromLedgerInput): Fili
       draftId: draft.draftId,
       sectionKey: 'withholding',
       fieldKey: 'total_withheld_tax',
-      value: totalWithheld,
+      value: (input.withholdingRecords ?? []).length > 0 ? totalWithheld : null,
       sourceOfTruth: (input.withholdingRecords ?? []).length > 0 ? 'official' : 'inferred',
-      confidence: (input.withholdingRecords ?? []).length > 0 ? 0.9 : 0.3,
-      isEstimated: (input.withholdingRecords ?? []).length === 0,
+      confidence: (input.withholdingRecords ?? []).length > 0 ? 0.9 : 0.1,
+      isEstimated: false,
       requiresManualEntry: (input.withholdingRecords ?? []).length === 0,
       sourceRefs: (input.withholdingRecords ?? []).map((record) => record.withholdingRecordId),
       evidenceRefs: (input.withholdingRecords ?? []).flatMap((record) => record.evidenceRefs),
