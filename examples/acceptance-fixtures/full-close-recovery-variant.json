@@ -1,0 +1,33 @@
+{
+  "scenarioId": "full_close_recovery_variant",
+  "label": "Wrong XLS first and secure-mail-password first recovery variant",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "sole_freelancer_light",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "pure_business", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 }
+  ],
+  "observations": [
+    { "targetArtifactType": "withholding_receipt", "methodTried": "hometax_list_xls_only", "artifactShapeSeen": "xls only", "outcome": "insufficient_artifact" },
+    { "targetArtifactType": "secure_mail_attachment", "methodTried": "password_gated_secure_mail_html_only", "artifactShapeSeen": "secure mail html shell", "outcome": "password_required" }
+  ],
+  "hometaxMaterials": [
+    { "ref": "fixture://full_close_recovery_variant/withholding-official.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://full_close_recovery_variant/year-end-bundle.pdf", "materialTypeHint": "year_end_tax_bundle" }
+  ],
+  "documents": [
+    { "externalId": "secure-mail-attachment", "documentType": "tax_certificate", "issuedAt": "2025-02-10", "issuer": "Client Secure", "fileRef": "file://secure-mail-attachment.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "secure-1", "occurredAt": "2025-02-10", "amount": 1500000, "normalizedDirection": "income", "counterparty": "Client Secure", "description": "secure mail project revenue", "sourceReference": "secure-1" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-secure", "incomeSourceRef": "secure-1", "payerName": "Client Secure", "grossAmount": 1500000, "withheldTaxAmount": 45000, "localTaxAmount": 4500, "evidenceDocumentRefs": ["secure-mail-attachment"] }
+  ],
+  "expected": {
+    "submissionResult": "unknown",
+    "finalStatus": "submission_uncertain",
+    "maxOperatorQuestions": 4
+  }
+}

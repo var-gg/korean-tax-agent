@@ -56,6 +56,8 @@ Success means:
 - no-prep collection scenarios still start with HomeTax authoritative materials rather than vague upload requests
 - conditional deduction/supporting documents are requested only when they become the narrow remaining collection truth
 - wrong first artifacts (such as XLS-only withholding lists) recover toward official PDF/print fallback instead of repeating the same bad tactic
+- compare-after-refresh stop/go remains consistent across status/summary/assist gating
+- result recording auto-closes the assist session and the final workspace converges to `submitted`, `submission_failed`, or `submission_uncertain`
 - export_package includes blockers, checklist, and receipt information when available
 
 Stop means:
@@ -68,6 +70,9 @@ Trust-policy reminders:
 - low-confidence classification must generate review work and readiness downgrade, but may live in warnings until it becomes an active blocker
 - duplicate detection should be deterministic across repeated imports, not heuristic guesswork hidden from the operator
 - operator-facing summaries should explain blockers in plain language while also returning machine-readable stopReasonCodes
+- regime shifts (for example prior-year 3.3% posture to current double-entry/bookkeeping-heavy posture) should surface as first-class warnings, not hidden assumptions
+- wage-income-oriented credits should not auto-apply to pure business posture
+- mixed-use phone/internet/card/home/vehicle costs need allocation basis, business-use ratio, and evidence before tax benefit is treated as settled
 - assumptions used in drafting must be disclosed explicitly
 
 ## Support tier definitions

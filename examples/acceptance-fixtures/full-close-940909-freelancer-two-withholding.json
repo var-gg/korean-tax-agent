@@ -1,0 +1,34 @@
+{
+  "scenarioId": "full_close_940909_freelancer_two_withholding",
+  "label": "940909 freelancer with two official withholding receipts",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "sole_freelancer_light",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "pure_business", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "bookkeeping_mode", "value": "simple_rate", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 }
+  ],
+  "hometaxMaterials": [
+    { "ref": "fixture://full_close_940909_freelancer_two_withholding/withholding-a.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://full_close_940909_freelancer_two_withholding/withholding-b.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://full_close_940909_freelancer_two_withholding/year-end-bundle.pdf", "materialTypeHint": "year_end_tax_bundle" }
+  ],
+  "documents": [
+    { "externalId": "withholding-a", "documentType": "tax_certificate", "issuedAt": "2025-02-10", "issuer": "Client A", "fileRef": "file://withholding-a.pdf" },
+    { "externalId": "withholding-b", "documentType": "tax_certificate", "issuedAt": "2025-07-10", "issuer": "Client B", "fileRef": "file://withholding-b.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "client-a", "occurredAt": "2025-02-10", "amount": 2400000, "normalizedDirection": "income", "counterparty": "Client A", "description": "consulting revenue", "sourceReference": "client-a" },
+    { "externalId": "client-b", "occurredAt": "2025-07-10", "amount": 1800000, "normalizedDirection": "income", "counterparty": "Client B", "description": "design revenue", "sourceReference": "client-b" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-a", "incomeSourceRef": "client-a", "payerName": "Client A", "grossAmount": 2400000, "withheldTaxAmount": 72000, "localTaxAmount": 7200, "evidenceDocumentRefs": ["withholding-a"] },
+    { "externalId": "wh-b", "incomeSourceRef": "client-b", "payerName": "Client B", "grossAmount": 1800000, "withheldTaxAmount": 54000, "localTaxAmount": 5400, "evidenceDocumentRefs": ["withholding-b"] }
+  ],
+  "expected": {
+    "submissionResult": "success",
+    "finalStatus": "submitted",
+    "maxOperatorQuestions": 4
+  }
+}

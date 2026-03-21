@@ -1,0 +1,32 @@
+{
+  "scenarioId": "full_close_resident_register_single_household",
+  "label": "Resident register single-household with year-end bundle",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "mixed_income_individual",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "mixed_wage_business", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["salary", "freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "deduction_eligibility", "factKey": "deduction_eligibility_facts", "value": { "single_household": true }, "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 }
+  ],
+  "hometaxMaterials": [
+    { "ref": "fixture://full_close_resident_register_single_household/withholding.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://full_close_resident_register_single_household/year-end-bundle.pdf", "materialTypeHint": "year_end_tax_bundle" }
+  ],
+  "documents": [
+    { "externalId": "resident-register", "documentType": "official_record", "issuedAt": "2025-03-10", "issuer": "Gov KR", "fileRef": "file://resident-register.pdf" },
+    { "externalId": "withholding-main", "documentType": "tax_certificate", "issuedAt": "2025-02-10", "issuer": "Employer", "fileRef": "file://withholding-main.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "salary-1", "occurredAt": "2025-02-10", "amount": 3500000, "normalizedDirection": "income", "counterparty": "Employer", "description": "salary payroll", "sourceReference": "salary-1" },
+    { "externalId": "side-1", "occurredAt": "2025-05-10", "amount": 900000, "normalizedDirection": "income", "counterparty": "Side Client", "description": "side freelance revenue", "sourceReference": "side-1" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-main", "incomeSourceRef": "salary-1", "payerName": "Employer", "grossAmount": 3500000, "withheldTaxAmount": 105000, "localTaxAmount": 10500, "evidenceDocumentRefs": ["withholding-main"] }
+  ],
+  "expected": {
+    "submissionResult": "success",
+    "finalStatus": "submitted",
+    "maxOperatorQuestions": 4
+  }
+}

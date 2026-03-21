@@ -54,6 +54,8 @@ No-prep orchestration success bar:
 - user questions should stay limited and targeted
 - conditional documents should be requested only when the collection truth actually narrows to them
 - wrong first artifacts (for example XLS-only withholding lists) should recover toward official PDF/print fallback rather than repeating the same bad tactic
+- summary-only bundles should trigger itemized-detail follow-up instead of being treated as sufficient business-expense evidence
+- password-gated secure-mail HTML should be treated as an attachment/password checkpoint, not as importable evidence itself
 
 ## Core tool sequence
 Canonical high-level sequence:
@@ -84,6 +86,7 @@ Submission lifecycle policy:
 - When success / fail / unknown is recorded, the HomeTax assist session is auto-closed.
 - After `tax.filing.record_submission_approval` and before result recording, read models may surface `awaiting_external_submit_click` / `externalSubmitRequired=true`.
 - Final workspace state should converge to `submitted`, `submission_failed`, or `submission_uncertain` before export.
+- The full-close acceptance suite should prove the path can stay coherent from collection through compare / assist / approval / result / export, not just stop at `comparison_incomplete`.
 
 ## Important read models
 If you only remember two read surfaces, remember these:
@@ -103,6 +106,7 @@ Read-model contract:
 - legacy fields like `blockers` should not contradict `stopReasonCodes`
 - collection read surfaces (`plan_collection`, `get_collection_status`, `list_coverage_gaps`) should expose executable `collectionTasks[]`, not vague "send more files" requests
 - collection task guidance should be interpreted through the canonical source-method registry (preferred/fallback/known-invalid methods plus re-verify timing)
+- filing-path/draft surfaces should expose posture-aware regime and allocation signals such as `bookkeepingMode`, `taxpayerPosture`, `specialCreditEligibility`, `businessExpenseAllocationCandidates`, `opportunityCandidates`, and machine-readable/operator-readable warnings
 - when a browser/export tactic fails or yields an insufficient artifact, record it with `tax.sources.record_collection_observation` so MCP can steer to a better fallback next time
 
 ## Important stop reasons
