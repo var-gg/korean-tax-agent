@@ -14,6 +14,7 @@ import {
   derivePendingUserAction,
   transitionSourceState,
 } from '../../core/src/state.js';
+import { getRegistryFreshness, getSourceMethodRegistryEntry } from './source-method-registry.js';
 import type {
   ClassificationDecision,
   ConsentRecord,
@@ -35,6 +36,7 @@ import type {
 } from '../../core/src/types.js';
 import type {
   CollectionStatusData,
+  CollectionTask,
   CompareWithHomeTaxData,
   CompareWithHomeTaxInput,
   ComputeDraftData,
@@ -382,6 +384,101 @@ function buildGapNextActionPlan(gaps: CoverageGap[]) {
   return { enriched, prioritizedGap, nextActionPlan };
 }
 
+function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: number, verifiedAt?: string): CollectionTask[] {
+  const task = (base: CollectionTask): CollectionTask => {
+    const entry = getSourceMethodRegistryEntry(base.sourceCategory, base.targetArtifactType);
+    const freshness = entry ? getRegistryFreshness(entry) : undefined;
+    return {
+      ...base,
+      whyThisSourceNow: `${base.whyThisSourceNow}${entry ? ` Preferred method: ${entry.preferredMethod}.` : ''}${freshness?.reverifyRecommended ? ' Re-verify recommended before relying on this method guidance.' : ''}`,
+      portalPathHints: [
+        ...base.portalPathHints,
+        ...(entry?.knownInvalidMethods.length ? [`Known invalid methods: ${entry.knownInvalidMethods.map((item) => `${item.method} (invalid as of ${item.invalidAsOf})`).join(', ')}`] : []),
+        ...(freshness ? [`Registry verifiedAt=${entry?.verifiedAt}; reviewAfter=${entry?.reviewAfter}; expiresAt=${freshness.expiresAt}`] : []),
+      ],
+      verifiedAt: verifiedAt ?? entry?.verifiedAt,
+    };
+  };
+
+  return [
+    task({
+      taskId: `task_${workspaceId}_hometax_withholding_${filingYear}`,
+      sourceCategory: 'hometax',
+      collectionMode: 'browser_assist',
+      targetArtifactType: 'withholding_receipt',
+      acceptedArtifactShapes: ['HomeTax official withholding tax receipt print/PDF', 'HomeTax printable official certificate/export rendered as PDF'],
+      rejectedArtifactShapes: ['withholding list XLS only without the official print/PDF', 'payer-side informal screenshot without official receipt details'],
+      portalPathHints: ['HomeTax > MyHomeTax > 지급명세서/원천징수영수증', 'Use print/PDF output, not only table list view'],
+      whyThisSourceNow: 'Official withholding receipts are the highest-authority prepaid tax source and block Tier A filing if missing.',
+      blockingIfMissing: true,
+      userCheckpointBrief: 'Log into HomeTax and let the external browser agent collect the official withholding receipt PDF/print.',
+      fallbackTaskIds: [`task_${workspaceId}_manual_income_facts_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.sources.connect',
+    }),
+    task({
+      taskId: `task_${workspaceId}_hometax_notice_${filingYear}`,
+      sourceCategory: 'hometax',
+      collectionMode: 'browser_assist',
+      targetArtifactType: 'filing_guidance_notice',
+      acceptedArtifactShapes: ['HomeTax 신고안내정보 official page print/PDF', 'official notice export captured with year and taxpayer context'],
+      rejectedArtifactShapes: ['free-text summary from memory', 'cropped screenshot without year/taxpayer context'],
+      portalPathHints: ['HomeTax > 종합소득세 > 신고도움서비스 / 신고안내정보'],
+      whyThisSourceNow: 'The filing guidance notice helps confirm prefilled scope, notices, and supported-path assumptions early.',
+      blockingIfMissing: true,
+      userCheckpointBrief: 'Collect the official HomeTax filing guidance notice print/PDF for the filing year.',
+      fallbackTaskIds: [`task_${workspaceId}_hometax_withholding_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.sources.connect',
+    }),
+    task({
+      taskId: `task_${workspaceId}_hometax_simplified_bundle_${filingYear}`,
+      sourceCategory: 'hometax',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'year_end_tax_bundle',
+      acceptedArtifactShapes: ['연말정산 간소화 PDF bundle', 'official HomeTax export bundle with named deduction documents'],
+      rejectedArtifactShapes: ['single deduction screenshot without bundle context', 'manually retyped deduction totals only'],
+      portalPathHints: ['HomeTax > 연말정산간소화 > PDF 내려받기 / 일괄 다운로드'],
+      whyThisSourceNow: 'The simplification bundle covers common deduction evidence with high leverage for Tier A freelancer paths.',
+      blockingIfMissing: false,
+      userCheckpointBrief: 'Export the HomeTax year-end simplification bundle if deduction coverage is still needed.',
+      fallbackTaskIds: [`task_${workspaceId}_conditional_supporting_docs_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.import_hometax_materials',
+    }),
+    task({
+      taskId: `task_${workspaceId}_conditional_supporting_docs_${filingYear}`,
+      sourceCategory: 'conditional_supporting_documents',
+      collectionMode: 'fact_capture',
+      targetArtifactType: 'conditional_deduction_support',
+      acceptedArtifactShapes: ['resident registration certificate when address/family deduction needs proof', 'official donation receipt PDF', 'official disability-related proof document'],
+      rejectedArtifactShapes: ['generic photo of a paper without identifying fields', 'chat message claiming eligibility without supporting document'],
+      portalPathHints: ['Collect only if a deduction fact or review item specifically asks for it'],
+      whyThisSourceNow: 'Conditional supporting documents should be requested only when a concrete deduction fact remains unresolved.',
+      blockingIfMissing: false,
+      userCheckpointBrief: 'Answer the targeted deduction question first; upload the exact official proof only if MCP asks for it.',
+      fallbackTaskIds: [],
+      verifiedAt,
+      nextRecommendedAction: 'tax.profile.upsert_facts',
+    }),
+    task({
+      taskId: `task_${workspaceId}_manual_income_facts_${filingYear}`,
+      sourceCategory: 'fact_capture',
+      collectionMode: 'fact_capture',
+      targetArtifactType: 'income_scope_confirmation',
+      acceptedArtifactShapes: ['structured taxpayer fact response naming income streams and missing official exports'],
+      rejectedArtifactShapes: ['vague statement like more files later', 'unstructured request to upload everything'],
+      portalPathHints: ['Use only as fallback when official HomeTax materials are temporarily unavailable'],
+      whyThisSourceNow: 'Fact capture is fallback only; it cannot replace authoritative withholding material for Tier A submission readiness.',
+      blockingIfMissing: false,
+      userCheckpointBrief: 'Confirm which income streams exist and which official exports are still missing.',
+      fallbackTaskIds: [],
+      verifiedAt,
+      nextRecommendedAction: 'tax.profile.upsert_facts',
+    }),
+  ];
+}
+
 export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPResponseEnvelope<PlanCollectionData> {
   const prioritizedGap = enrichCoverageGap({
     gapId: `gap_plan_${input.workspaceId}_hometax`,
@@ -399,10 +496,11 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
     relatedSourceIds: [],
     state: 'open',
   });
+  const collectionTasks = buildTierAFreelancerCollectionTasks(input.workspaceId, input.filingYear);
   const nextActionPlan: PlanCollectionData['nextActionPlan'] = {
     gapId: prioritizedGap.gapId,
     gapType: prioritizedGap.gapType,
-    recommendedNextAction: prioritizedGap.recommendedNextAction!,
+    recommendedNextAction: collectionTasks[0]?.nextRecommendedAction ?? prioritizedGap.recommendedNextAction!,
     collectionMode: (prioritizedGap.collectionMode === 'direct_connector' ? 'browser_assist' : prioritizedGap.collectionMode!) as 'browser_assist' | 'export_ingestion' | 'fact_capture',
     whyThisIsNext: prioritizedGap.whyItBlocks!,
   };
@@ -436,6 +534,7 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
           fallbackOptions: ['Upload a targeted set of files', 'Answer focused evidence questions'],
         },
       ],
+      collectionTasks,
       expectedValueBySource: {
         hometax: 'High authority for filing materials and cross-checks',
         local_documents: 'High practical value for supporting evidence and missing exports',
@@ -459,11 +558,13 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
 }
 
 export function taxSourcesGetCollectionStatus(
-  _input: GetCollectionStatusInput,
+  input: GetCollectionStatusInput,
   sources: SourceConnection[] = [],
   coverageGaps: CoverageGap[] = [],
 ): MCPResponseEnvelope<CollectionStatusData> {
   const { enriched, prioritizedGap, nextActionPlan } = buildGapNextActionPlan(coverageGaps);
+  const filingYear = Number(input.workspaceId.match(/(20\d{2})/)?.[1] ?? new Date().getFullYear());
+  const collectionTasks = buildTierAFreelancerCollectionTasks(input.workspaceId, filingYear);
   const connectedSources = sources.map((source) => ({
     sourceId: source.sourceId,
     sourceType: source.sourceType,
@@ -487,6 +588,7 @@ export function taxSourcesGetCollectionStatus(
       connectedSources,
       pendingCheckpoints,
       coverageGaps: enriched,
+      collectionTasks,
       blockedAttempts,
       prioritizedGap,
       nextActionPlan,
@@ -509,10 +611,12 @@ export function taxWorkspaceListCoverageGaps(
     .filter((gap) => !input.state || gap.state === input.state)
     .filter((gap) => !input.gapType || gap.gapType === input.gapType);
   const { prioritizedGap, nextActionPlan } = buildGapNextActionPlan(filtered);
+  const filingYear = Number(input.workspaceId.match(/(20\d{2})/)?.[1] ?? new Date().getFullYear());
+  const collectionTasks = buildTierAFreelancerCollectionTasks(input.workspaceId, filingYear);
   return {
     ok: true,
     status: 'completed',
-    data: { workspaceId: input.workspaceId, items: filtered, prioritizedGap, nextActionPlan },
+    data: { workspaceId: input.workspaceId, items: filtered, collectionTasks, prioritizedGap, nextActionPlan },
     nextRecommendedAction: nextActionPlan?.recommendedNextAction,
   };
 }

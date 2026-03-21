@@ -159,6 +159,22 @@ export type CollectionRecommendation = {
   fallbackOptions: string[];
 };
 
+export type CollectionTask = {
+  taskId: string;
+  sourceCategory: string;
+  collectionMode: 'browser_assist' | 'export_ingestion' | 'fact_capture';
+  targetArtifactType: string;
+  acceptedArtifactShapes: string[];
+  rejectedArtifactShapes: string[];
+  portalPathHints: string[];
+  whyThisSourceNow: string;
+  blockingIfMissing: boolean;
+  userCheckpointBrief: string;
+  fallbackTaskIds: string[];
+  verifiedAt?: string;
+  nextRecommendedAction: string;
+};
+
 export type GapNextActionPlan = {
   gapId?: string;
   gapType: string;
@@ -169,6 +185,8 @@ export type GapNextActionPlan = {
 
 export type PlanCollectionData = {
   recommendedSources: CollectionRecommendation[];
+  collectionTasks?: CollectionTask[];
+  observationSummary?: string[];
   expectedValueBySource: Record<string, string>;
   likelyUserCheckpoints: CheckpointType[];
   fallbackPathSuggestions: string[];
@@ -179,6 +197,25 @@ export type PlanCollectionData = {
 
 export type GetCollectionStatusInput = {
   workspaceId: string;
+};
+
+export type RecordCollectionObservationInput = {
+  workspaceId: string;
+  sourceId: string;
+  targetArtifactType: string;
+  methodTried: string;
+  artifactShapeSeen?: string;
+  outcome: 'found' | 'blocked' | 'auth_expired' | 'ui_changed' | 'export_only' | 'insufficient_artifact' | 'provider_unavailable';
+  portalObservedFields?: Record<string, unknown>;
+  note?: string;
+  verifiedAt?: string;
+};
+
+export type RecordCollectionObservationData = {
+  updatedSourceState: string;
+  knownBadMethodUntil?: string;
+  recommendedFallback?: string;
+  nextRecommendedAction?: string;
 };
 
 export type GetWorkspaceStatusInput = {
@@ -199,6 +236,8 @@ export type CollectionStatusData = {
   }>;
   pendingCheckpoints: CheckpointType[];
   coverageGaps: CoverageGap[];
+  collectionTasks?: CollectionTask[];
+  observationSummary?: string[];
   blockedAttempts: string[];
   prioritizedGap?: CoverageGap;
   nextActionPlan?: GapNextActionPlan;
@@ -213,6 +252,8 @@ export type ListCoverageGapsInput = {
 export type ListCoverageGapsData = {
   workspaceId: string;
   items: CoverageGap[];
+  collectionTasks?: CollectionTask[];
+  observationSummary?: string[];
   prioritizedGap?: CoverageGap;
   nextActionPlan?: GapNextActionPlan;
 };
@@ -989,17 +1030,25 @@ export type BrowserAssistCheckpointSnapshot = {
 export type GetHomeTaxCheckpointData = BrowserAssistCheckpointSnapshot & {
   submissionApproval?: SubmissionApprovalRecord;
   submissionResult?: SubmissionResultRecord;
+  workflowState?: 'active' | 'stopped' | 'awaiting_external_submit_click' | 'submitted' | 'submission_uncertain' | 'submission_failed';
+  externalSubmitRequired?: boolean;
 };
 
 export type StopHomeTaxAssistInput = {
   assistSessionId: string;
   workspaceId?: string;
+  stopMode?: 'pause' | 'restart_required';
+  stopReason?: 'user_pause' | 'auth_expired' | 'browser_closed' | 'operator_restart' | 'final_approval_pause';
 };
 
 export type StopHomeTaxAssistData = BrowserAssistCheckpointSnapshot & {
+  stopMode?: 'pause' | 'restart_required';
+  stopReason?: 'user_pause' | 'auth_expired' | 'browser_closed' | 'operator_restart' | 'final_approval_pause';
   preservedContext: {
     auditable: true;
     canRestartFromSession: boolean;
+    mustStartNewSession?: boolean;
+    restartGuidance?: 'resume_hometax_assist' | 'start_hometax_assist';
     preservedFields: string[];
   };
 };
@@ -1025,6 +1074,8 @@ export type GetWorkspaceStatusData = {
   escalationReason?: string;
   operatorExplanation?: string;
   reviewBatchId?: string;
+  workflowState?: 'active' | 'stopped' | 'awaiting_external_submit_click' | 'submitted' | 'submission_uncertain' | 'submission_failed';
+  externalSubmitRequired?: boolean;
   workspace: {
     workspaceId: string;
     status: string;
@@ -1075,6 +1126,8 @@ export type GetFilingSummaryData = {
   escalationReason?: string;
   operatorExplanation?: string;
   reviewBatchId?: string;
+  workflowState?: 'active' | 'stopped' | 'awaiting_external_submit_click' | 'submitted' | 'submission_uncertain' | 'submission_failed';
+  externalSubmitRequired?: boolean;
   draftId?: string;
   submissionApproval?: SubmissionApprovalRecord;
   submissionResult?: SubmissionResultRecord;
@@ -1171,6 +1224,10 @@ export interface KoreanTaxMCPContracts {
   'tax.sources.get_collection_status': {
     input: GetCollectionStatusInput;
     output: MCPResponseEnvelope<CollectionStatusData>;
+  };
+  'tax.sources.record_collection_observation': {
+    input: RecordCollectionObservationInput;
+    output: MCPResponseEnvelope<RecordCollectionObservationData>;
   };
   'tax.workspace.get_status': {
     input: GetWorkspaceStatusInput;

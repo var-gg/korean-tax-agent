@@ -142,6 +142,7 @@ function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<
     'tax.setup.init_config': ['filingYear', 'storageMode'],
     'tax.sources.plan_collection': ['workspaceId', 'filingYear'],
     'tax.sources.get_collection_status': ['workspaceId'],
+    'tax.sources.record_collection_observation': ['workspaceId', 'sourceId', 'targetArtifactType', 'methodTried', 'outcome'],
     'tax.workspace.get_status': ['workspaceId'],
     'tax.workspace.list_coverage_gaps': ['workspaceId'],
     'tax.filing.get_summary': ['workspaceId'],

@@ -25,7 +25,7 @@ It should not repeat already-implemented runtime/facade exposure work.
 
 ## Browser assist and handoff
 - map more HomeTax screen variants and page-state transitions for assist checkpoints
-- improve restart/recovery guidance for interrupted browser-assist sessions
+- expand host/runtime examples around stopReason, restartGuidance, and awaiting_external_submit_click handling
 - document assist-session handoff examples for more host runtimes
 
 ## Exports and audit

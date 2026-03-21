@@ -78,6 +78,8 @@ import type {
   RecordSubmissionApprovalInput,
   RecordSubmissionResultData,
   RecordSubmissionResultInput,
+  RecordCollectionObservationData,
+  RecordCollectionObservationInput,
   RefreshOfficialDataData,
   RefreshOfficialDataInput,
   ResolveReviewItemData,
@@ -98,6 +100,7 @@ import type {
   StartHomeTaxAssistInput,
   SyncSourceData,
   SyncSourceInput,
+  RuntimeSnapshot,
 } from './contracts.js';
 import {
   taxBrowserResumeHomeTaxAssist,
@@ -135,6 +138,7 @@ export type SupportedRuntimeToolName =
   | 'tax.setup.init_config'
   | 'tax.sources.plan_collection'
   | 'tax.sources.get_collection_status'
+  | 'tax.sources.record_collection_observation'
   | 'tax.workspace.get_status'
   | 'tax.workspace.list_coverage_gaps'
   | 'tax.filing.get_summary'
@@ -190,6 +194,17 @@ export type RuntimeStore = {
   reviewItems: Map<string, ReviewItem>;
   draftsByWorkspace: Map<string, ComputeDraftData>;
   assistSessionsByWorkspace: Map<string, BrowserAssistSession>;
+  collectionObservationsByWorkspace: Map<string, Array<{
+    workspaceId: string;
+    sourceId: string;
+    targetArtifactType: string;
+    methodTried: string;
+    artifactShapeSeen?: string;
+    outcome: 'found' | 'blocked' | 'auth_expired' | 'ui_changed' | 'export_only' | 'insufficient_artifact' | 'provider_unavailable';
+    portalObservedFields?: Record<string, unknown>;
+    note?: string;
+    verifiedAt: string;
+  }>>;
 };
 
 export type DurableRuntimeSnapshot = {
@@ -279,6 +294,7 @@ export function createRuntimeStore(options: CreateRuntimeOptions = {}): RuntimeS
     reviewItems: new Map((options.reviewItems ?? []).map((item) => [item.reviewItemId, item])),
     draftsByWorkspace: new Map(Object.entries(options.draftsByWorkspace ?? {})),
     assistSessionsByWorkspace: new Map((options.assistSessions ?? []).map((session) => [session.workspaceId, session])),
+    collectionObservationsByWorkspace: new Map(),
   };
 }
 
@@ -300,6 +316,7 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.setup.init_config', input: InitConfigInput): MCPResponseEnvelope<InitConfigData>;
   invoke(name: 'tax.sources.plan_collection', input: { workspaceId: string; filingYear: number; currentCoverageSummary?: Record<string, unknown>; userProfileHints?: Record<string, unknown> }): MCPResponseEnvelope<{ recommendedSources: ReturnType<typeof taxSourcesPlanCollection>['data']['recommendedSources']; expectedValueBySource: Record<string, string>; likelyUserCheckpoints: ReturnType<typeof taxSourcesPlanCollection>['data']['likelyUserCheckpoints']; fallbackPathSuggestions: string[] }>;
   invoke(name: 'tax.sources.get_collection_status', input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData>;
+  invoke(name: 'tax.sources.record_collection_observation', input: RecordCollectionObservationInput): MCPResponseEnvelope<RecordCollectionObservationData>;
   invoke(name: 'tax.workspace.get_status', input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData>;
   invoke(name: 'tax.workspace.list_coverage_gaps', input: ListCoverageGapsInput): MCPResponseEnvelope<ListCoverageGapsData>;
   invoke(name: 'tax.filing.get_summary', input: GetFilingSummaryInput): MCPResponseEnvelope<GetFilingSummaryData>;
@@ -351,6 +368,9 @@ export class InMemoryKoreanTaxMCPRuntime {
         break;
       case 'tax.sources.get_collection_status':
         result = this.getCollectionStatus(input as GetCollectionStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.sources.record_collection_observation':
+        result = this.recordCollectionObservation(input as RecordCollectionObservationInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
       case 'tax.workspace.get_status':
         result = this.getWorkspaceStatus(input as GetWorkspaceStatusInput) as KoreanTaxMCPContracts[TName]['output'];
@@ -690,10 +710,21 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private planCollection(input: KoreanTaxMCPContracts['tax.sources.plan_collection']['input']): KoreanTaxMCPContracts['tax.sources.plan_collection']['output'] {
     const result = taxSourcesPlanCollection(input);
+    const observations = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
+    const observationSummary = observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`);
+    const collectionTasks = [...(result.data.collectionTasks ?? [])];
+    const insufficientOfficialPdf = observations.some((item) => item.targetArtifactType === 'withholding_receipt' && item.outcome === 'insufficient_artifact');
+    const uiChanged = observations.some((item) => item.outcome === 'ui_changed');
+    if (insufficientOfficialPdf) {
+      collectionTasks.sort((a, b) => (a.collectionMode === 'export_ingestion' ? -1 : 0) - (b.collectionMode === 'export_ingestion' ? -1 : 0));
+    }
     return {
       ...result,
+      nextRecommendedAction: uiChanged ? 'tax.sources.get_collection_status' : (collectionTasks[0]?.nextRecommendedAction ?? result.nextRecommendedAction),
       data: {
         ...result.data,
+        collectionTasks,
+        observationSummary,
         targetedFactCapture: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items.slice(0, 3),
       },
     };
@@ -706,15 +737,99 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
     );
     const derived = this.getWorkspaceDerivedStatus(input.workspaceId);
+    const observations = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
+    const latest = observations[observations.length - 1];
+    const observationSummary = observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`);
+    const pendingCheckpoints = [...result.data.pendingCheckpoints];
+    if (latest?.outcome === 'auth_expired' && !pendingCheckpoints.includes('authentication')) pendingCheckpoints.push('authentication');
     return {
       ...result,
-      blockingReason: derived.lastBlockingReason,
-      nextRecommendedAction: result.data.nextActionPlan?.recommendedNextAction ?? derived.nextRecommendedAction ?? result.nextRecommendedAction,
+      blockingReason: latest?.outcome === 'ui_changed' ? 'ui_changed' : latest?.outcome === 'auth_expired' ? 'missing_auth' : derived.lastBlockingReason,
+      nextRecommendedAction: latest?.outcome === 'ui_changed'
+        ? 'tax.sources.plan_collection'
+        : latest?.outcome === 'auth_expired'
+          ? 'tax.sources.resume_sync'
+          : result.data.nextActionPlan?.recommendedNextAction ?? derived.nextRecommendedAction ?? result.nextRecommendedAction,
+      data: {
+        ...result.data,
+        pendingCheckpoints,
+        observationSummary,
+      },
     };
   }
 
   private listCoverageGaps(input: ListCoverageGapsInput): MCPResponseEnvelope<ListCoverageGapsData> {
-    return taxWorkspaceListCoverageGaps(input, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []);
+    const result = taxWorkspaceListCoverageGaps(input, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []);
+    const observations = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        observationSummary: observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`),
+      },
+    };
+  }
+
+  private recordCollectionObservation(input: RecordCollectionObservationInput): MCPResponseEnvelope<RecordCollectionObservationData> {
+    const verifiedAt = input.verifiedAt ?? new Date().toISOString();
+    const current = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
+    current.push({ ...input, verifiedAt });
+    this.store.collectionObservationsByWorkspace.set(input.workspaceId, current);
+
+    const source = this.store.sources.get(input.sourceId);
+    let updatedSourceState = source?.state ?? source?.connectionStatus ?? 'planned';
+    let recommendedFallback: string | undefined;
+    let nextRecommendedAction = 'tax.sources.get_collection_status';
+    let knownBadMethodUntil: string | undefined;
+
+    if (input.outcome === 'auth_expired') {
+      updatedSourceState = 'awaiting_auth';
+      recommendedFallback = 'Re-authenticate and retry the same source flow.';
+      nextRecommendedAction = 'tax.sources.resume_sync';
+    } else if (input.outcome === 'ui_changed') {
+      updatedSourceState = 'blocked';
+      recommendedFallback = 'Prefer export ingestion or alternate documented HomeTax path until selectors/playbook are updated.';
+      nextRecommendedAction = 'tax.sources.plan_collection';
+      knownBadMethodUntil = verifiedAt;
+    } else if (input.outcome === 'insufficient_artifact') {
+      updatedSourceState = 'blocked';
+      recommendedFallback = 'Use an accepted official print/PDF or switch to export ingestion fallback.';
+      nextRecommendedAction = 'tax.sources.plan_collection';
+      knownBadMethodUntil = verifiedAt;
+    } else if (input.outcome === 'provider_unavailable' || input.outcome === 'blocked') {
+      updatedSourceState = 'blocked';
+      recommendedFallback = 'Use the fallback collection task instead of repeating the blocked path.';
+      nextRecommendedAction = 'tax.sources.plan_collection';
+      knownBadMethodUntil = verifiedAt;
+    } else if (input.outcome === 'found') {
+      updatedSourceState = 'completed';
+      recommendedFallback = undefined;
+      nextRecommendedAction = 'tax.sources.get_collection_status';
+    }
+
+    if (source) {
+      const nextSource = {
+        ...source,
+        state: updatedSourceState as SourceConnection['state'],
+        connectionStatus: updatedSourceState,
+        lastBlockingReason: input.outcome === 'auth_expired' ? 'missing_auth' : input.outcome === 'ui_changed' ? 'ui_changed' : input.outcome === 'provider_unavailable' ? 'blocked_by_provider' : source.lastBlockingReason,
+        lastSyncAt: verifiedAt,
+      };
+      this.store.sources.set(input.sourceId, nextSource);
+    }
+
+    return {
+      ok: true,
+      status: 'completed',
+      data: {
+        updatedSourceState,
+        knownBadMethodUntil,
+        recommendedFallback,
+        nextRecommendedAction,
+      },
+      nextRecommendedAction,
+      audit: { eventType: 'collection_observation_recorded', eventId: `evt_collection_observation_${input.workspaceId}_${current.length}` },
+    };
   }
 
   private getWorkspaceStatus(input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData> {
@@ -727,7 +842,16 @@ export class InMemoryKoreanTaxMCPRuntime {
     const coverageGapView = taxWorkspaceListCoverageGaps({ workspaceId: input.workspaceId }, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).data;
     const derived = this.getWorkspaceDerivedStatus(input.workspaceId);
 
-    const trustState = deriveOperatorTrustState({ draft, workspace, reviewItems: this.listReviewItems(input.workspaceId) });
+    const assistSession = this.getBrowserAssistSession(input.workspaceId);
+    const trustState = deriveOperatorTrustState({
+      draft,
+      workspace,
+      reviewItems: this.listReviewItems(input.workspaceId),
+      runtimeSnapshot,
+      authCheckpoints: this.getAuthCheckpoints(input.workspaceId),
+      assistSession,
+    });
+    const submitState = deriveExternalSubmitState(workspace, assistSession);
     return {
       ok: true,
       status: 'completed',
@@ -737,6 +861,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         escalationReason: trustState.escalationReason,
         operatorExplanation: trustState.operatorExplanation,
         reviewBatchId: trustState.reviewBatchId,
+        workflowState: submitState.workflowState,
+        externalSubmitRequired: submitState.externalSubmitRequired,
         workspace: {
           workspaceId: workspace.workspaceId,
           status: workspace.status,
@@ -783,14 +909,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
     const draft = this.getDraft(input.workspaceId);
     const nextAction = deriveWorkspaceNextRecommendedAction(workspace);
-    const blockers = dedupeBlockingReasons([
-      ...getRuntimeBlockerCodes(workspace),
-      ...(draft?.blockerCodes ?? []),
-    ]);
-
     const runtimeSnapshot = buildRuntimeSnapshot(workspace);
-    const readiness = buildRuntimeReadiness(workspace, blockers.filter(isBlockingReason));
-    const readinessState = buildRuntimeReadinessState(workspace);
 
     const missingFacts = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items;
     const coverageGapView = taxWorkspaceListCoverageGaps({ workspaceId: input.workspaceId }, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).data;
@@ -811,6 +930,23 @@ export class InMemoryKoreanTaxMCPRuntime {
 
     const detailLevel = input.detailLevel ?? 'standard';
     const headline = buildFilingSummaryHeadline(workspace);
+    const adjustmentSummary = {
+      considered: adjustmentCandidates.length,
+      applied: adjustmentCandidates.filter((item) => item.eligibilityState === 'supported' && !item.reviewRequired).length,
+      deferred: adjustmentCandidates.filter((item) => item.eligibilityState !== 'out_of_scope' && item.reviewRequired).length,
+      unsupported: adjustmentCandidates.filter((item) => item.eligibilityState === 'out_of_scope').length,
+    };
+    const assistSession = this.getBrowserAssistSession(input.workspaceId);
+    const trustState = deriveOperatorTrustState({
+      draft,
+      workspace,
+      reviewItems: this.listReviewItems(input.workspaceId),
+      runtimeSnapshot,
+      authCheckpoints: this.getAuthCheckpoints(input.workspaceId),
+      assistSession,
+    });
+    const submitState = deriveExternalSubmitState(workspace, assistSession);
+    const blockers = trustState.stopReasonCodes;
     const summaryText = buildFilingSummaryText({
       workspace,
       draft,
@@ -826,14 +962,8 @@ export class InMemoryKoreanTaxMCPRuntime {
       detailLevel,
       headline,
     });
-
-    const adjustmentSummary = {
-      considered: adjustmentCandidates.length,
-      applied: adjustmentCandidates.filter((item) => item.eligibilityState === 'supported' && !item.reviewRequired).length,
-      deferred: adjustmentCandidates.filter((item) => item.eligibilityState !== 'out_of_scope' && item.reviewRequired).length,
-      unsupported: adjustmentCandidates.filter((item) => item.eligibilityState === 'out_of_scope').length,
-    };
-    const trustState = deriveOperatorTrustState({ draft, workspace, reviewItems: this.listReviewItems(input.workspaceId) });
+    const readiness = buildRuntimeReadiness(workspace, blockers.filter(isBlockingReason));
+    const readinessState = buildRuntimeReadinessState(workspace);
     return {
       ok: true,
       status: 'completed',
@@ -844,6 +974,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         escalationReason: trustState.escalationReason,
         operatorExplanation: trustState.operatorExplanation,
         reviewBatchId: trustState.reviewBatchId,
+        workflowState: submitState.workflowState,
+        externalSubmitRequired: submitState.externalSubmitRequired,
         draftId: input.draftId ?? draft?.draftId,
         submissionApproval: workspace.submissionApproval,
         submissionResult: workspace.submissionResult,
@@ -1933,6 +2065,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     const session = this.getBrowserAssistSession(input.workspaceId);
     if (session) {
       session.submissionState = 'awaiting_final_approval';
+      session.pendingUserAction = 'Final approval is recorded. External browser agent must perform the final submit click.';
+      session.updatedAt = new Date().toISOString();
       this.store.assistSessionsByWorkspace.set(input.workspaceId, session);
     }
     this.appendAuditEvent(input.workspaceId, { eventType: 'submission_approval_recorded', eventId: `evt_submission_approval_${input.workspaceId}` }, { draftId: input.draftId, approvedBy: input.approvedBy });
@@ -2196,9 +2330,19 @@ export class InMemoryKoreanTaxMCPRuntime {
     const prepared = getDraftHomeTaxPreparation(currentDraft);
     const assistContract = deriveAssistCheckpointContract({ draft: currentDraft, session, prepared, reviewItems: this.listReviewItems(session.workspaceId) });
     const finalSubmissionState = session.submissionState ?? (workspace?.status === 'submitted' ? 'submitted' : workspace?.status === 'submission_failed' ? 'submission_failed' : workspace?.status === 'submission_uncertain' ? 'submission_uncertain' : undefined);
+    const submitState = deriveExternalSubmitState(workspace, session);
+    const stoppedReason = ((session as BrowserAssistSession & { stopReason?: StopHomeTaxAssistInput['stopReason'] }).stopReason) ?? 'user_pause';
+    const stoppedRetryPolicy = stoppedReason === 'auth_expired' ? 'reauth_then_resume' : stoppedReason === 'operator_restart' || stoppedReason === 'browser_closed' ? 'refresh_prepare_then_restart' : 'manual_confirmation_then_resume';
+    const stoppedResumePreconditions = stoppedReason === 'auth_expired'
+      ? ['user must complete authentication again before resume']
+      : stoppedReason === 'operator_restart' || stoppedReason === 'browser_closed'
+        ? ['start a fresh assist session from current prepare_hometax output']
+        : stoppedReason === 'final_approval_pause'
+          ? ['external browser agent must perform the final submit click after approval']
+          : ['resume from the preserved checkpoint when ready'];
     return {
       ok: true,
-      status: finalSubmissionState ? 'completed' : (stopped ? 'blocked' : (session.authState === 'completed' ? 'in_progress' : 'awaiting_auth')),
+      status: finalSubmissionState || submitState.externalSubmitRequired ? 'completed' : (stopped ? 'blocked' : (session.authState === 'completed' ? 'in_progress' : 'awaiting_auth')),
       data: {
         ...buildBrowserAssistCheckpointSnapshot({
         assistSessionId: session.assistSessionId,
@@ -2208,14 +2352,16 @@ export class InMemoryKoreanTaxMCPRuntime {
         checkpointKey: assistContract.checkpointKey ?? session.checkpointKey,
         screenKey: assistContract.screenKey ?? session.screenKey,
         stopped,
-        authRequired: finalSubmissionState ? false : session.authState !== 'completed',
-        blocker: finalSubmissionState ? undefined : (stopped ? 'awaiting_final_approval' : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined))),
+        authRequired: finalSubmissionState || submitState.externalSubmitRequired ? false : session.authState !== 'completed',
+        blocker: finalSubmissionState || submitState.externalSubmitRequired ? undefined : (stopped ? (stoppedReason === 'auth_expired' ? 'missing_auth' : assistContract.blockedReason) : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined))),
         pendingUserAction: finalSubmissionState
           ? (session.pendingUserAction ?? 'Submission lifecycle has been closed for this assist session.')
-          : (stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction)),
-        allowedNextActions: finalSubmissionState ? ['tax.filing.export_package', 'tax.workspace.get_status'] : assistContract.allowedNextActions,
-        resumePreconditions: finalSubmissionState ? [] : assistContract.resumePreconditions,
-        retryPolicy: finalSubmissionState ? undefined : assistContract.retryPolicy,
+          : submitState.externalSubmitRequired
+            ? 'Final approval is recorded. External browser agent must perform the final submit click.'
+            : (stopped ? (stoppedReason === 'operator_restart' || stoppedReason === 'browser_closed' ? 'This session is stopped. Start a fresh assist session from the current prepare_hometax output.' : '세션은 중단되었습니다. 필요시 같은 세션에서 재개하세요.') : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction)),
+        allowedNextActions: finalSubmissionState ? ['tax.filing.export_package', 'tax.workspace.get_status'] : submitState.externalSubmitRequired ? ['external_final_submit_click', 'tax.browser.record_submission_result'] : assistContract.allowedNextActions,
+        resumePreconditions: finalSubmissionState ? [] : submitState.externalSubmitRequired ? ['external browser agent must perform the final submit click before result recording'] : (stopped ? stoppedResumePreconditions : assistContract.resumePreconditions),
+        retryPolicy: finalSubmissionState ? undefined : submitState.externalSubmitRequired ? undefined : (stopped ? stoppedRetryPolicy : assistContract.retryPolicy),
         sessionRef: session.assistSessionId,
         workspaceRef: session.workspaceId,
         draftRef: session.draftId,
@@ -2230,12 +2376,16 @@ export class InMemoryKoreanTaxMCPRuntime {
       }),
         submissionApproval: workspace?.submissionApproval,
         submissionResult: workspace?.submissionResult,
+        workflowState: submitState.workflowState,
+        externalSubmitRequired: submitState.externalSubmitRequired,
       },
-      blockingReason: finalSubmissionState ? undefined : (stopped ? 'awaiting_final_approval' : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined))),
+      blockingReason: finalSubmissionState || submitState.externalSubmitRequired ? undefined : (stopped ? (stoppedReason === 'auth_expired' ? 'missing_auth' : assistContract.blockedReason) : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined))),
       pendingUserAction: finalSubmissionState
         ? (session.pendingUserAction ?? 'Submission lifecycle has been closed for this assist session.')
-        : (stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction)),
-      nextRecommendedAction: finalSubmissionState ? 'tax.filing.export_package' : (stopped ? 'tax.browser.start_hometax_assist' : (assistContract.blockedReason ? 'tax.browser.get_checkpoint' : 'tax.browser.resume_hometax_assist')),
+        : submitState.externalSubmitRequired
+          ? 'Final approval is recorded. External browser agent must perform the final submit click.'
+          : (stopped ? (stoppedReason === 'operator_restart' || stoppedReason === 'browser_closed' ? 'Start a fresh assist session from the current prepare_hometax output.' : 'Resume from this preserved assist session when ready.') : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction)),
+      nextRecommendedAction: submitState.externalSubmitRequired ? 'tax.browser.record_submission_result' : finalSubmissionState ? 'tax.filing.export_package' : (stopped ? ((stoppedReason === 'operator_restart' || stoppedReason === 'browser_closed') ? 'tax.browser.start_hometax_assist' : 'tax.browser.resume_hometax_assist') : (assistContract.blockedReason ? 'tax.browser.get_checkpoint' : 'tax.browser.resume_hometax_assist')),
     };
   }
 
@@ -2273,10 +2423,36 @@ export class InMemoryKoreanTaxMCPRuntime {
       };
     }
 
+    const stopReason = input.stopReason ?? 'user_pause';
+    const stopMode = input.stopMode ?? ((stopReason === 'browser_closed' || stopReason === 'operator_restart') ? 'restart_required' : 'pause');
+    const canRestartFromSession = stopMode === 'pause' && stopReason !== 'browser_closed' && stopReason !== 'operator_restart';
+    const nextAction = canRestartFromSession ? 'tax.browser.resume_hometax_assist' : 'tax.browser.start_hometax_assist';
+    const blocker = stopReason === 'auth_expired' ? 'missing_auth' : undefined;
+    const pendingUserAction = stopReason === 'final_approval_pause'
+      ? 'Final approval is recorded. External browser agent must perform the final submit click.'
+      : stopReason === 'auth_expired'
+        ? 'Authentication expired. Complete authentication again before resuming.'
+        : stopReason === 'browser_closed'
+          ? 'Browser context was lost. Start a fresh assist session from the current prepare_hometax output.'
+          : stopReason === 'operator_restart'
+            ? 'Operator requested restart. Start a fresh assist session from the current prepare_hometax output.'
+            : 'Session paused. Resume from the preserved checkpoint when ready.';
     const stoppedAt = session.endedAt ?? new Date().toISOString();
-    const nextSession = { ...session, endedAt: stoppedAt, updatedAt: stoppedAt, pendingUserAction: '세션이 중단되었습니다.' };
+    const nextSession = {
+      ...session,
+      endedAt: stoppedAt,
+      updatedAt: stoppedAt,
+      pendingUserAction,
+      stopReason,
+      stopMode,
+    } as BrowserAssistSession & { stopReason?: StopHomeTaxAssistInput['stopReason']; stopMode?: StopHomeTaxAssistInput['stopMode'] };
     this.store.assistSessionsByWorkspace.set(nextSession.workspaceId, nextSession);
-    this.syncWorkspaceSnapshot(nextSession.workspaceId, { lastBlockingReason: 'awaiting_final_approval', status: 'draft_ready_for_review' });
+    const statusHint = stopReason === 'final_approval_pause'
+      ? 'awaiting_final_approval'
+      : stopReason === 'auth_expired'
+        ? 'submission_in_progress'
+        : 'draft_ready_for_review';
+    this.syncWorkspaceSnapshot(nextSession.workspaceId, { lastBlockingReason: blocker, status: statusHint as FilingWorkspace['status'] });
 
     return {
       ok: true,
@@ -2288,9 +2464,18 @@ export class InMemoryKoreanTaxMCPRuntime {
           draftId: nextSession.draftId,
           checkpointType: nextSession.checkpointType,
           stopped: true,
-          authRequired: nextSession.authState !== 'completed',
-          blocker: 'awaiting_final_approval',
-          pendingUserAction: '세션이 중단되었습니다. 필요시 새 assist 세션을 시작하세요.',
+          authRequired: stopReason === 'auth_expired',
+          blocker,
+          pendingUserAction,
+          allowedNextActions: stopReason === 'final_approval_pause' ? ['external_final_submit_click', 'tax.browser.record_submission_result'] : [nextAction],
+          resumePreconditions: stopReason === 'auth_expired'
+            ? ['user must complete authentication again before resume']
+            : stopReason === 'final_approval_pause'
+              ? ['external browser agent must perform the final submit click']
+              : canRestartFromSession
+                ? ['resume from the preserved checkpoint when ready']
+                : ['start a fresh assist session from current prepare_hometax output'],
+          retryPolicy: stopReason === 'auth_expired' ? 'reauth_then_resume' : canRestartFromSession ? 'manual_confirmation_then_resume' : 'refresh_prepare_then_restart',
           sessionRef: nextSession.assistSessionId,
           workspaceRef: nextSession.workspaceId,
           draftRef: nextSession.draftId,
@@ -2302,15 +2487,19 @@ export class InMemoryKoreanTaxMCPRuntime {
           endedAt: nextSession.endedAt,
           authState: nextSession.authState,
         }),
+        stopMode,
+        stopReason,
         preservedContext: {
           auditable: true,
-          canRestartFromSession: true,
-          preservedFields: ['assistSessionId', 'workspaceId', 'draftId', 'checkpointType', 'lastKnownSection', 'authState', 'startedAt', 'updatedAt', 'endedAt'],
+          canRestartFromSession,
+          mustStartNewSession: !canRestartFromSession,
+          restartGuidance: canRestartFromSession ? 'resume_hometax_assist' : 'start_hometax_assist',
+          preservedFields: ['assistSessionId', 'workspaceId', 'draftId', 'checkpointType', 'lastKnownSection', 'authState', 'startedAt', 'updatedAt', 'endedAt', 'stopReason', 'stopMode'],
         },
       },
       progress: { phase: 'browser_assist', step: 'stop_session', percent: 100 },
       audit: { eventType: 'browser_assist_stopped', eventId: `evt_browser_assist_stopped_${nextSession.assistSessionId}` },
-      nextRecommendedAction: 'tax.browser.start_hometax_assist',
+      nextRecommendedAction: stopReason === 'final_approval_pause' ? 'tax.browser.record_submission_result' : nextAction,
     };
   }
 
@@ -2720,6 +2909,9 @@ function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): strin
   const submissionReadiness = getRuntimeSubmissionReadiness(workspace);
   const primaryBlockingReason = getPrimaryBlockingReason(workspace);
 
+  if (workspace.submissionApproval && !workspace.submissionResult) {
+    return 'tax.browser.record_submission_result';
+  }
   if (workspace.status === 'submission_in_progress') {
     return 'tax.browser.resume_hometax_assist';
   }
@@ -2832,18 +3024,48 @@ function deriveOperatorTrustState(params: {
   draft?: ComputeDraftData;
   workspace?: FilingWorkspace;
   reviewItems?: ReviewItem[];
+  runtimeSnapshot?: RuntimeSnapshot;
+  authCheckpoints?: AuthCheckpoint[];
+  assistSession?: BrowserAssistSession;
 }) {
-  const stopReasonCodes = [...(params.draft?.stopReasonCodes ?? [])].filter((value, index, array) => array.indexOf(value) === index);
+  const runtimeBlockers = params.runtimeSnapshot?.blockerCodes ?? [];
+  const draftBlockers = params.draft?.stopReasonCodes ?? [];
+  const latestAuthCheckpoint = [...(params.authCheckpoints ?? [])].sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))[0];
+  const assistBlockers: BlockingReason[] = [];
+
+  if (params.workspace?.status === 'submission_uncertain') {
+    assistBlockers.push('awaiting_review_decision');
+  } else if (params.workspace?.status !== 'submitted' && params.workspace?.status !== 'submission_failed') {
+    if (params.assistSession && !params.assistSession.endedAt && params.assistSession.authState !== 'completed') {
+      assistBlockers.push('missing_auth');
+    }
+    if (latestAuthCheckpoint && latestAuthCheckpoint.state !== 'completed' && latestAuthCheckpoint.workspaceId === params.workspace?.workspaceId) {
+      assistBlockers.push('missing_auth');
+    }
+  }
+
+  const stopReasonCodes = dedupeBlockingReasons([
+    ...(params.workspace?.status === 'submitted' || params.workspace?.status === 'submission_failed' ? [] : runtimeBlockers),
+    ...(params.workspace?.status === 'submitted' || params.workspace?.status === 'submission_failed' ? [] : draftBlockers),
+    ...(params.workspace?.status === 'submitted' || params.workspace?.status === 'submission_failed' ? [] : assistBlockers),
+    params.workspace?.status === 'submission_uncertain' ? 'awaiting_review_decision' : undefined,
+    params.workspace?.status === 'submission_in_progress' && params.workspace?.lastBlockingReason === 'comparison_incomplete' ? 'comparison_incomplete' : undefined,
+    params.workspace?.status !== 'submitted' && params.workspace?.status !== 'submission_failed' ? params.workspace?.lastBlockingReason : undefined,
+  ]).filter(isBlockingReason);
+
   const warningCodes = [...(params.draft?.warningCodes ?? [])].filter((value, index, array) => array.indexOf(value) === index);
-  const escalationReason = params.draft?.escalationReason
-    ?? (params.workspace?.status === 'submission_uncertain' ? 'Submission result is ambiguous and requires verification.' : undefined);
+  const escalationReason = params.workspace?.status === 'submission_uncertain'
+    ? 'Submission result is ambiguous and requires verification before claiming success.'
+    : params.draft?.escalationReason;
   const operatorExplanation = stopReasonCodes.length > 0
-    ? `현재 진행이 막힌 이유: ${stopReasonCodes.join(', ')}. 가정이 포함된 경우 반드시 명시적으로 공개해야 합니다.`
+    ? `현재 진행을 멈추게 하는 활성 blocker: ${stopReasonCodes.join(', ')}. 가정이 포함된 경우 반드시 명시적으로 공개해야 합니다.`
     : warningCodes.length > 0
       ? `현재 경고/다운그레이드 이유: ${warningCodes.join(', ')}. 가정이 포함된 경우 반드시 명시적으로 공개해야 합니다.`
       : params.workspace?.status === 'submitted'
-        ? '제출 결과가 기록되었고 활성 blocker는 없습니다. 가정이 있었다면 함께 공개해야 합니다.'
-        : '현재 활성 blocker는 없습니다. 다만 가정이 있다면 공개해야 합니다.';
+        ? '제출 성공 상태로 수렴했으며 활성 blocker는 없습니다. 가정이 있었다면 함께 공개해야 합니다.'
+        : params.workspace?.status === 'submission_failed'
+          ? '제출 실패 상태가 기록되었고 추가 활성 blocker는 없습니다. 실패 원인과 재시도 여부를 검토해야 합니다.'
+          : '현재 활성 blocker는 없습니다. 다만 가정이 있다면 공개해야 합니다.';
   const reviewBatchId = params.draft?.reviewBatchId
     ?? ((params.reviewItems?.length ?? 0) > 0 ? `review_batch_${params.workspace?.workspaceId ?? 'workspace'}_${params.reviewItems?.length ?? 0}` : undefined);
   return { stopReasonCodes, warningCodes, escalationReason, operatorExplanation, reviewBatchId };
@@ -2852,6 +3074,30 @@ function deriveOperatorTrustState(params: {
 function getDraftHomeTaxPreparation(draft?: ComputeDraftData): PrepareHomeTaxData | undefined {
   const candidate = draft as ComputeDraftData & { hometaxPreparation?: PrepareHomeTaxData } | undefined;
   return candidate?.hometaxPreparation;
+}
+
+function deriveExternalSubmitState(workspace?: FilingWorkspace, session?: BrowserAssistSession) {
+  const awaitingExternalSubmitClick = Boolean(
+    workspace?.submissionApproval
+    && !workspace?.submissionResult
+    && (!session || !session.endedAt),
+  );
+  const workflowState: 'active' | 'stopped' | 'awaiting_external_submit_click' | 'submitted' | 'submission_uncertain' | 'submission_failed' =
+    workspace?.status === 'submitted'
+      ? 'submitted'
+      : workspace?.status === 'submission_uncertain'
+        ? 'submission_uncertain'
+        : workspace?.status === 'submission_failed'
+          ? 'submission_failed'
+          : awaitingExternalSubmitClick
+            ? 'awaiting_external_submit_click'
+            : session?.endedAt
+              ? 'stopped'
+              : 'active';
+  return {
+    workflowState,
+    externalSubmitRequired: awaitingExternalSubmitClick,
+  };
 }
 
 function deriveAssistCheckpointContract(params: {

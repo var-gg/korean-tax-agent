@@ -49,6 +49,12 @@ Examples:
 The external AI agent should not ask the user to perform hidden MCP bookkeeping.
 If MCP already returns the next step, use it.
 
+No-prep orchestration success bar:
+- first wave should center on HomeTax authoritative materials
+- user questions should stay limited and targeted
+- conditional documents should be requested only when the collection truth actually narrows to them
+- wrong first artifacts (for example XLS-only withholding lists) should recover toward official PDF/print fallback rather than repeating the same bad tactic
+
 ## Core tool sequence
 Canonical high-level sequence:
 1. `tax.setup.inspect_environment`
@@ -76,6 +82,7 @@ Canonical high-level sequence:
 Submission lifecycle policy:
 - `tax.browser.record_submission_result` is the lifecycle-closing step.
 - When success / fail / unknown is recorded, the HomeTax assist session is auto-closed.
+- After `tax.filing.record_submission_approval` and before result recording, read models may surface `awaiting_external_submit_click` / `externalSubmitRequired=true`.
 - Final workspace state should converge to `submitted`, `submission_failed`, or `submission_uncertain` before export.
 
 ## Important read models
@@ -88,6 +95,15 @@ They are the preferred surfaces for:
 - operator narration
 - current blocker explanation
 - next-step routing
+
+Read-model contract:
+- `stopReasonCodes` = active blockers that currently stop or hard-downgrade progression
+- `warningCodes` = non-blocking downgrade/warning signals
+- `runtimeSnapshot.blockerCodes` should agree with active blocker truth
+- legacy fields like `blockers` should not contradict `stopReasonCodes`
+- collection read surfaces (`plan_collection`, `get_collection_status`, `list_coverage_gaps`) should expose executable `collectionTasks[]`, not vague "send more files" requests
+- collection task guidance should be interpreted through the canonical source-method registry (preferred/fallback/known-invalid methods plus re-verify timing)
+- when a browser/export tactic fails or yields an insufficient artifact, record it with `tax.sources.record_collection_observation` so MCP can steer to a better fallback next time
 
 ## Important stop reasons
 Treat these as active hard blockers, not suggestions:

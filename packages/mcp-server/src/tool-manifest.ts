@@ -23,6 +23,7 @@ export const CANONICAL_TOOL_MANIFEST = {
   'tax.setup.init_config': { implemented: true, category: 'setup' },
   'tax.sources.plan_collection': { implemented: true, category: 'sources' },
   'tax.sources.get_collection_status': { implemented: true, category: 'sources' },
+  'tax.sources.record_collection_observation': { implemented: true, category: 'sources', note: 'records source-level tactic outcomes so future planning can avoid repeating bad collection attempts' },
   'tax.workspace.get_status': { implemented: true, category: 'workspace' },
   'tax.workspace.list_coverage_gaps': { implemented: true, category: 'workspace', note: 'lists domain-aware coverage gaps and the single highest-priority next action' },
   'tax.filing.get_summary': { implemented: true, category: 'filing' },

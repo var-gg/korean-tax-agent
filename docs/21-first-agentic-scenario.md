@@ -52,6 +52,16 @@ Expected effect:
 The agent identifies the next best sources.
 In the first scenario, HomeTax should usually be first.
 
+The planning output should not stop at a vague recommendation.
+It should expose source-specific `collectionTasks[]` with:
+- accepted artifact shapes
+- rejected/insufficient artifact shapes
+- portal path hints
+- why the source matters now
+- whether the task is blocking if missing
+- concrete next action per task
+- method-registry truth such as preferred/fallback methods, known-invalid methods, and re-verify timing
+
 The agent says, in effect:
 - I want to connect HomeTax first because it is the highest-value source for filing materials and cross-checks
 
@@ -96,6 +106,7 @@ Expected effect:
 - sync attempt records progress and outcome
 - artifacts are created
 - if interrupted, the sync attempt records `checkpointType`, `blockingReason`, and `pendingUserAction`
+- the external agent can write a narrow `tax.sources.record_collection_observation` note so future planning remembers blocked/insufficient tactics
 - blocked paths become structured fallback suggestions rather than vague failure
 
 ### Step 6. Agent normalizes and assesses coverage

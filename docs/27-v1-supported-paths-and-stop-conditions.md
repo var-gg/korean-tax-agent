@@ -53,6 +53,9 @@ Success means:
 - `nextRecommendedAction` stays meaningful at each major step
 - readiness can be observed moving through `estimate_ready` → `draft_ready` → `submission_assist_ready`
 - user intervention stays limited to login / consent / judgment / targeted fact answer
+- no-prep collection scenarios still start with HomeTax authoritative materials rather than vague upload requests
+- conditional deduction/supporting documents are requested only when they become the narrow remaining collection truth
+- wrong first artifacts (such as XLS-only withholding lists) recover toward official PDF/print fallback instead of repeating the same bad tactic
 - export_package includes blockers, checklist, and receipt information when available
 
 Stop means:

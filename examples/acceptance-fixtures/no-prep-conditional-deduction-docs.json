@@ -1,0 +1,31 @@
+{
+  "scenarioId": "no_prep_conditional_deduction_docs",
+  "label": "No-prep path with conditional deduction docs",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "sole_freelancer_light",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "sole_freelancer_light", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "deduction_eligibility", "factKey": "deduction_eligibility_facts", "value": { "has_donation_receipt": true }, "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 }
+  ],
+  "hometaxMaterials": [
+    { "ref": "fixture://no_prep_conditional_deduction_docs/withholding-official.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://no_prep_conditional_deduction_docs/guidance-notice.pdf", "materialTypeHint": "income_statement" }
+  ],
+  "documents": [
+    { "externalId": "withholding-official", "documentType": "tax_certificate", "issuedAt": "2025-02-10", "issuer": "Client B", "fileRef": "file://withholding-official.pdf" },
+    { "externalId": "donation-doc-001", "documentType": "receipt", "issuedAt": "2025-03-01", "issuer": "Foundation A", "fileRef": "file://donation-doc-001.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "client-002", "occurredAt": "2025-02-10", "amount": 1800000, "normalizedDirection": "income", "counterparty": "Client B", "description": "design service payment", "sourceReference": "client-002" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-002", "incomeSourceRef": "client-002", "payerName": "Client B", "grossAmount": 1800000, "withheldTaxAmount": 54000, "localTaxAmount": 5400, "evidenceDocumentRefs": ["withholding-official"] }
+  ],
+  "expected": {
+    "maxOperatorQuestions": 3,
+    "expectPrepareReady": false,
+    "expectConditionalDocRequestOnly": true
+  }
+}

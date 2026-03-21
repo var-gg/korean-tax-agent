@@ -46,6 +46,8 @@ A minimal integration loop is:
 
 Trust-policy note:
 - `stopReasonCodes` are reserved for active blockers that should stop or hard-downgrade progression.
+- `tax.workspace.get_status`, `tax.filing.get_summary`, and `runtimeSnapshot.blockerCodes` should agree on active blocker truth.
+- Collection planning should follow the canonical source-method registry (`packages/mcp-server/src/source-method-registry.ts`) for preferred/fallback/known-invalid methods and re-verification timing.
 - Non-blocking downgrade signals should appear as warnings and operator explanation instead of pretending filing is fully blocked.
 
 Runnable examples for this external-agent model:

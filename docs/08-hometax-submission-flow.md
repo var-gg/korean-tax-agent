@@ -139,7 +139,19 @@ The browser flow must support interruption at any of these checkpoints:
 - after auth
 - before entering a new filing section
 - on mismatch detection
+- after final approval while waiting for the external final click
 - before final submission
+
+Suggested stop reasons / modes:
+- `user_pause`
+- `auth_expired`
+- `browser_closed`
+- `operator_restart`
+- `final_approval_pause`
+
+Stopped-session guidance should distinguish:
+- same-session resume is allowed
+- only fresh-session restart is allowed
 
 Suggested session fields:
 - assistSessionId

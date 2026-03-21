@@ -185,6 +185,7 @@ Purpose:
 
 Output:
 - recommended next sources
+- `collectionTasks[]` with source-specific playbook detail
 - expected value by source
 - likely user checkpoints
 - fallback path suggestions
@@ -212,6 +213,7 @@ Output:
 #### `tax.sources.get_collection_status`
 Purpose:
 - summarize current collection coverage, gaps, blocked sources, and recommended next actions
+- reflect recorded collection observations so the same bad tactic is not recommended repeatedly
 
 Input:
 - workspace id
@@ -220,12 +222,33 @@ Output:
 - connected sources
 - pending checkpoints
 - coverage gaps
+- `collectionTasks[]` aligned to the prioritized collection plan
 - blocked attempts
 - prioritized gap
 - single next-action plan
 - next recommended action
 
 ### sources
+
+#### `tax.sources.record_collection_observation`
+Purpose:
+- record what the external AI agent tried, what artifact shape was actually seen, and why the attempt succeeded, blocked, or fell back
+- help future planning avoid repeating known-bad collection methods
+
+Input:
+- workspace id
+- source id
+- target artifact type
+- method tried
+- artifact shape seen
+- outcome (`found`, `blocked`, `auth_expired`, `ui_changed`, `export_only`, `insufficient_artifact`, `provider_unavailable`)
+- optional portal-observed fields / note / verifiedAt
+
+Output:
+- updated source state
+- known bad method horizon when relevant
+- recommended fallback
+- next recommended action
 
 #### `tax.sources.connect`
 Purpose:

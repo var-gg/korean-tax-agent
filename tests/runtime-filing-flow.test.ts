@@ -334,6 +334,39 @@ describe('in-memory runtime filing flow', () => {
     expect(draft.data.stopReasonCodes).toContain('conflicting_withholding_record');
   });
 
+  it('surfaces missing_auth during active assist in get_status and get_summary', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime({
+      consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
+      sources: demo.sources,
+      syncAttempts: demo.syncAttempts,
+      coverageGapsByWorkspace: { [demo.workspaceId]: demo.coverageGaps },
+      transactions: demo.transactions,
+      decisions: demo.decisions,
+      taxpayerFacts: seededTaxpayerFacts,
+      withholdingRecords: seededWithholdingRecords,
+    });
+
+    const classify = runtime.invoke('tax.classify.run', { workspaceId: demo.workspaceId });
+    runtime.invoke('tax.classify.resolve_review_item', {
+      reviewItemIds: classify.data.reviewItems?.map((item) => item.reviewItemId) ?? runtime.listReviewItems(demo.workspaceId).map((item) => item.reviewItemId),
+      selectedOption: 'exclude_from_expense',
+      rationale: 'resolve for assist auth test',
+      approverIdentity: 'runtime_test_user',
+    });
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId: demo.workspaceId, draftMode: 'new_version', includeAssumptions: true });
+    runtime.invoke('tax.filing.refresh_official_data', { workspaceId: demo.workspaceId, draftId: draft.data.draftId });
+    runtime.invoke('tax.filing.compare_with_hometax', { workspaceId: demo.workspaceId, draftId: draft.data.draftId, comparisonMode: 'visible_portal', sectionKeys: ['income', 'expenses', 'withholding'] });
+    const started = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId: demo.workspaceId, draftId: draft.data.draftId, mode: 'fill_assist' });
+    expect(started.ok).toBe(true);
+
+    const status = runtime.invoke('tax.workspace.get_status', { workspaceId: demo.workspaceId });
+    const summary = runtime.invoke('tax.filing.get_summary', { workspaceId: demo.workspaceId, draftId: draft.data.draftId });
+    expect(status.data.stopReasonCodes).toContain('missing_auth');
+    expect(summary.data.stopReasonCodes).toContain('missing_auth');
+    expect(summary.data.blockers).toContain('missing_auth');
+  });
+
   it('keeps blocker sets aligned across status, summary, and export package', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const workspaceId = 'workspace_blocker_alignment';
@@ -355,7 +388,9 @@ describe('in-memory runtime filing flow', () => {
     const exportPackage = runtime.invoke('tax.filing.export_package', { workspaceId, draftId: draft.data.draftId, formats: ['json_package', 'submission_prep_checklist'] });
 
     expect(status.data.stopReasonCodes).toEqual(summary.data.stopReasonCodes);
+    expect(summary.data.stopReasonCodes).toEqual(summary.data.blockers);
     expect(summary.data.stopReasonCodes).toEqual(exportPackage.data.unresolvedBlockers);
+    expect(status.data.runtimeSnapshot?.blockerCodes).toEqual(summary.data.stopReasonCodes);
   });
 
   it('captures taxpayer facts and explains missing facts before draft readiness', () => {
@@ -413,6 +448,47 @@ describe('in-memory runtime filing flow', () => {
 
     const status = runtime.invoke('tax.workspace.get_status', { workspaceId });
     expect(status.data.workspace.missingFacts?.length).toBeGreaterThan(0);
+  });
+
+  it('surfaces awaiting external submit click after final approval', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'simple_salary_light' });
+    const workspaceId = init.data.workspaceId;
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [{ externalId: 'salary-1', occurredAt: '2025-03-25', amount: 3500000, normalizedDirection: 'income', counterparty: 'Simple Payroll', description: 'salary payroll march', sourceReference: 'salary-1' }],
+        withholdingRecords: [{ externalId: 'wh-1', incomeSourceRef: 'salary-1', payerName: 'Simple Payroll', grossAmount: 3500000, withheldTaxAmount: 105000, localTaxAmount: 10500 }],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['salary'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'simple_salary_light', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'residency_context', category: 'taxpayer_profile', value: 'domestic_only', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    runtime.invoke('tax.classify.run', { workspaceId });
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'new_version', includeAssumptions: true });
+    runtime.invoke('tax.filing.refresh_official_data', { workspaceId, draftId: draft.data.draftId });
+    runtime.invoke('tax.filing.compare_with_hometax', { workspaceId, draftId: draft.data.draftId, portalObservedFields: (draft.data.draftFieldValues ?? []).map((field) => ({ sectionKey: field.sectionKey, fieldKey: field.fieldKey, portalObservedValue: field.value })) });
+    const started = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId, draftId: draft.data.draftId, mode: 'fill_assist' });
+    expect(started.ok).toBe(true);
+
+    runtime.invoke('tax.filing.record_submission_approval', { workspaceId, draftId: draft.data.draftId, approvedBy: 'operator:test' });
+    const status = runtime.invoke('tax.workspace.get_status', { workspaceId });
+    const summary = runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: draft.data.draftId });
+    const checkpoint = runtime.invoke('tax.browser.get_checkpoint', { workspaceId, assistSessionId: started.data.assistSessionId });
+    expect(status.data.workflowState).toBe('awaiting_external_submit_click');
+    expect(status.data.externalSubmitRequired).toBe(true);
+    expect(summary.data.workflowState).toBe('awaiting_external_submit_click');
+    expect(summary.data.externalSubmitRequired).toBe(true);
+    expect(checkpoint.data.workflowState).toBe('awaiting_external_submit_click');
+    expect(checkpoint.data.externalSubmitRequired).toBe(true);
+    expect(checkpoint.nextRecommendedAction).toBe('tax.browser.record_submission_result');
   });
 
   it('requires final approval before recording submission result and stores receipt/result states', () => {
@@ -482,11 +558,14 @@ describe('in-memory runtime filing flow', () => {
     expect(status.data.workspace.submissionApproval?.approvedBy).toBe('operator:test');
     expect(status.data.workspace.submissionResult?.result).toBe('success');
     expect(status.data.workspace.status).toBe('submitted');
+    expect(status.data.stopReasonCodes).toEqual([]);
     expect(runtime.getBrowserAssistSession(workspaceId)?.endedAt).toBeTruthy();
 
     const summary = runtime.invoke('tax.filing.get_summary', { workspaceId });
     expect(summary.data.submissionResult?.receiptNumber).toBe('2026-HT-001');
     expect(summary.data.status).toBe('submitted');
+    expect(summary.data.stopReasonCodes).toEqual([]);
+    expect(summary.data.blockers).toEqual([]);
 
     const exportPackage = runtime.invoke('tax.filing.export_package', {
       workspaceId,
@@ -632,6 +711,43 @@ describe('in-memory runtime filing flow', () => {
     expect(runtime.getBrowserAssistSession(demo.workspaceId)).toBeUndefined();
   });
 
+  it('guides restart semantics for browser_closed and operator_restart stops', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'simple_salary_light' });
+    const workspaceId = init.data.workspaceId;
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [{ externalId: 'salary-1', occurredAt: '2025-03-25', amount: 3500000, normalizedDirection: 'income', counterparty: 'Simple Payroll', description: 'salary payroll march', sourceReference: 'salary-1' }],
+        withholdingRecords: [{ externalId: 'wh-1', incomeSourceRef: 'salary-1', payerName: 'Simple Payroll', grossAmount: 3500000, withheldTaxAmount: 105000, localTaxAmount: 10500 }],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['salary'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'simple_salary_light', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'residency_context', category: 'taxpayer_profile', value: 'domestic_only', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    runtime.invoke('tax.classify.run', { workspaceId });
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'new_version', includeAssumptions: true });
+    runtime.invoke('tax.filing.refresh_official_data', { workspaceId, draftId: draft.data.draftId });
+    runtime.invoke('tax.filing.compare_with_hometax', { workspaceId, draftId: draft.data.draftId, portalObservedFields: (draft.data.draftFieldValues ?? []).map((field) => ({ sectionKey: field.sectionKey, fieldKey: field.fieldKey, portalObservedValue: field.value })) });
+    const started = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId, draftId: draft.data.draftId, mode: 'fill_assist' });
+
+    const browserClosed = runtime.invoke('tax.browser.stop_hometax_assist', { workspaceId, assistSessionId: started.data.assistSessionId, stopReason: 'browser_closed', stopMode: 'restart_required' });
+    expect(browserClosed.data.preservedContext.canRestartFromSession).toBe(false);
+    expect(browserClosed.data.preservedContext.mustStartNewSession).toBe(true);
+    expect(browserClosed.data.preservedContext.restartGuidance).toBe('start_hometax_assist');
+    expect(browserClosed.nextRecommendedAction).toBe('tax.browser.start_hometax_assist');
+
+    const restarted = runtime.invoke('tax.browser.stop_hometax_assist', { workspaceId, assistSessionId: started.data.assistSessionId, stopReason: 'operator_restart', stopMode: 'restart_required' });
+    expect(restarted.data.preservedContext.canRestartFromSession).toBe(false);
+    expect(restarted.data.preservedContext.restartGuidance).toBe('start_hometax_assist');
+  });
+
   it('blocks browser resume when draft changes after assist start', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime({
       consentRecords: demo.consentRecords,
@@ -672,12 +788,16 @@ describe('in-memory runtime filing flow', () => {
 
     runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'new_version', includeAssumptions: true });
     const resumed = runtime.invoke('tax.browser.resume_hometax_assist', { workspaceId, assistSessionId: started.data.assistSessionId });
+    const status = runtime.invoke('tax.workspace.get_status', { workspaceId });
+    const summary = runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: runtime.getDraft(workspaceId)?.draftId });
     if (resumed.ok) {
       expect(['tax.browser.resume_hometax_assist', 'tax.browser.get_checkpoint']).toContain(resumed.nextRecommendedAction);
     } else {
       expect(resumed.blockingReason).toBe('official_data_refresh_required');
       expect(resumed.nextRecommendedAction).toBe('tax.browser.get_checkpoint');
     }
+    expect(status.data.stopReasonCodes.some((code) => ['official_data_refresh_required', 'comparison_incomplete'].includes(code))).toBe(true);
+    expect(summary.data.stopReasonCodes.some((code) => ['official_data_refresh_required', 'comparison_incomplete'].includes(code))).toBe(true);
   });
 
   it('applies resolved hometax mismatch reviews back to the draft', () => {

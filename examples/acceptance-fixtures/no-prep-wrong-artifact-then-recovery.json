@@ -1,0 +1,36 @@
+{
+  "scenarioId": "no_prep_wrong_artifact_then_recovery",
+  "label": "Wrong artifact first then recovery to official PDF/print",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "sole_freelancer_light",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "sole_freelancer_light", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 }
+  ],
+  "wrongObservation": {
+    "targetArtifactType": "withholding_receipt",
+    "methodTried": "hometax_list_xls_only",
+    "artifactShapeSeen": "withholding list xls only",
+    "outcome": "insufficient_artifact"
+  },
+  "hometaxMaterials": [
+    { "ref": "fixture://no_prep_wrong_artifact_then_recovery/withholding-official.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://no_prep_wrong_artifact_then_recovery/guidance-notice.pdf", "materialTypeHint": "income_statement" }
+  ],
+  "documents": [
+    { "externalId": "withholding-official", "documentType": "tax_certificate", "issuedAt": "2025-02-10", "issuer": "Client C", "fileRef": "file://withholding-official.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "client-003", "occurredAt": "2025-02-10", "amount": 2100000, "normalizedDirection": "income", "counterparty": "Client C", "description": "development service payment", "sourceReference": "client-003" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-003", "incomeSourceRef": "client-003", "payerName": "Client C", "grossAmount": 2100000, "withheldTaxAmount": 63000, "localTaxAmount": 6300, "evidenceDocumentRefs": ["withholding-official"] }
+  ],
+  "expected": {
+    "maxOperatorQuestions": 3,
+    "expectPrepareReady": false,
+    "expectConditionalDocRequestOnly": false,
+    "expectRecoveryFallback": true
+  }
+}

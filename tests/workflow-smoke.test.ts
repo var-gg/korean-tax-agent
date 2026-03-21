@@ -7,6 +7,7 @@ import {
   taxFilingComputeDraft,
   taxFilingPrepareHomeTax,
   taxSourcesConnect,
+  taxSourcesPlanCollection,
   taxSourcesResumeSync,
   taxSourcesSync,
 } from '../packages/mcp-server/src/tools.js';
@@ -32,6 +33,23 @@ const demo = rawDemo as {
 };
 
 describe('workflow smoke', () => {
+  it('builds Tier A freelancer collection tasks with ordered source-specific playbook details', () => {
+    const plan = taxSourcesPlanCollection({ workspaceId: 'workspace_2025_freelancer', filingYear: 2025 });
+    expect(plan.ok).toBe(true);
+    expect(plan.data.collectionTasks?.map((task) => task.targetArtifactType)).toEqual([
+      'withholding_receipt',
+      'filing_guidance_notice',
+      'year_end_tax_bundle',
+      'conditional_deduction_support',
+      'income_scope_confirmation',
+    ]);
+    expect(plan.data.collectionTasks?.[0]?.acceptedArtifactShapes.some((shape) => shape.includes('official withholding'))).toBe(true);
+    expect(plan.data.collectionTasks?.[0]?.rejectedArtifactShapes.some((shape) => shape.includes('XLS'))).toBe(true);
+    expect(plan.data.collectionTasks?.[0]?.portalPathHints.some((hint) => hint.includes('Known invalid methods'))).toBe(true);
+    expect(plan.data.collectionTasks?.[1]?.whyThisSourceNow).toContain('Re-verify recommended');
+    expect(plan.data.nextActionPlan?.recommendedNextAction).toBe(plan.data.collectionTasks?.[0]?.nextRecommendedAction);
+  });
+
   it('runs the checkpoint-driven collection to hometax-assist path', () => {
     const connectResult = taxSourcesConnect(
       {

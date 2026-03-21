@@ -42,8 +42,15 @@ describe('in-memory runtime', () => {
     });
     expect(planResult.ok).toBe(true);
     expect(planResult.data.recommendedSources.length).toBeGreaterThan(0);
+    expect(planResult.data.collectionTasks?.length).toBeGreaterThan(0);
+    expect(planResult.data.collectionTasks?.[0]?.sourceCategory).toBe('hometax');
+    expect(planResult.data.collectionTasks?.[0]?.acceptedArtifactShapes.length).toBeGreaterThan(0);
+    expect(planResult.data.collectionTasks?.[0]?.rejectedArtifactShapes.length).toBeGreaterThan(0);
+    expect(planResult.data.collectionTasks?.[0]?.portalPathHints.some((hint) => hint.includes('Known invalid methods'))).toBe(true);
+    expect(planResult.data.collectionTasks?.[1]?.whyThisSourceNow).toContain('Re-verify recommended');
     expect(planResult.data.nextActionPlan?.collectionMode).toBe('browser_assist');
     expect(planResult.data.nextActionPlan?.recommendedNextAction).toBeTruthy();
+    expect(planResult.data.collectionTasks?.[0]?.nextRecommendedAction).toBe(planResult.data.nextActionPlan?.recommendedNextAction);
     expect(planResult.nextRecommendedAction).toBe('tax.sources.connect');
   });
 
@@ -62,6 +69,8 @@ describe('in-memory runtime', () => {
 
     const before = runtime.invoke('tax.sources.get_collection_status', { workspaceId: demo.workspaceId });
     expect(before.data.connectedSources.some((source) => source.sourceType === 'hometax')).toBe(false);
+    expect(before.data.collectionTasks?.[0]?.acceptedArtifactShapes.some((shape) => shape.includes('official'))).toBe(true);
+    expect(before.data.collectionTasks?.[0]?.rejectedArtifactShapes.some((shape) => shape.includes('XLS'))).toBe(true);
 
     const beforeList = runtime.invoke('tax.sources.list', {
       workspaceId: demo.workspaceId,
@@ -104,6 +113,10 @@ describe('in-memory runtime', () => {
 
     const statusAfterResume = runtime.invoke('tax.sources.get_collection_status', { workspaceId: demo.workspaceId });
     expect(statusAfterResume.data.pendingCheckpoints).not.toContain('authentication');
+    expect(statusAfterResume.data.collectionTasks?.length).toBeGreaterThan(0);
+
+    const gapView = runtime.invoke('tax.workspace.list_coverage_gaps', { workspaceId: demo.workspaceId });
+    expect(gapView.data.collectionTasks?.length).toBeGreaterThan(0);
 
     const normalizeResult = runtime.invoke('tax.ledger.normalize', {
       workspaceId: demo.workspaceId,
@@ -157,6 +170,51 @@ describe('in-memory runtime', () => {
     expect(normalizeResult.data.documentCount).toBe(2);
     expect(normalizeResult.data.coverageGapsCreated.some((gap) => gap.gapType === 'missing_expense_evidence')).toBe(true);
     expect(normalizeResult.nextRecommendedAction).toBe('tax.classify.run');
+  });
+
+  it('changes collection fallback after insufficient artifact / auth expiry / ui change observations', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    const connect = runtime.invoke('tax.sources.connect', { workspaceId, sourceType: 'hometax', requestedScope: ['read_documents'] });
+
+    const insufficient = runtime.invoke('tax.sources.record_collection_observation', {
+      workspaceId,
+      sourceId: connect.data.sourceId,
+      targetArtifactType: 'withholding_receipt',
+      methodTried: 'hometax_list_xls_only',
+      artifactShapeSeen: 'withholding list xls only',
+      outcome: 'insufficient_artifact',
+    });
+    expect(insufficient.data.updatedSourceState).toBe('blocked');
+    expect(insufficient.data.recommendedFallback).toContain('official print/PDF');
+    const planAfterInsufficient = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: 2025 });
+    expect(planAfterInsufficient.data.observationSummary?.some((item) => item.includes('insufficient_artifact'))).toBe(true);
+    expect(planAfterInsufficient.nextRecommendedAction).toBe('tax.import.import_hometax_materials');
+
+    const authExpired = runtime.invoke('tax.sources.record_collection_observation', {
+      workspaceId,
+      sourceId: connect.data.sourceId,
+      targetArtifactType: 'withholding_receipt',
+      methodTried: 'browser_assist_live_hometax',
+      outcome: 'auth_expired',
+    });
+    expect(authExpired.data.updatedSourceState).toBe('awaiting_auth');
+    expect(authExpired.nextRecommendedAction).toBe('tax.sources.resume_sync');
+    const statusAfterAuth = runtime.invoke('tax.sources.get_collection_status', { workspaceId });
+    expect(statusAfterAuth.data.pendingCheckpoints).toContain('authentication');
+
+    const uiChanged = runtime.invoke('tax.sources.record_collection_observation', {
+      workspaceId,
+      sourceId: connect.data.sourceId,
+      targetArtifactType: 'filing_guidance_notice',
+      methodTried: 'browser_assist_notice_flow',
+      outcome: 'ui_changed',
+    });
+    expect(uiChanged.data.nextRecommendedAction).toBe('tax.sources.plan_collection');
+    const statusAfterUi = runtime.invoke('tax.sources.get_collection_status', { workspaceId });
+    expect(statusAfterUi.nextRecommendedAction).toBe('tax.sources.plan_collection');
+    expect(statusAfterUi.blockingReason).toBe('ui_changed');
   });
 
   it('accepts extracted payloads and creates withholding workflow state', () => {
@@ -296,11 +354,15 @@ describe('in-memory runtime', () => {
     const stopped = runtime.invoke('tax.browser.stop_hometax_assist', {
       assistSessionId: started.data.assistSessionId,
       workspaceId,
+      stopReason: 'auth_expired',
+      stopMode: 'pause',
     });
     expect(stopped.ok).toBe(true);
     expect(stopped.data.stopped).toBe(true);
+    expect(stopped.data.stopReason).toBe('auth_expired');
     expect(stopped.data.preservedContext.auditable).toBe(true);
-    expect(stopped.nextRecommendedAction).toBe('tax.browser.start_hometax_assist');
+    expect(stopped.data.preservedContext.canRestartFromSession).toBe(true);
+    expect(stopped.nextRecommendedAction).toBe('tax.browser.resume_hometax_assist');
 
     const afterStop = runtime.invoke('tax.browser.get_checkpoint', {
       assistSessionId: started.data.assistSessionId,
@@ -308,7 +370,8 @@ describe('in-memory runtime', () => {
     });
     expect(afterStop.ok).toBe(true);
     expect(afterStop.data.stopped).toBe(true);
-    expect(afterStop.nextRecommendedAction).toBe('tax.browser.start_hometax_assist');
+    expect(afterStop.data.workflowState).toBe('stopped');
+    expect(afterStop.nextRecommendedAction).toBe('tax.browser.resume_hometax_assist');
   });
 
   it('supports ref-based import ingestion tools without local parsing', () => {
