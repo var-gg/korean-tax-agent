@@ -22,10 +22,11 @@ The MCP surface should expose a compact, agent-friendly workflow layer for:
 - classification,
 - review handling,
 - draft generation,
-- comparison/readiness/preparation state for HomeTax-assisted submission.
+- comparison/readiness/preparation state for HomeTax-assisted submission,
+- and supported paths completion from material preparation through submission.
 
 Boundary rule:
-- MCP is the **domain/tool layer**
+- MCP is the **domain/workflow/control-plane layer**
 - MCP tools accept **refs and structured observations**
 - MCP tools do **not** directly open local files, control browser pages, run OCR, or perform user-facing persuasion/conversation
 - the external AI agent and its host/runtime own browser/file/OCR/user-interaction work
@@ -187,6 +188,8 @@ Output:
 - expected value by source
 - likely user checkpoints
 - fallback path suggestions
+- prioritized gap
+- single next-action plan
 
 ### source planning
 
@@ -218,6 +221,8 @@ Output:
 - pending checkpoints
 - coverage gaps
 - blocked attempts
+- prioritized gap
+- single next-action plan
 - next recommended action
 
 ### sources
@@ -421,7 +426,39 @@ Output:
 Status:
 - implemented in runtime/facade
 
+#### `tax.workspace.list_coverage_gaps`
+Purpose:
+- list domain-aware coverage gaps with severity, materiality, affected area, why-it-blocks, and a single prioritized next action
+- drive HomeTax / export ingestion / evidence / fact-capture planning without vague “upload more files” prompts
+
+#### `tax.withholding.list_records`
+Purpose:
+- list explicit withholding / prepaid-tax records as first-class filing state
+- support filtering by payer, review status, and evidence-linked state
+- surface duplicate/conflict warnings before submission preparation
+
+#### `tax.filing.list_adjustment_candidates`
+Purpose:
+- list deduction / credit / filing-adjustment candidates as first-class filing state
+- mark each candidate as supported, manual-only, or out-of-scope
+- surface missing fact/evidence requirements before draft or HomeTax preparation
+
 ### classification
+
+#### `tax.profile.detect_filing_path`
+Purpose:
+- determine whether the current case fits a supported filing path tier/kind
+- surface missing taxpayer facts that still block confident path selection or draft readiness
+
+#### `tax.profile.upsert_facts`
+Purpose:
+- store structured taxpayer facts from chat answers, portal observations, or extracted document facts
+- preserve provenance so the same question is not asked repeatedly without cause
+
+#### `tax.profile.list_missing_facts`
+Purpose:
+- list targeted missing taxpayer facts with priority, materiality, why-it-matters, best question, and blocking stage
+- help the external agent decide the next short fact-capture step without turning MCP into a long-form interviewer
 
 #### `tax.classify.run`
 Purpose:
@@ -477,6 +514,7 @@ Notes:
 Purpose:
 - compute or refresh the filing draft from current normalized and resolved data
 - persist a filing-state snapshot that downstream tools can reuse
+- summarize considered / applied / deferred / unsupported adjustment candidates
 
 Input:
 - workspace id
@@ -511,16 +549,19 @@ Input:
 
 #### `tax.filing.export_package`
 Purpose:
-- produce human-reviewable export artifacts
+- produce read-only human-review / audit / handoff export artifacts
+- persist snapshot-friendly export artifacts in runtime state without external sending or upload
+- surface unresolved blockers instead of hiding them in the export
 
 Status:
-- future/pending (documented, not implemented in runtime/facade)
+- implemented in runtime/facade
 
-Possible outputs:
+Outputs:
 - JSON package
 - CSV review reports
 - evidence index
 - submission prep checklist
+- submission receipt bundle (only when a submission result exists)
 
 Notes:
 - exporting to an external destination may require distinct consent depending on target
@@ -528,6 +569,7 @@ Notes:
 #### `tax.filing.get_summary`
 Purpose:
 - retrieve a human-readable filing summary for narration, chat responses, or quick operator review
+- include machine-readable stop reason codes and operator-friendly escalation context
 
 Input:
 - workspace id
@@ -591,6 +633,7 @@ Alerting pattern:
 Purpose:
 - compare current filing draft values against HomeTax-observed values supplied by the external AI agent
 - update filing-field comparison state and derive submission readiness gates
+- emit machine-readable stop reason codes and operator-friendly explanations for material mismatches
 
 Input:
 - workspace id
@@ -631,17 +674,30 @@ Notes:
 #### `tax.filing.prepare_hometax`
 Purpose:
 - convert draft outputs into a guided HomeTax handoff package
+- reuse the same persisted field-level filing output and section plan that compare/browser-assist flows use
 - use persisted filing-path/readiness state to decide whether preparation is allowed
+
+#### `tax.filing.record_submission_approval`
+Purpose:
+- record explicit final approval before any external browser-capable agent clicks the final submit action
+- keep approval state separate from observed submission results
+
+#### `tax.browser.record_submission_result`
+Purpose:
+- store portal-observed submission result, receipt refs, receipt number, submitted time, and follow-up steps after the external click
+- support success / fail / unknown without claiming false success on ambiguous portal states
 
 Output:
 - ordered sections/checkpoints
 - per-field entry tasks
+- field-level filing output / section plan
 - source provenance refs
 - mismatch/review state
 - manual verification checklist
 - blocking items
 - immediate user-confirmation items (consent/login/final judgment)
 - browser-assist-compatible handoff payload
+- adjustment candidates that require manual confirmation or manual entry
 
 Notes:
 - this remains a guided handoff surface, not hidden DOM automation
@@ -664,6 +720,7 @@ Output:
 - current checkpoint
 - auth required flag
 - guided handoff payload reused from `tax.filing.prepare_hometax`
+- the same field-level entry plan exposed for both human and browser-agent resume
 - handoff context for the external browser-capable agent/runtime
 
 #### `tax.browser.resume_hometax_assist`
@@ -710,6 +767,7 @@ Status:
 #### `tax.workspace.get_status`
 Purpose:
 - retrieve the current filing workspace snapshot as a stateful progress view
+- include machine-readable stop reason codes plus operator-friendly explanation text for branching
 
 Input:
 - workspace id
@@ -838,7 +896,7 @@ Maintenance rule:
 - drift tests should fail if manifest, facade, runtime, or docs fall out of sync
 
 Current future/pending examples:
-- `tax.filing.export_package`
+- none currently listed here
 
 Reference:
 - [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md)

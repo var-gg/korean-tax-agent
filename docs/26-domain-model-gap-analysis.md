@@ -28,6 +28,7 @@ The repository already has meaningful support for:
 - review queue generation
 - draft generation
 - HomeTax-assist preparation state
+- explicit readiness vocabulary across estimate-ready, draft-ready, and submission-assist-ready
 
 This is good progress.
 
@@ -292,4 +293,4 @@ Only then deepen HomeTax assist and persistence around those richer entities.
 The architecture is no longer the main unknown.
 The next major risk is domain under-modeling.
 
-If the repo adds first-class support for withholding, taxpayer facts, and comparison-ready filing outputs, it will be much closer to a system that can produce an honest estimate, a meaningful draft, and a safer HomeTax-assisted workflow.
+If the repo adds first-class support for withholding, taxpayer facts, and comparison-ready filing outputs, it will be much closer to a system that can produce an honest estimate-ready state, a meaningful draft-ready state, and a safer submission-assist-ready workflow on supported paths.

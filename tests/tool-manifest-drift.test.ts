@@ -7,6 +7,13 @@ import { CANONICAL_TOOL_MANIFEST, FUTURE_TOOL_NAMES, IMPLEMENTED_TOOL_NAMES } fr
 const repoRoot = join(import.meta.dirname, '..');
 const toolSpecPath = join(repoRoot, 'docs', '09-mcp-tool-spec.md');
 const runtimeSourcePath = join(repoRoot, 'packages', 'mcp-server', 'src', 'runtime.ts');
+const readmePath = join(repoRoot, 'README.md');
+const prdPath = join(repoRoot, 'docs', '16-v1-prd.md');
+const collectionPath = join(repoRoot, 'docs', '17-data-collection-strategy.md');
+const scenarioPath = join(repoRoot, 'docs', '21-first-agentic-scenario.md');
+const supportPath = join(repoRoot, 'docs', '27-v1-supported-paths-and-stop-conditions.md');
+const hometaxFlowPath = join(repoRoot, 'docs', '08-hometax-submission-flow.md');
+const domainGapPath = join(repoRoot, 'docs', '26-domain-model-gap-analysis.md');
 
 function sorted(values: string[]): string[] {
   return [...values].sort();
@@ -47,6 +54,42 @@ describe('tool manifest drift checks', () => {
       expect(toolName.startsWith('tax.')).toBe(true);
       expect(typeof entry.implemented).toBe('boolean');
       expect(typeof entry.category).toBe('string');
+    }
+  });
+
+  it('keeps README/PRD/flow/support docs aligned on product terminology', () => {
+    const readme = readFileSync(readmePath, 'utf8');
+    const prd = readFileSync(prdPath, 'utf8');
+    const collection = readFileSync(collectionPath, 'utf8');
+    const scenario = readFileSync(scenarioPath, 'utf8');
+    const support = readFileSync(supportPath, 'utf8');
+    const hometaxFlow = readFileSync(hometaxFlowPath, 'utf8');
+    const domainGap = readFileSync(domainGapPath, 'utf8');
+    const toolSpec = readFileSync(toolSpecPath, 'utf8');
+
+    for (const doc of [readme, prd, support]) {
+      expect(doc).toContain('supported paths completion');
+    }
+
+    for (const doc of [readme, prd, support, hometaxFlow, domainGap]) {
+      expect(doc).toContain('estimate-ready');
+      expect(doc).toContain('draft-ready');
+      expect(doc).toContain('submission-assist-ready');
+    }
+
+    for (const doc of [readme, prd, collection, scenario]) {
+      expect(doc).toContain('consent');
+      expect(doc).toContain('login');
+      expect(doc).toContain('judgment');
+    }
+
+    expect(toolSpec).toContain('domain/workflow/control-plane layer');
+    expect(toolSpec).toContain('supported paths completion');
+    expect(hometaxFlow).toContain('external AI agent');
+
+    for (const doc of [readme, prd, scenario, support]) {
+      expect(doc).not.toContain('narrowest realistic path');
+      expect(doc).not.toContain('HomeTax-adjacent entry work');
     }
   });
 });

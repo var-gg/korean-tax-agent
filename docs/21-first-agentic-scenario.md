@@ -8,10 +8,10 @@ It is not meant to prove that every filing path is supportable.
 See also: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md).
 
 This is not the broadest possible workflow.
-It is the narrowest realistic path that proves the product feels genuinely agentic:
+It is the first realistic supported path that proves the product feels genuinely agentic:
 - the user talks to the agent,
 - the user clears trust and identity checkpoints,
-- the agent performs the repetitive collection and structuring work,
+- the AI agent performs the repetitive collection and structuring work,
 - the system produces a draft with a manageable review queue.
 
 ## Scenario definition
@@ -174,6 +174,7 @@ Acceptable outcomes for the first scenario:
 ## Success standard for this scenario
 The first scenario succeeds if the user feels:
 - I did not have to manually orchestrate the workflow
+- the AI agent led material preparation
 - I only stepped in for consent, login, and real judgment calls
 - the agent kept making progress between checkpoints
 - the remaining gaps are clearly explained

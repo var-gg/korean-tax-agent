@@ -19,8 +19,11 @@ export type WorkspaceStatus =
   | 'review_pending'
   | 'draft_ready_for_review'
   | 'ready_for_hometax_assist'
+  | 'awaiting_final_approval'
   | 'submission_in_progress'
   | 'submitted'
+  | 'submission_uncertain'
+  | 'submission_failed'
   | 'archived';
 
 export type SourceType =
@@ -119,7 +122,9 @@ export type AuditEventType =
   | 'draft_computed'
   | 'browser_assist_started'
   | 'submission_approved'
-  | 'submission_attempted';
+  | 'submission_attempted'
+  | 'submission_approval_recorded'
+  | 'submission_result_recorded';
 
 export type ActorType = 'system' | 'user' | 'agent';
 
@@ -144,7 +149,39 @@ export type FilingPathKind =
   | 'specialist_optimization'
   | 'unknown';
 export type FilingFactCategory = 'taxpayer_profile' | 'income_stream' | 'deduction_eligibility' | 'business_use' | 'filing_path';
+export type TaxpayerFactKey =
+  | 'income_streams'
+  | 'taxpayer_posture'
+  | 'residency_context'
+  | 'business_use_explanations'
+  | 'deduction_eligibility_facts'
+  | 'filing_path_determination'
+  | 'withholding_or_prepaid_tax_records'
+  | 'income_inventory'
+  | 'taxpayer_type'
+  | 'shared_income_allocation'
+  | 'joint_allocation_case'
+  | 'bookkeeping_required'
+  | 'inventory_or_asset_tracking'
+  | 'special_tax_treatment_choice'
+  | 'legal_interpretation_required'
+  | 'platform_income'
+  | 'foreign_withholding'
+  | 'foreign_income'
+  | 'salary_income'
+  | (string & {});
 export type FilingFactStatus = 'missing' | 'provided' | 'inferred' | 'review_required';
+export type FilingFactBlockingStage = 'collection' | 'filing_path' | 'draft' | 'submission';
+export interface FilingFactCompleteness {
+  factKey: TaxpayerFactKey;
+  priority: 'high' | 'medium' | 'low';
+  materiality: 'high' | 'medium' | 'low';
+  whyItMatters: string;
+  bestQuestion: string;
+  blockingStage: FilingFactBlockingStage;
+  repeatedQuestionRisk?: 'avoid_repeat' | 'safe_to_ask';
+  existingFactId?: string;
+}
 export type SourceOfTruthType = 'official' | 'imported' | 'inferred' | 'user_asserted';
 export type EstimateConfidenceBand = 'low' | 'medium' | 'high';
 export type ReadinessLevel = 'not_ready' | 'estimate_ready' | 'draft_ready' | 'submission_assist_ready';
@@ -290,6 +327,29 @@ export interface TaxpayerProfile {
   identifiers?: Record<string, unknown>;
 }
 
+export interface SubmissionApprovalRecord {
+  approvalId: string;
+  workspaceId: string;
+  draftId: string;
+  approvedBy: string;
+  approvedAt: ISODateTimeString;
+  note?: string;
+}
+
+export interface SubmissionResultRecord {
+  submissionResultId: string;
+  workspaceId: string;
+  draftId: string;
+  result: 'success' | 'fail' | 'unknown';
+  portalObservedAt: ISODateTimeString;
+  portalSummary?: string;
+  receiptArtifactRefs: string[];
+  receiptNumber?: string;
+  submittedAt?: ISODateTimeString;
+  nextSteps: string[];
+  verificationRequired: boolean;
+}
+
 export interface FilingWorkspace {
   workspaceId: string;
   taxpayerId: string;
@@ -308,6 +368,8 @@ export interface FilingWorkspace {
   createdAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
   currentDraftId?: string;
+  submissionApproval?: SubmissionApprovalRecord;
+  submissionResult?: SubmissionResultRecord;
   unresolvedReviewCount: number;
   openCoverageGapCount?: number;
   lastBlockingReason?: BlockingReason;
@@ -400,11 +462,13 @@ export interface CoverageGap {
   affectedArea: string;
   affectedDomains?: FilingCoverageDomain[];
   materiality?: ReviewSeverity;
+  whyItBlocks?: string;
   blocksEstimate?: boolean;
   blocksDraft?: boolean;
   blocksSubmission?: boolean;
   recommendedNextSource?: string;
   recommendedNextAction?: string;
+  collectionMode?: CollectionMode;
   relatedSourceIds: string[];
   sourceRefs?: string[];
   state: CoverageGapState;
@@ -416,13 +480,19 @@ export interface TaxpayerFact {
   factId: string;
   workspaceId: string;
   category: FilingFactCategory;
-  factKey: string;
+  factKey: TaxpayerFactKey;
   value: string | number | boolean | string[] | Record<string, unknown>;
   status: FilingFactStatus;
   sourceOfTruth: SourceOfTruthType;
   confidence?: number;
   evidenceRefs?: string[];
   note?: string;
+  provenance?: {
+    capturedVia?: 'chat_answer' | 'portal_observation' | 'document_extraction' | 'agent_inference' | 'manual_entry';
+    observedAt?: ISODateTimeString;
+    sourceRef?: string;
+    lastAskedQuestion?: string;
+  };
   updatedAt: ISODateTimeString;
 }
 
@@ -430,18 +500,40 @@ export interface WithholdingRecord {
   withholdingRecordId: string;
   workspaceId: string;
   filingYear: number;
+  payerOrIssuer?: string;
   incomeSourceRef?: string;
-  payerName?: string;
   grossAmount?: number;
   withheldTaxAmount: number;
   localTaxAmount?: number;
   currency: string;
+  evidenceRefs: string[];
   sourceType?: SourceType | string;
+  provenance?: {
+    capturedVia?: 'hometax_material' | 'statement' | 'extracted_field' | 'manual_entry' | 'agent_inference';
+    sourceRef?: string;
+    observedAt?: ISODateTimeString;
+  };
   sourceOfTruth: SourceOfTruthType;
+  confidenceScore?: number;
   extractionConfidence?: number;
   reviewStatus?: ReviewStatus | string;
-  evidenceRefs: string[];
   capturedAt: ISODateTimeString;
+  payerName?: string;
+}
+
+export interface FilingAdjustmentCandidate {
+  adjustmentId: string;
+  workspaceId: string;
+  adjustmentType: string;
+  eligibilityState: 'supported' | 'manual_only' | 'out_of_scope';
+  requiredFactKeys: string[];
+  providedFactKeys: string[];
+  requiredEvidenceRefs: string[];
+  amountCandidate?: number;
+  confidenceScore: number;
+  reviewRequired: boolean;
+  supportTier: FilingSupportTier;
+  rationale: string;
 }
 
 export interface FilingFieldValue {
@@ -452,15 +544,29 @@ export interface FilingFieldValue {
   value: string | number | boolean | null | Record<string, unknown>;
   sourceOfTruth: SourceOfTruthType;
   confidence?: number;
+  confidenceScore?: number;
   isEstimated?: boolean;
   requiresManualEntry?: boolean;
   sourceRefs?: string[];
   evidenceRefs?: string[];
   comparisonState?: FilingFieldComparisonState;
+  portalComparisonState?: FilingFieldComparisonState;
   freshnessState?: DataFreshnessState;
   supportTierHint?: FilingSupportTier;
   portalObservedValue?: string | number | boolean | null;
   mismatchSeverity?: ReviewSeverity;
+}
+
+export type DraftFieldValue = FilingFieldValue;
+
+export interface FilingSectionValue {
+  draftId: string;
+  sectionKey: string;
+  fieldValues: DraftFieldValue[];
+  manualFieldRefs: string[];
+  blockedFieldRefs: string[];
+  comparisonNeededFieldRefs: string[];
+  mismatchFieldRefs: string[];
 }
 
 export interface ClassificationDecision {
@@ -594,6 +700,7 @@ export interface BrowserAssistSession {
   draftId: string;
   provider?: string;
   checkpointType: CheckpointType;
+  submissionState?: 'awaiting_final_approval' | 'submission_in_progress' | 'submitted' | 'submission_uncertain' | 'submission_failed';
   lastKnownSection?: string;
   authState?: AuthCheckpointState;
   pendingUserAction?: string;

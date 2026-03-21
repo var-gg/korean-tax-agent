@@ -7,8 +7,11 @@ import type {
   CoverageGap,
   DataFreshnessState,
   DraftCalibrationSnapshot,
+  DraftFieldValue,
+  FilingAdjustmentCandidate,
   FilingComparisonSummaryState,
   FilingFieldValue,
+  FilingSectionValue,
   FilingPathKind,
   FilingSupportTier,
   MappedReadinessState,
@@ -19,9 +22,14 @@ import type {
   SubmissionComparisonSummary,
   SyncAttemptState,
   TaxpayerFact,
+  TaxpayerFactKey,
   WithholdingRecord,
+  FilingFactCategory,
+  FilingFactCompleteness,
   EvidenceDocument,
   SourceArtifact,
+  SubmissionApprovalRecord,
+  SubmissionResultRecord,
   NormalizedDirection,
   DocumentType,
   SourceType,
@@ -151,11 +159,22 @@ export type CollectionRecommendation = {
   fallbackOptions: string[];
 };
 
+export type GapNextActionPlan = {
+  gapId?: string;
+  gapType: string;
+  recommendedNextAction: string;
+  collectionMode: 'browser_assist' | 'export_ingestion' | 'fact_capture';
+  whyThisIsNext: string;
+};
+
 export type PlanCollectionData = {
   recommendedSources: CollectionRecommendation[];
   expectedValueBySource: Record<string, string>;
   likelyUserCheckpoints: CheckpointType[];
   fallbackPathSuggestions: string[];
+  targetedFactCapture?: FilingFactCompleteness[];
+  prioritizedGap?: CoverageGap;
+  nextActionPlan?: GapNextActionPlan;
 };
 
 export type GetCollectionStatusInput = {
@@ -181,6 +200,21 @@ export type CollectionStatusData = {
   pendingCheckpoints: CheckpointType[];
   coverageGaps: CoverageGap[];
   blockedAttempts: string[];
+  prioritizedGap?: CoverageGap;
+  nextActionPlan?: GapNextActionPlan;
+};
+
+export type ListCoverageGapsInput = {
+  workspaceId: string;
+  state?: 'open' | 'deferred' | 'resolved' | 'accepted_with_risk';
+  gapType?: string;
+};
+
+export type ListCoverageGapsData = {
+  workspaceId: string;
+  items: CoverageGap[];
+  prioritizedGap?: CoverageGap;
+  nextActionPlan?: GapNextActionPlan;
 };
 
 export type ConnectSourceInput = {
@@ -507,12 +541,62 @@ export type LinkEvidenceData = {
   }>;
 };
 
+export type ListWithholdingRecordsInput = {
+  workspaceId: string;
+  filingYear?: number;
+  payerOrIssuer?: string;
+  reviewStatus?: string;
+  evidenceStatus?: 'linked' | 'unlinked';
+};
+
+export type ListWithholdingRecordsData = {
+  workspaceId: string;
+  rows: Array<{
+    withholdingRecordId: string;
+    filingYear: number;
+    payerOrIssuer?: string;
+    incomeSourceRef?: string;
+    grossAmount?: number;
+    withheldTaxAmount: number;
+    localTaxAmount?: number;
+    evidenceRefs: string[];
+    sourceType?: string;
+    confidenceScore?: number;
+    reviewStatus?: string;
+    hasEvidence: boolean;
+  }>;
+  warnings: string[];
+};
+
+export type ListAdjustmentCandidatesInput = {
+  workspaceId: string;
+  eligibilityState?: FilingAdjustmentCandidate['eligibilityState'];
+  reviewRequired?: boolean;
+};
+
+export type ListAdjustmentCandidatesData = {
+  workspaceId: string;
+  items: FilingAdjustmentCandidate[];
+  warnings: string[];
+};
+
 export type DetectFilingPathInput = {
   workspaceId: string;
   taxpayerProfileRef?: string;
   includeEvidenceSummary?: boolean;
   includeCoverageGaps?: boolean;
   includeWithholdingSummary?: boolean;
+};
+
+export type TrustPolicySummary = {
+  confidenceScore?: number;
+  duplicateRisk?: 'low' | 'medium' | 'high';
+  materiality?: 'low' | 'medium' | 'high';
+  mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
+  stopReasonCodes?: string[];
+  escalationReason?: string;
+  reviewBatchId?: string;
+  operatorExplanation?: string;
 };
 
 export type DetectFilingPathData = {
@@ -522,7 +606,36 @@ export type DetectFilingPathData = {
   confidence: number;
   reasons: string[];
   missingFacts: string[];
+  missingFactDetails?: FilingFactCompleteness[];
   escalationFlags: string[];
+};
+
+export type UpsertTaxpayerFactsInput = {
+  workspaceId: string;
+  facts: Array<{
+    factKey: TaxpayerFactKey;
+    category: FilingFactCategory;
+    value: TaxpayerFact['value'];
+    status: TaxpayerFact['status'];
+    sourceOfTruth: TaxpayerFact['sourceOfTruth'];
+    confidence?: number;
+    evidenceRefs?: string[];
+    note?: string;
+    provenance?: TaxpayerFact['provenance'];
+  }>;
+};
+
+export type UpsertTaxpayerFactsData = {
+  updatedFacts: TaxpayerFact[];
+  missingFactSummary: FilingFactCompleteness[];
+};
+
+export type ListMissingFactsInput = {
+  workspaceId: string;
+};
+
+export type ListMissingFactsData = {
+  items: FilingFactCompleteness[];
 };
 
 export type RunClassificationInput = {
@@ -536,6 +649,12 @@ export type RunClassificationData = {
   lowConfidenceCount: number;
   generatedReviewItemCount: number;
   summaryByCategory: Record<string, number>;
+  confidenceScore?: number;
+  duplicateRisk?: 'low' | 'medium' | 'high';
+  materiality?: 'low' | 'medium' | 'high';
+  stopReasonCodes?: string[];
+  escalationReason?: string;
+  reviewBatchId?: string;
   decisions?: ClassificationDecision[];
   reviewItems?: ReviewItem[];
 };
@@ -567,6 +686,23 @@ export type ComputeDraftInput = {
 
 export type ComputeDraftData = {
   draftId: string;
+  confidenceScore?: number;
+  duplicateRisk?: 'low' | 'medium' | 'high';
+  materiality?: 'low' | 'medium' | 'high';
+  mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
+  stopReasonCodes?: string[];
+  escalationReason?: string;
+  reviewBatchId?: string;
+  factCompleteness?: FilingFactCompleteness[];
+  adjustmentCandidates?: FilingAdjustmentCandidate[];
+  adjustmentSummary?: {
+    considered: number;
+    applied: number;
+    deferred: number;
+    unsupported: number;
+  };
+  draftFieldValues?: DraftFieldValue[];
+  filingSections?: FilingSectionValue[];
   computedAt?: string;
   unresolvedBlockerCount: number;
   warnings: string[];
@@ -608,6 +744,13 @@ export type CompareWithHomeTaxInput = {
 
 export type CompareWithHomeTaxData = {
   draftId: string;
+  confidenceScore?: number;
+  duplicateRisk?: 'low' | 'medium' | 'high';
+  materiality?: 'low' | 'medium' | 'high';
+  mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
+  stopReasonCodes?: string[];
+  escalationReason?: string;
+  reviewBatchId?: string;
   sectionResults: Array<{
     sectionKey: string;
     comparisonState: FilingComparisonSummaryState;
@@ -623,6 +766,8 @@ export type CompareWithHomeTaxData = {
     severity: 'low' | 'medium' | 'high' | 'critical';
   }>;
   fieldValues?: FilingFieldValue[];
+  draftFieldValues?: DraftFieldValue[];
+  filingSections?: FilingSectionValue[];
 };
 
 export type RefreshOfficialDataInput = {
@@ -689,12 +834,21 @@ export type HomeTaxHandoffPayload = {
     openReviewItemIds: string[];
     unresolvedMismatchFieldRefs: string[];
   };
+  filingSections?: FilingSectionValue[];
+  draftFieldValues?: DraftFieldValue[];
   manualVerificationChecklist: string[];
   blockingItems: string[];
   immediateUserConfirmations: string[];
 };
 
 export type PrepareHomeTaxData = {
+  confidenceScore?: number;
+  duplicateRisk?: 'low' | 'medium' | 'high';
+  materiality?: 'low' | 'medium' | 'high';
+  mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
+  stopReasonCodes?: string[];
+  escalationReason?: string;
+  reviewBatchId?: string;
   sectionMapping: Record<string, {
     sectionKey: string;
     fieldRefs: string[];
@@ -706,12 +860,15 @@ export type PrepareHomeTaxData = {
     blockingItems: string[];
   }>;
   orderedSections: HomeTaxEntrySectionPlan[];
+  filingSections?: FilingSectionValue[];
   manualOnlyFields: string[];
   blockedFields: string[];
   comparisonNeededFields: string[];
   browserAssistReady: boolean;
   handoff: HomeTaxHandoffPayload;
   fieldValues?: FilingFieldValue[];
+  draftFieldValues?: DraftFieldValue[];
+  adjustmentCandidates?: FilingAdjustmentCandidate[];
 };
 
 export type StartHomeTaxAssistInput = {
@@ -725,6 +882,8 @@ export type StartHomeTaxAssistData = {
   checkpointType: CheckpointType;
   authRequired: boolean;
   handoff?: HomeTaxHandoffPayload;
+  entryPlan?: HomeTaxHandoffPayload;
+  submissionState?: 'awaiting_final_approval' | 'submission_in_progress' | 'submitted' | 'submission_uncertain' | 'submission_failed';
 };
 
 export type ResumeHomeTaxAssistInput = {
@@ -779,7 +938,10 @@ export type BrowserAssistCheckpointSnapshot = {
   };
 };
 
-export type GetHomeTaxCheckpointData = BrowserAssistCheckpointSnapshot;
+export type GetHomeTaxCheckpointData = BrowserAssistCheckpointSnapshot & {
+  submissionApproval?: SubmissionApprovalRecord;
+  submissionResult?: SubmissionResultRecord;
+};
 
 export type StopHomeTaxAssistInput = {
   assistSessionId: string;
@@ -810,9 +972,19 @@ export type RuntimeSnapshot = {
 };
 
 export type GetWorkspaceStatusData = {
+  stopReasonCodes?: string[];
+  escalationReason?: string;
+  operatorExplanation?: string;
+  reviewBatchId?: string;
   workspace: {
     workspaceId: string;
     status: string;
+    submissionApproval?: SubmissionApprovalRecord;
+    submissionResult?: SubmissionResultRecord;
+    missingFacts?: FilingFactCompleteness[];
+    coverageGaps?: CoverageGap[];
+    prioritizedGap?: CoverageGap;
+    nextActionPlan?: GapNextActionPlan;
     currentDraftId?: string;
     unresolvedReviewCount: number;
     openCoverageGapCount?: number;
@@ -849,7 +1021,20 @@ export type GetWorkspaceStatusData = {
 
 export type GetFilingSummaryData = {
   workspaceId: string;
+  stopReasonCodes?: string[];
+  escalationReason?: string;
+  operatorExplanation?: string;
+  reviewBatchId?: string;
   draftId?: string;
+  submissionApproval?: SubmissionApprovalRecord;
+  submissionResult?: SubmissionResultRecord;
+  adjustmentCandidates?: FilingAdjustmentCandidate[];
+  adjustmentSummary?: {
+    considered: number;
+    applied: number;
+    deferred: number;
+    unsupported: number;
+  };
   headline: string;
   summaryText: string;
   operatorUpdate: string;
@@ -861,6 +1046,7 @@ export type GetFilingSummaryData = {
    * `runtimeSnapshot.blockerCodes`.
    */
   blockers: string[];
+  missingFacts?: FilingFactCompleteness[];
   /**
    * Current workspace runtime view for operator summaries and UI rendering.
    * Prefer this over `blockers` when detailed blocker metadata is needed.
@@ -872,6 +1058,51 @@ export type GetFilingSummaryData = {
     warningCount: number;
     fieldValueCount: number;
   };
+};
+
+export type RecordSubmissionApprovalInput = {
+  workspaceId: string;
+  draftId: string;
+  approvedBy: string;
+  approvedAt?: string;
+  note?: string;
+};
+
+export type RecordSubmissionApprovalData = {
+  approval: SubmissionApprovalRecord;
+};
+
+export type RecordSubmissionResultInput = {
+  workspaceId: string;
+  draftId: string;
+  result: 'success' | 'fail' | 'unknown';
+  portalObservedAt?: string;
+  portalSummary?: string;
+  receiptArtifactRefs?: string[];
+  receiptNumber?: string;
+  submittedAt?: string;
+  nextSteps?: string[];
+  verificationRequired?: boolean;
+};
+
+export type RecordSubmissionResultData = {
+  submissionResult: SubmissionResultRecord;
+};
+
+export type ExportPackageInput = {
+  workspaceId: string;
+  draftId?: string;
+  formats: Array<'json_package' | 'csv_review_report' | 'evidence_index' | 'submission_prep_checklist' | 'submission_receipt_bundle'>;
+};
+
+export type ExportPackageData = {
+  workspaceId: string;
+  draftId?: string;
+  exportBatchId: string;
+  artifacts: SourceArtifact[];
+  includedFormats: string[];
+  unresolvedBlockers: string[];
+  checklistPreview?: string[];
 };
 
 export interface KoreanTaxMCPContracts {
@@ -894,6 +1125,10 @@ export interface KoreanTaxMCPContracts {
   'tax.workspace.get_status': {
     input: GetWorkspaceStatusInput;
     output: MCPResponseEnvelope<GetWorkspaceStatusData>;
+  };
+  'tax.workspace.list_coverage_gaps': {
+    input: ListCoverageGapsInput;
+    output: MCPResponseEnvelope<ListCoverageGapsData>;
   };
   'tax.filing.get_summary': {
     input: GetFilingSummaryInput;
@@ -947,9 +1182,25 @@ export interface KoreanTaxMCPContracts {
     input: LinkEvidenceInput;
     output: MCPResponseEnvelope<LinkEvidenceData>;
   };
+  'tax.withholding.list_records': {
+    input: ListWithholdingRecordsInput;
+    output: MCPResponseEnvelope<ListWithholdingRecordsData>;
+  };
+  'tax.filing.list_adjustment_candidates': {
+    input: ListAdjustmentCandidatesInput;
+    output: MCPResponseEnvelope<ListAdjustmentCandidatesData>;
+  };
   'tax.profile.detect_filing_path': {
     input: DetectFilingPathInput;
     output: MCPResponseEnvelope<DetectFilingPathData>;
+  };
+  'tax.profile.upsert_facts': {
+    input: UpsertTaxpayerFactsInput;
+    output: MCPResponseEnvelope<UpsertTaxpayerFactsData>;
+  };
+  'tax.profile.list_missing_facts': {
+    input: ListMissingFactsInput;
+    output: MCPResponseEnvelope<ListMissingFactsData>;
   };
   'tax.classify.run': {
     input: RunClassificationInput;
@@ -978,6 +1229,18 @@ export interface KoreanTaxMCPContracts {
   'tax.filing.prepare_hometax': {
     input: PrepareHomeTaxInput;
     output: MCPResponseEnvelope<PrepareHomeTaxData>;
+  };
+  'tax.filing.record_submission_approval': {
+    input: RecordSubmissionApprovalInput;
+    output: MCPResponseEnvelope<RecordSubmissionApprovalData>;
+  };
+  'tax.filing.export_package': {
+    input: ExportPackageInput;
+    output: MCPResponseEnvelope<ExportPackageData>;
+  };
+  'tax.browser.record_submission_result': {
+    input: RecordSubmissionResultInput;
+    output: MCPResponseEnvelope<RecordSubmissionResultData>;
   };
   'tax.browser.start_hometax_assist': {
     input: StartHomeTaxAssistInput;

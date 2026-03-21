@@ -20,7 +20,11 @@ import type {
   CoverageByDomain,
   CoverageGap,
   EvidenceDocument,
+  FilingAdjustmentCandidate,
   FilingCoverageDomain,
+  FilingSectionValue,
+  FilingFactCompleteness,
+  FilingFactCategory,
   LedgerTransaction,
   MappedReadinessState,
   ReviewItem,
@@ -57,17 +61,26 @@ import type {
   InspectEnvironmentData,
   InspectEnvironmentInput,
   MCPResponseEnvelope,
+  ListAdjustmentCandidatesData,
+  ListAdjustmentCandidatesInput,
+  ListCoverageGapsData,
+  ListCoverageGapsInput,
+  ListMissingFactsData,
+  ListMissingFactsInput,
   NormalizeLedgerData,
   NormalizeLedgerInput,
   PlanCollectionData,
   PlanCollectionInput,
   PrepareHomeTaxData,
   PrepareHomeTaxInput,
+  UpsertTaxpayerFactsData,
+  UpsertTaxpayerFactsInput,
   RefreshOfficialDataData,
   RefreshOfficialDataInput,
   ResolveReviewItemInput,
   ResumeSyncData,
   ResumeSyncInput,
+  RunClassificationData,
   RunClassificationInput,
   StartHomeTaxAssistData,
   StartHomeTaxAssistInput,
@@ -237,7 +250,163 @@ export function taxSetupInitConfig(input: InitConfigInput): MCPResponseEnvelope<
   };
 }
 
+const ADJUSTMENT_CANDIDATE_RULES: Array<{
+  adjustmentType: string;
+  requiredFactKeys: string[];
+  supportTier: FilingAdjustmentCandidate['supportTier'];
+  derive: (params: { facts: TaxpayerFact[]; transactions: LedgerTransaction[]; withholdingRecords: WithholdingRecord[] }) => { eligibilityState: FilingAdjustmentCandidate['eligibilityState']; amountCandidate?: number; confidenceScore: number; rationale: string; reviewRequired: boolean };
+}> = [
+  {
+    adjustmentType: 'basic_expense_freelance',
+    requiredFactKeys: ['taxpayer_posture', 'income_streams'],
+    supportTier: 'tier_a',
+    derive: ({ facts, transactions }) => {
+      const hasFreelance = facts.some((fact) => fact.factKey === 'income_streams' && String(JSON.stringify(fact.value)).includes('freelance'));
+      const incomeTotal = transactions.filter((tx) => tx.normalizedDirection === 'income').reduce((sum, tx) => sum + Math.max(0, tx.amount), 0);
+      return {
+        eligibilityState: hasFreelance ? 'supported' : 'manual_only',
+        amountCandidate: hasFreelance ? Math.round(incomeTotal * 0.6) : undefined,
+        confidenceScore: hasFreelance ? 0.72 : 0.4,
+        rationale: hasFreelance ? 'Freelance/platform income suggests a standard expense review candidate.' : 'Need clearer freelance/business posture before applying this candidate.',
+        reviewRequired: !hasFreelance,
+      };
+    },
+  },
+  {
+    adjustmentType: 'withholding_tax_credit',
+    requiredFactKeys: ['income_streams'],
+    supportTier: 'tier_a',
+    derive: ({ withholdingRecords }) => {
+      const total = withholdingRecords.reduce((sum, record) => sum + record.withheldTaxAmount + (record.localTaxAmount ?? 0), 0);
+      const unresolved = withholdingRecords.some((record) => record.reviewStatus !== 'reviewed');
+      return {
+        eligibilityState: total > 0 ? 'supported' : 'manual_only',
+        amountCandidate: total > 0 ? total : undefined,
+        confidenceScore: unresolved ? 0.55 : 0.9,
+        rationale: total > 0 ? 'Explicit withholding/prepaid-tax records can be credited before relying on generic inference.' : 'No explicit withholding/prepaid-tax record is confirmed yet.',
+        reviewRequired: total <= 0 || unresolved,
+      };
+    },
+  },
+  {
+    adjustmentType: 'special_tax_treatment_review',
+    requiredFactKeys: ['special_tax_treatment_choice'],
+    supportTier: 'tier_c',
+    derive: ({ facts }) => {
+      const hasChoice = facts.some((fact) => fact.factKey === 'special_tax_treatment_choice' && fact.status !== 'missing');
+      return {
+        eligibilityState: hasChoice ? 'manual_only' : 'out_of_scope',
+        confidenceScore: hasChoice ? 0.45 : 0.2,
+        rationale: hasChoice ? 'Special treatment choice exists but still needs manual/legal confirmation.' : 'No supported automated path for special tax treatment choice.',
+        reviewRequired: true,
+      };
+    },
+  },
+];
+
+const FACT_CAPTURE_RULES: Array<{
+  factKey: string;
+  category: FilingFactCategory;
+  priority: FilingFactCompleteness['priority'];
+  materiality: FilingFactCompleteness['materiality'];
+  whyItMatters: string;
+  bestQuestion: string;
+  blockingStage: FilingFactCompleteness['blockingStage'];
+}> = [
+  { factKey: 'income_streams', category: 'income_stream', priority: 'high', materiality: 'high', whyItMatters: 'Determines what income categories and schedules must be included.', bestQuestion: '올해 신고 대상 소득 흐름을 모두 말해 주세요. 급여/프리랜서/사업/플랫폼/해외소득이 있었나요?', blockingStage: 'collection' },
+  { factKey: 'taxpayer_posture', category: 'taxpayer_profile', priority: 'high', materiality: 'high', whyItMatters: 'Controls path selection and whether the case fits a supported filing path.', bestQuestion: '이번 신고에서 본인 상황을 가장 잘 설명하는 형태는 무엇인가요? 근로+기타, 프리랜서, 사업자 중 어디에 가까운가요?', blockingStage: 'filing_path' },
+  { factKey: 'residency_context', category: 'taxpayer_profile', priority: 'high', materiality: 'high', whyItMatters: 'Residency can materially change filing treatment and supported-path eligibility.', bestQuestion: '신고 연도 기준 거주자/비거주자 판단에 영향 줄 해외 체류나 거주 이슈가 있었나요?', blockingStage: 'filing_path' },
+  { factKey: 'business_use_explanations', category: 'business_use', priority: 'medium', materiality: 'high', whyItMatters: 'Business-use explanations determine whether expense evidence can be used in the draft.', bestQuestion: '사업 관련 비용 중 개인 사용과 섞일 수 있는 지출이 있다면 업무 사용 설명을 남겨 주세요.', blockingStage: 'draft' },
+  { factKey: 'deduction_eligibility_facts', category: 'deduction_eligibility', priority: 'medium', materiality: 'medium', whyItMatters: 'Deduction eligibility facts affect whether deductions can be claimed safely.', bestQuestion: '공제 적용 판단에 필요한 가족/보험/교육/의료/기부 사실 중 빠진 것이 있나요?', blockingStage: 'draft' },
+];
+
+function enrichCoverageGap(gap: CoverageGap): CoverageGap {
+  if (gap.whyItBlocks && gap.recommendedNextAction && gap.collectionMode) return gap;
+  const mapping: Record<string, { whyItBlocks: string; recommendedNextAction: string; collectionMode: CoverageGap['collectionMode'] }> = {
+    missing_income_source: {
+      whyItBlocks: 'Income inventory is incomplete, so the agent cannot safely know what must be reported.',
+      recommendedNextAction: 'tax.sources.plan_collection',
+      collectionMode: 'browser_assist',
+    },
+    missing_withholding_record: {
+      whyItBlocks: 'Explicit withholding/prepaid tax is missing, so credits and submission readiness remain unreliable.',
+      recommendedNextAction: 'tax.withholding.list_records',
+      collectionMode: 'browser_assist',
+    },
+    missing_expense_evidence: {
+      whyItBlocks: 'Expense claims cannot be defended or applied confidently without linked evidence.',
+      recommendedNextAction: 'tax.import.upload_documents',
+      collectionMode: 'export_ingestion',
+    },
+    missing_deduction_fact: {
+      whyItBlocks: 'Required taxpayer facts for deductions/credits are still missing, so adjustment decisions are incomplete.',
+      recommendedNextAction: 'tax.profile.list_missing_facts',
+      collectionMode: 'fact_capture',
+    },
+    missing_hometax_comparison: {
+      whyItBlocks: 'Submission assist cannot proceed until draft values are compared against HomeTax-observed values.',
+      recommendedNextAction: 'tax.filing.compare_with_hometax',
+      collectionMode: 'browser_assist',
+    },
+  };
+  const matched = mapping[gap.gapType] ?? {
+    whyItBlocks: 'A material coverage gap still blocks progress.',
+    recommendedNextAction: gap.recommendedNextAction ?? 'tax.sources.plan_collection',
+    collectionMode: 'export_ingestion' as const,
+  };
+  return {
+    ...gap,
+    whyItBlocks: gap.whyItBlocks ?? matched.whyItBlocks,
+    recommendedNextAction: gap.recommendedNextAction ?? matched.recommendedNextAction,
+    collectionMode: gap.collectionMode ?? matched.collectionMode,
+  };
+}
+
+function buildGapNextActionPlan(gaps: CoverageGap[]) {
+  const enriched = gaps.filter((gap) => gap.state === 'open').map(enrichCoverageGap);
+  const rank = (gap: CoverageGap) => {
+    const byMode = gap.collectionMode === 'browser_assist' ? 0 : gap.collectionMode === 'export_ingestion' ? 1 : 2;
+    const bySeverity = gap.severity === 'high' ? 0 : gap.severity === 'medium' ? 1 : 2;
+    return byMode * 10 + bySeverity;
+  };
+  const prioritizedGap = [...enriched].sort((a, b) => rank(a) - rank(b))[0];
+  const nextActionPlan = prioritizedGap
+    ? {
+        gapId: prioritizedGap.gapId,
+        gapType: prioritizedGap.gapType,
+        recommendedNextAction: prioritizedGap.recommendedNextAction ?? 'tax.sources.plan_collection',
+        collectionMode: (prioritizedGap.collectionMode === 'direct_connector' ? 'browser_assist' : (prioritizedGap.collectionMode ?? 'export_ingestion')) as 'browser_assist' | 'export_ingestion' | 'fact_capture',
+        whyThisIsNext: prioritizedGap.whyItBlocks ?? prioritizedGap.description,
+      }
+    : undefined;
+  return { enriched, prioritizedGap, nextActionPlan };
+}
+
 export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPResponseEnvelope<PlanCollectionData> {
+  const prioritizedGap = enrichCoverageGap({
+    gapId: `gap_plan_${input.workspaceId}_hometax`,
+    workspaceId: input.workspaceId,
+    gapType: 'missing_income_source',
+    severity: 'high',
+    description: 'HomeTax authoritative materials have not been collected yet.',
+    affectedArea: 'income_inventory',
+    affectedDomains: ['incomeInventory'],
+    materiality: 'high',
+    blocksEstimate: true,
+    blocksDraft: true,
+    blocksSubmission: true,
+    recommendedNextSource: 'hometax',
+    relatedSourceIds: [],
+    state: 'open',
+  });
+  const nextActionPlan: PlanCollectionData['nextActionPlan'] = {
+    gapId: prioritizedGap.gapId,
+    gapType: prioritizedGap.gapType,
+    recommendedNextAction: prioritizedGap.recommendedNextAction!,
+    collectionMode: (prioritizedGap.collectionMode === 'direct_connector' ? 'browser_assist' : prioritizedGap.collectionMode!) as 'browser_assist' | 'export_ingestion' | 'fact_capture',
+    whyThisIsNext: prioritizedGap.whyItBlocks!,
+  };
+
   const audit = createAuditEvent({
     workspaceId: input.workspaceId,
     eventType: 'source_planned',
@@ -273,6 +442,8 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
       },
       likelyUserCheckpoints: ['source_consent', 'authentication', 'collection_blocker'],
       fallbackPathSuggestions: ['Use exported statements when live collection is blocked', 'Continue with partial collection and targeted follow-up'],
+      prioritizedGap,
+      nextActionPlan,
     },
     progress: {
       phase: 'source_planning',
@@ -292,6 +463,7 @@ export function taxSourcesGetCollectionStatus(
   sources: SourceConnection[] = [],
   coverageGaps: CoverageGap[] = [],
 ): MCPResponseEnvelope<CollectionStatusData> {
+  const { enriched, prioritizedGap, nextActionPlan } = buildGapNextActionPlan(coverageGaps);
   const connectedSources = sources.map((source) => ({
     sourceId: source.sourceId,
     sourceType: source.sourceType,
@@ -314,15 +486,34 @@ export function taxSourcesGetCollectionStatus(
     data: {
       connectedSources,
       pendingCheckpoints,
-      coverageGaps,
+      coverageGaps: enriched,
       blockedAttempts,
+      prioritizedGap,
+      nextActionPlan,
     },
     readinessState: buildCollectionReadinessState({
       pendingCheckpoints: pendingCheckpoints.length,
       blockedAttempts,
       coverageGaps,
     }),
-    nextRecommendedAction: pendingCheckpoints.length > 0 ? 'tax.sources.resume_sync' : 'tax.sources.plan_collection',
+    nextRecommendedAction: pendingCheckpoints.length > 0 ? 'tax.sources.resume_sync' : (nextActionPlan?.recommendedNextAction ?? 'tax.sources.plan_collection'),
+  };
+}
+
+export function taxWorkspaceListCoverageGaps(
+  input: ListCoverageGapsInput,
+  coverageGaps: CoverageGap[] = [],
+): MCPResponseEnvelope<ListCoverageGapsData> {
+  const filtered = coverageGaps
+    .map(enrichCoverageGap)
+    .filter((gap) => !input.state || gap.state === input.state)
+    .filter((gap) => !input.gapType || gap.gapType === input.gapType);
+  const { prioritizedGap, nextActionPlan } = buildGapNextActionPlan(filtered);
+  return {
+    ok: true,
+    status: 'completed',
+    data: { workspaceId: input.workspaceId, items: filtered, prioritizedGap, nextActionPlan },
+    nextRecommendedAction: nextActionPlan?.recommendedNextAction,
   };
 }
 
@@ -1092,17 +1283,24 @@ function buildNormalizedWithholdingRecord(input: {
     withholdingRecordId: recordId,
     workspaceId: input.workspaceId,
     filingYear: input.withholding.filingYear ?? Number((matchingIncome?.occurredAt ?? input.now).slice(0, 4)),
+    payerOrIssuer: payerName,
     incomeSourceRef: input.withholding.incomeSourceRef ?? matchingIncome?.transactionId,
     payerName,
     grossAmount: input.withholding.grossAmount ?? matchingIncome?.amount,
     withheldTaxAmount: input.withholding.withheldTaxAmount,
     localTaxAmount: input.withholding.localTaxAmount,
     currency: input.withholding.currency ?? matchingIncome?.currency ?? 'KRW',
-    sourceType: input.withholding.sourceType ?? input.payload.sourceType ?? 'manual',
-    sourceOfTruth: 'imported',
-    extractionConfidence: input.withholding.extractionConfidence ?? 0.85,
-    reviewStatus: existing?.reviewStatus ?? 'review_required',
     evidenceRefs,
+    sourceType: input.withholding.sourceType ?? input.payload.sourceType ?? 'manual',
+    provenance: {
+      capturedVia: input.payload.sourceType === 'hometax' ? 'hometax_material' : 'extracted_field',
+      sourceRef: input.artifactId,
+      observedAt: input.now,
+    },
+    sourceOfTruth: 'imported',
+    confidenceScore: input.withholding.extractionConfidence ?? 0.85,
+    extractionConfidence: input.withholding.extractionConfidence ?? 0.85,
+    reviewStatus: existing?.reviewStatus ?? (!matchingIncome || evidenceRefs.length === 0 ? 'review_required' : 'reviewed'),
     capturedAt: input.now,
   };
 }
@@ -1128,14 +1326,18 @@ function buildNormalizationCoverageGaps(input: {
       });
     }
   }
-  for (const record of input.withholdingRecords.filter((item) => !item.incomeSourceRef)) {
-    const description = `Withholding record ${record.withholdingRecordId} is missing a matched income transaction.`;
-    const key = `missing_income_source:income_inventory:${description}`;
+  for (const record of input.withholdingRecords.filter((item) => !item.incomeSourceRef || item.reviewStatus === 'conflict_detected' || item.evidenceRefs.length === 0)) {
+    const description = !record.incomeSourceRef
+      ? `Withholding record ${record.withholdingRecordId} is missing a matched income transaction.`
+      : record.evidenceRefs.length === 0
+        ? `Withholding record ${record.withholdingRecordId} is missing linked evidence.`
+        : `Withholding record ${record.withholdingRecordId} has conflicting imported details.`;
+    const key = `withholding_gap:income_inventory:${description}`;
     if (!existingKeys.has(key)) {
       gaps.push({
-        gapId: `gap_${record.withholdingRecordId}_missing_income`, workspaceId: input.workspaceId, gapType: 'missing_income_source', severity: 'high', description,
+        gapId: `gap_${record.withholdingRecordId}_withholding`, workspaceId: input.workspaceId, gapType: !record.incomeSourceRef ? 'missing_income_source' : 'missing_withholding_record', severity: 'high', description,
         affectedArea: 'income_inventory', affectedDomains: ['incomeInventory', 'withholdingPrepaidTax'], materiality: 'high', blocksEstimate: true, blocksDraft: true, blocksSubmission: true,
-        recommendedNextSource: 'bank_csv', recommendedNextAction: 'tax.sources.plan_collection', relatedSourceIds: [], sourceRefs: record.evidenceRefs, state: 'open', createdAt: input.now, updatedAt: input.now,
+        recommendedNextSource: 'hometax', recommendedNextAction: 'tax.withholding.list_records', relatedSourceIds: [], sourceRefs: record.evidenceRefs, state: 'open', createdAt: input.now, updatedAt: input.now,
       });
     }
   }
@@ -1149,15 +1351,104 @@ function buildNormalizationCoverageGaps(input: {
   return gaps;
 }
 
+export function taxFilingListAdjustmentCandidates(
+  input: ListAdjustmentCandidatesInput,
+  taxpayerFacts: TaxpayerFact[] = [],
+  transactions: LedgerTransaction[] = [],
+  withholdingRecords: WithholdingRecord[] = [],
+): MCPResponseEnvelope<ListAdjustmentCandidatesData> {
+  const facts = taxpayerFacts.filter((fact) => fact.workspaceId === input.workspaceId);
+  const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
+  const scopedWithholding = withholdingRecords.filter((record) => record.workspaceId === input.workspaceId);
+  const providedFactKeys = new Set(facts.filter((fact) => fact.status !== 'missing').map((fact) => fact.factKey));
+  const items = ADJUSTMENT_CANDIDATE_RULES
+    .map((rule, index) => {
+      const derived = rule.derive({ facts, transactions: scopedTransactions, withholdingRecords: scopedWithholding });
+      return {
+        adjustmentId: `adj_${input.workspaceId}_${index + 1}_${rule.adjustmentType}`,
+        workspaceId: input.workspaceId,
+        adjustmentType: rule.adjustmentType,
+        eligibilityState: derived.eligibilityState,
+        requiredFactKeys: rule.requiredFactKeys,
+        providedFactKeys: rule.requiredFactKeys.filter((key) => providedFactKeys.has(key)),
+        requiredEvidenceRefs: derived.eligibilityState === 'supported' && rule.adjustmentType === 'withholding_tax_credit'
+          ? scopedWithholding.flatMap((record) => record.evidenceRefs)
+          : [],
+        amountCandidate: derived.amountCandidate,
+        confidenceScore: derived.confidenceScore,
+        reviewRequired: derived.reviewRequired,
+        supportTier: rule.supportTier,
+        rationale: derived.rationale,
+      } satisfies FilingAdjustmentCandidate;
+    })
+    .filter((item) => input.eligibilityState === undefined || item.eligibilityState === input.eligibilityState)
+    .filter((item) => input.reviewRequired === undefined || item.reviewRequired === input.reviewRequired);
+
+  const warnings = items.some((item) => item.eligibilityState === 'out_of_scope')
+    ? ['unsupported_adjustment_candidates_present']
+    : items.some((item) => item.reviewRequired)
+      ? ['adjustment_review_required']
+      : [];
+
+  return {
+    ok: true,
+    status: 'completed',
+    data: { workspaceId: input.workspaceId, items, warnings },
+    nextRecommendedAction: warnings.length > 0 ? 'tax.classify.list_review_items' : 'tax.filing.compute_draft',
+  };
+}
+
+export function taxProfileUpsertFacts(input: UpsertTaxpayerFactsInput, existingFacts: TaxpayerFact[] = []): MCPResponseEnvelope<UpsertTaxpayerFactsData> {
+  const existingMap = new Map(existingFacts.filter((fact) => fact.workspaceId === input.workspaceId).map((fact) => [fact.factKey, fact] as const));
+  const updatedFacts = input.facts.map((fact) => ({
+    ...existingMap.get(fact.factKey),
+    factId: existingMap.get(fact.factKey)?.factId ?? `fact_${input.workspaceId}_${fact.factKey}`,
+    workspaceId: input.workspaceId,
+    category: fact.category,
+    factKey: fact.factKey,
+    value: fact.value,
+    status: fact.status,
+    sourceOfTruth: fact.sourceOfTruth,
+    confidence: fact.confidence,
+    evidenceRefs: fact.evidenceRefs,
+    note: fact.note,
+    provenance: fact.provenance,
+    updatedAt: new Date().toISOString(),
+  }));
+  const merged = new Map(existingMap);
+  for (const fact of updatedFacts) merged.set(fact.factKey, fact);
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      updatedFacts,
+      missingFactSummary: computeMissingFactCompleteness(Array.from(merged.values())),
+    },
+    nextRecommendedAction: 'tax.profile.detect_filing_path',
+  };
+}
+
+export function taxListMissingFacts(workspaceId: string, facts: TaxpayerFact[] = []): MCPResponseEnvelope<ListMissingFactsData> {
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      items: computeMissingFactCompleteness(facts.filter((fact) => fact.workspaceId === workspaceId)),
+    },
+  };
+}
+
 export function taxProfileDetectFilingPath(
   input: DetectFilingPathInput,
   transactions: LedgerTransaction[] = [],
   reviewItems: ReviewItem[] = [],
   coverageGaps: import('../../core/src/types.js').CoverageGap[] = [],
+  taxpayerFacts: TaxpayerFact[] = [],
 ): MCPResponseEnvelope<DetectFilingPathData> {
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
   const scopedReviewItems = reviewItems.filter((item) => item.workspaceId === input.workspaceId);
   const detection = detectFilingPath({
+    taxpayerFacts: taxpayerFacts.filter((fact) => fact.workspaceId === input.workspaceId),
     transactions: scopedTransactions,
     reviewItems: scopedReviewItems,
     coverageGaps,
@@ -1185,6 +1476,7 @@ export function taxProfileDetectFilingPath(
       confidence: detection.confidence,
       reasons: detection.reasons,
       missingFacts: detection.missingFacts,
+      missingFactDetails: computeMissingFactCompleteness(taxpayerFacts.filter((fact) => fact.workspaceId === input.workspaceId), detection.missingFacts),
       escalationFlags: detection.escalationFlags,
     },
     readiness: readiness,
@@ -1196,14 +1488,7 @@ export function taxProfileDetectFilingPath(
 export function taxClassifyRun(
   input: RunClassificationInput,
   transactions: LedgerTransaction[],
-): MCPResponseEnvelope<{
-  classifiedCount: number;
-  lowConfidenceCount: number;
-  generatedReviewItemCount: number;
-  summaryByCategory: Record<string, number>;
-  decisions: ClassificationDecision[];
-  reviewItems: ReviewItem[];
-}> {
+): MCPResponseEnvelope<RunClassificationData> {
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
   const classification = classifyTransactions({
     workspaceId: input.workspaceId,
@@ -1222,6 +1507,12 @@ export function taxClassifyRun(
     summary: `Classified ${classification.decisions.length} transactions.`,
   });
 
+  const trust = deriveTrustPolicySummary({
+    supportTier: 'tier_a',
+    lowConfidenceCount: classification.lowConfidenceCount,
+    duplicateCandidateCount: scopedTransactions.filter((tx) => Boolean(tx.duplicateGroupId)).length,
+    reviewItems: reviewQueue.items,
+  });
   return {
     ok: true,
     status: 'completed',
@@ -1230,6 +1521,12 @@ export function taxClassifyRun(
       lowConfidenceCount: classification.lowConfidenceCount,
       generatedReviewItemCount: reviewQueue.items.length,
       summaryByCategory: classification.summaryByCategory,
+      confidenceScore: trust.confidenceScore,
+      duplicateRisk: trust.duplicateRisk,
+      materiality: trust.materiality,
+      stopReasonCodes: trust.stopReasonCodes,
+      escalationReason: trust.escalationReason,
+      reviewBatchId: trust.reviewBatchId,
       decisions: classification.decisions,
       reviewItems: reviewQueue.items,
     },
@@ -1372,13 +1669,48 @@ export function taxFilingComputeDraft(
   draft.freshnessState = readinessSummary.freshnessState;
   draft.majorUnknowns = readinessSummary.majorUnknowns;
 
-  const computeBlockingReason = deriveComputeDraftBlockingReason(readinessSummary);
+  const factCompleteness = scopedTransactions.length === 0
+    ? computeMissingFactCompleteness(scopedTaxpayerFacts)
+    : scopedTaxpayerFacts.length === 0
+      ? computeMissingFactCompleteness(scopedTaxpayerFacts)
+      : computeMissingFactCompleteness(scopedTaxpayerFacts, filingPathDetection.missingFacts);
+  const adjustmentCandidates = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords).data.items;
+  const adjustmentSummary = {
+    considered: adjustmentCandidates.length,
+    applied: adjustmentCandidates.filter((item) => item.eligibilityState === 'supported' && !item.reviewRequired).length,
+    deferred: adjustmentCandidates.filter((item) => item.eligibilityState !== 'out_of_scope' && item.reviewRequired).length,
+    unsupported: adjustmentCandidates.filter((item) => item.eligibilityState === 'out_of_scope').length,
+  };
+  const trust = deriveTrustPolicySummary({
+    supportTier: filingPathDetection.supportTier,
+    lowConfidenceCount: scopedDecisions.filter((decision) => (decision.confidence ?? 1) < 0.75).length,
+    duplicateCandidateCount: scopedTransactions.filter((tx) => Boolean(tx.duplicateGroupId)).length,
+    reviewItems: scopedReviewItems,
+    coverageGaps: openCoverageGaps,
+    adjustmentCandidates,
+    fieldValues: draft.fieldValues,
+  });
+  const readinessBlockingReason = deriveComputeDraftBlockingReason(readinessSummary);
+  const missingFactsBlockDraft = factCompleteness.some((item) => item.priority === 'high')
+    && scopedTransactions.length === 0;
+  const computeBlockingReason = readinessBlockingReason === 'awaiting_review_decision'
+    ? readinessBlockingReason
+    : missingFactsBlockDraft
+      ? 'insufficient_metadata'
+      : readinessBlockingReason;
 
   return {
     ok: computeBlockingReason === undefined,
     status: computeBlockingReason === undefined ? 'completed' : 'blocked',
     data: {
       draftId: draft.draftId,
+      confidenceScore: trust.confidenceScore,
+      duplicateRisk: trust.duplicateRisk,
+      materiality: trust.materiality,
+      mismatchSeverity: trust.mismatchSeverity,
+      stopReasonCodes: trust.stopReasonCodes,
+      escalationReason: trust.escalationReason,
+      reviewBatchId: trust.reviewBatchId,
       unresolvedBlockerCount: readinessSummary.blockerCodes.length,
       warnings: draft.warnings,
       incomeSummary: draft.incomeSummary,
@@ -1388,8 +1720,13 @@ export function taxFilingComputeDraft(
       estimateConfidence: draft.estimateConfidence,
       blockerCodes: draft.blockerCodes,
       taxpayerFacts: scopedTaxpayerFacts,
+      factCompleteness,
       withholdingRecords: scopedWithholdingRecords,
+      adjustmentCandidates,
+      adjustmentSummary,
       fieldValues: draft.fieldValues,
+      draftFieldValues: draft.fieldValues,
+      filingSections: buildFilingSections(draft.draftId, draft.fieldValues),
       supportTier: readinessSummary.supportTier,
       filingPathKind: readinessSummary.filingPathKind,
       estimateReadiness: readinessSummary.estimateReadiness,
@@ -1408,9 +1745,11 @@ export function taxFilingComputeDraft(
       : undefined,
     nextRecommendedAction: computeBlockingReason === undefined
       ? 'tax.filing.compare_with_hometax'
-      : computeBlockingReason === 'comparison_incomplete'
-        ? 'tax.filing.compare_with_hometax'
-        : 'tax.classify.list_review_items',
+      : computeBlockingReason === 'insufficient_metadata'
+        ? 'tax.profile.list_missing_facts'
+        : computeBlockingReason === 'comparison_incomplete'
+          ? 'tax.filing.compare_with_hometax'
+          : 'tax.classify.list_review_items',
     progress: {
       phase: 'drafting',
       step: 'compute_from_ledger',
@@ -1456,15 +1795,29 @@ export function taxFilingCompareWithHomeTax(
     comparisonSummaryState: comparison.comparisonSummaryState,
   });
   const blockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
+  const trust = deriveTrustPolicySummary({
+    supportTier: 'tier_a',
+    comparisonMismatches: comparison.materialMismatches,
+    fieldValues: comparison.fieldValues,
+  });
 
   return {
     ok: blockingReason === undefined,
     status: blockingReason === undefined ? 'completed' : 'blocked',
     data: {
       draftId: input.draftId,
+      confidenceScore: trust.confidenceScore,
+      duplicateRisk: trust.duplicateRisk,
+      materiality: trust.materiality,
+      mismatchSeverity: trust.mismatchSeverity,
+      stopReasonCodes: trust.stopReasonCodes,
+      escalationReason: trust.escalationReason,
+      reviewBatchId: trust.reviewBatchId,
       sectionResults: comparison.sectionResults,
       materialMismatches: comparison.materialMismatches,
       fieldValues: comparison.fieldValues,
+      draftFieldValues: comparison.fieldValues,
+      filingSections: buildFilingSections(input.draftId, comparison.fieldValues),
     },
     readiness: readinessSummary,
     readinessState: mapCalibratedReadinessState(calibratedReadiness),
@@ -1568,19 +1921,36 @@ export function taxFilingPrepareHomeTax(
   const prepareBlockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
 
   const derivedPreparation = deriveHomeTaxPreparationState(fieldValues, reviewItems, prepareBlockingReason);
+  const trust = deriveTrustPolicySummary({
+    supportTier: readinessHints?.supportTier ?? 'undetermined',
+    reviewItems,
+    fieldValues,
+    comparisonMismatches: fieldValues
+      .filter((field) => (field.portalComparisonState ?? field.comparisonState) === 'mismatch')
+      .map((field) => ({ severity: (field.mismatchSeverity ?? 'medium') as 'low' | 'medium' | 'high' | 'critical' })),
+  });
 
   return {
     ok: prepareBlockingReason === undefined,
     status: prepareBlockingReason === undefined ? 'completed' : 'blocked',
     data: {
+      confidenceScore: trust.confidenceScore,
+      duplicateRisk: trust.duplicateRisk,
+      materiality: trust.materiality,
+      mismatchSeverity: trust.mismatchSeverity,
+      stopReasonCodes: trust.stopReasonCodes,
+      escalationReason: trust.escalationReason,
+      reviewBatchId: trust.reviewBatchId,
       sectionMapping: derivedPreparation.sectionMapping,
       orderedSections: derivedPreparation.orderedSections,
+      filingSections: buildFilingSections(input.draftId, fieldValues),
       manualOnlyFields: derivedPreparation.manualOnlyFields,
       blockedFields: derivedPreparation.blockedFields,
       comparisonNeededFields: derivedPreparation.comparisonNeededFields,
       browserAssistReady: prepareBlockingReason === undefined,
       handoff: derivedPreparation.handoff,
       fieldValues,
+      draftFieldValues: fieldValues,
     },
     readiness: readinessSummary,
     checkpointType: prepareBlockingReason === 'awaiting_review_decision' ? 'review_judgment' : undefined,
@@ -1640,6 +2010,29 @@ export function demoBuildReviewQueue() {
   });
 }
 
+function computeMissingFactCompleteness(facts: TaxpayerFact[], requiredFactKeys?: string[]): FilingFactCompleteness[] {
+  const provided = new Map(facts.map((fact) => [fact.factKey, fact] as const));
+  return FACT_CAPTURE_RULES
+    .filter((rule) => (requiredFactKeys ? requiredFactKeys.includes(rule.factKey) || requiredFactKeys.includes(rule.factKey.replace(/s$/, '')) : true))
+    .filter((rule) => {
+      const existing = provided.get(rule.factKey);
+      return !existing || existing.status === 'missing' || existing.status === 'review_required';
+    })
+    .map((rule) => {
+      const existing = provided.get(rule.factKey);
+      return {
+        factKey: rule.factKey,
+        priority: rule.priority,
+        materiality: rule.materiality,
+        whyItMatters: rule.whyItMatters,
+        bestQuestion: existing?.provenance?.lastAskedQuestion ? 'already_asked_waiting_for_answer' : rule.bestQuestion,
+        blockingStage: rule.blockingStage,
+        repeatedQuestionRisk: existing?.provenance?.lastAskedQuestion ? 'avoid_repeat' : 'safe_to_ask',
+        existingFactId: existing?.factId,
+      } satisfies FilingFactCompleteness;
+    });
+}
+
 function deriveComputeDraftBlockingReason(readiness: { blockerCodes: string[]; draftReadiness: string }): import('../../core/src/types.js').BlockingReason | undefined {
   if (readiness.draftReadiness === 'draft_ready') return undefined;
   if (readiness.blockerCodes.includes('awaiting_review_decision')) return 'awaiting_review_decision';
@@ -1696,6 +2089,93 @@ function toPortalObservedScalar(value: unknown): string | number | boolean | nul
   return JSON.stringify(value);
 }
 
+function buildFilingSections(
+  draftId: string,
+  fieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
+): FilingSectionValue[] {
+  const grouped = new Map<string, FilingSectionValue>();
+  for (const field of fieldValues) {
+    const current = grouped.get(field.sectionKey) ?? {
+      draftId,
+      sectionKey: field.sectionKey,
+      fieldValues: [],
+      manualFieldRefs: [],
+      blockedFieldRefs: [],
+      comparisonNeededFieldRefs: [],
+      mismatchFieldRefs: [],
+    };
+    const fieldRef = `${field.sectionKey}.${field.fieldKey}`;
+    const comparisonState = field.portalComparisonState ?? field.comparisonState ?? 'not_compared';
+    current.fieldValues.push({
+      ...field,
+      confidenceScore: field.confidenceScore ?? field.confidence,
+      portalComparisonState: comparisonState,
+    });
+    if (field.requiresManualEntry) current.manualFieldRefs.push(fieldRef);
+    if (comparisonState === 'not_compared') current.comparisonNeededFieldRefs.push(fieldRef);
+    if (comparisonState === 'mismatch') current.mismatchFieldRefs.push(fieldRef);
+    if (field.requiresManualEntry || comparisonState === 'mismatch' || comparisonState === 'not_compared') current.blockedFieldRefs.push(fieldRef);
+    grouped.set(field.sectionKey, current);
+  }
+  return Array.from(grouped.values()).sort((a, b) => a.sectionKey.localeCompare(b.sectionKey));
+}
+
+function deriveTrustPolicySummary(params: {
+  supportTier?: string;
+  lowConfidenceCount?: number;
+  duplicateCandidateCount?: number;
+  reviewItems?: ReviewItem[];
+  coverageGaps?: CoverageGap[];
+  adjustmentCandidates?: FilingAdjustmentCandidate[];
+  fieldValues?: import('../../core/src/types.js').FilingFieldValue[];
+  comparisonMismatches?: Array<{ severity: 'low' | 'medium' | 'high' | 'critical' }>;
+}) {
+  const stopReasonCodes = new Set<string>();
+  const reviewItems = params.reviewItems ?? [];
+  const coverageGaps = params.coverageGaps ?? [];
+  const adjustmentCandidates = params.adjustmentCandidates ?? [];
+  const comparisonMismatches = params.comparisonMismatches ?? [];
+  if ((params.lowConfidenceCount ?? 0) > 0) stopReasonCodes.add('low_confidence_classification');
+  if ((params.duplicateCandidateCount ?? 0) > 0) stopReasonCodes.add('duplicate_candidate_detected');
+  if (coverageGaps.some((gap) => gap.gapType === 'missing_withholding_record' && gap.state === 'open')) stopReasonCodes.add('missing_withholding_record');
+  if (coverageGaps.some((gap) => gap.gapType === 'missing_deduction_fact' && gap.state === 'open')) stopReasonCodes.add('missing_deduction_fact');
+  if (comparisonMismatches.some((item) => item.severity === 'high' || item.severity === 'critical')) stopReasonCodes.add('severe_mismatch');
+  if (adjustmentCandidates.some((item) => item.eligibilityState === 'out_of_scope')) stopReasonCodes.add('unsupported_adjustment');
+  if (params.supportTier === 'tier_c') stopReasonCodes.add('tier_c_stop');
+  const duplicateRisk: 'low' | 'medium' | 'high' = (params.duplicateCandidateCount ?? 0) > 1 ? 'high' : (params.duplicateCandidateCount ?? 0) === 1 ? 'medium' : 'low';
+  const mismatchSeverity: 'low' | 'medium' | 'high' | 'critical' = comparisonMismatches.some((item) => item.severity === 'critical') ? 'critical'
+    : comparisonMismatches.some((item) => item.severity === 'high') ? 'high'
+    : comparisonMismatches.some((item) => item.severity === 'medium') ? 'medium'
+    : 'low';
+  const materiality: 'low' | 'medium' | 'high' = stopReasonCodes.has('severe_mismatch') || stopReasonCodes.has('missing_withholding_record') ? 'high'
+    : stopReasonCodes.size > 0 ? 'medium'
+    : 'low';
+  const confidenceScore = Math.max(0, Math.min(1,
+    1
+    - ((params.lowConfidenceCount ?? 0) * 0.15)
+    - ((params.duplicateCandidateCount ?? 0) * 0.1)
+    - (stopReasonCodes.has('severe_mismatch') ? 0.25 : 0)
+    - (stopReasonCodes.has('unsupported_adjustment') ? 0.2 : 0)
+    - (params.supportTier === 'tier_b' ? 0.1 : params.supportTier === 'tier_c' ? 0.3 : 0)
+  ));
+  const reviewBatchId = reviewItems.length > 0 ? `review_batch_${reviewItems[0]?.workspaceId ?? 'workspace'}_${reviewItems.length}` : undefined;
+  const escalationReason = params.supportTier === 'tier_c'
+    ? 'Tier C path requires stop and human-led handling.'
+    : stopReasonCodes.has('severe_mismatch')
+      ? 'Material HomeTax mismatch remains unresolved.'
+      : stopReasonCodes.has('unsupported_adjustment')
+        ? 'Unsupported adjustment candidate requires manual handling.'
+        : (params.lowConfidenceCount ?? 0) > 0
+          ? 'Low-confidence classification requires review before proceeding.'
+          : undefined;
+  const operatorExplanation = stopReasonCodes.size > 0
+    ? `Blocked or downgraded because: ${Array.from(stopReasonCodes).join(', ')}.`
+    : params.supportTier === 'tier_b'
+      ? 'Tier B path can proceed only with downgraded assist and closer review.'
+      : 'No hard stop reason detected.';
+  return { confidenceScore, duplicateRisk, materiality, mismatchSeverity, stopReasonCodes: Array.from(stopReasonCodes), escalationReason, reviewBatchId, operatorExplanation };
+}
+
 function derivePrepareHomeTaxBlockingReason(readiness: { blockerCodes: string[]; submissionReadiness: string }): import('../../core/src/types.js').BlockingReason | undefined {
   if (readiness.submissionReadiness === 'submission_assist_ready') return undefined;
   if (readiness.blockerCodes.includes('awaiting_review_decision')) return 'awaiting_review_decision';
@@ -1718,9 +2198,11 @@ function mergeComputedFieldValuesWithRuntimeState(
       ? {
           ...field,
           portalObservedValue: persisted.portalObservedValue,
-          comparisonState: persisted.comparisonState ?? field.comparisonState,
+          comparisonState: persisted.portalComparisonState ?? persisted.comparisonState ?? field.comparisonState,
+          portalComparisonState: persisted.portalComparisonState ?? persisted.comparisonState ?? field.comparisonState,
           freshnessState: persisted.freshnessState ?? field.freshnessState,
           requiresManualEntry: persisted.requiresManualEntry ?? field.requiresManualEntry,
+          confidenceScore: persisted.confidenceScore ?? persisted.confidence ?? field.confidenceScore ?? field.confidence,
           mismatchSeverity: persisted.mismatchSeverity,
         }
       : field;
@@ -1841,6 +2323,8 @@ function deriveHomeTaxPreparationState(
     browserAssistReady: blockingItems.length === 0,
     handoff: {
       orderedSections,
+      filingSections: buildFilingSections(fieldValues[0]?.draftId ?? 'unknown_draft', fieldValues),
+      draftFieldValues: fieldValues,
       mismatchSummary: {
         hasUnresolvedMismatch: mismatchReviewItems.length > 0 || mismatchFields.length > 0,
         hasHighSeverityReview: highSeverityReviewItems.length > 0,

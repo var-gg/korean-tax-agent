@@ -1,7 +1,7 @@
 # Data Collection Strategy
 
 ## Objective
-Design the system so the agent can collect as much filing-relevant data as possible through guided interaction, while asking the user to intervene only at meaningful checkpoints such as consent, authentication, ambiguity resolution, and final submission.
+Design the system so the AI agent can collect as much filing-relevant data as possible through guided interaction, while asking the user to intervene only at meaningful checkpoints such as consent, authentication, ambiguity resolution, and final submission.
 
 This document is about realistic collection posture, not idealized full automation.
 
@@ -242,7 +242,7 @@ A good run should feel like this:
 
 ## Product test
 If the workflow still mostly feels like "please upload more files," the product is not yet agentic enough.
-If the workflow feels like "I log in when asked, and the agent does the rest until it truly needs me," the design is on track.
+If the workflow feels like "the AI agent leads material preparation, and I only step in for login, consent, and judgment," the design is on track.
 
 ## MCP boundary for collection
 

@@ -2,7 +2,7 @@
 
 **Languages:** [English](README.md) | [한국어](README.ko.md)
 
-Open-source, agent-native workflow for **Korean comprehensive income tax preparation**.
+Open-source, agent-native product for **raising supported-path completion rates toward 99% assisted filing success for Korean comprehensive income tax**, from material preparation through submission.
 
 This repository is building a **host-agnostic MCP core** for Korean comprehensive income tax workflow, plus optional runtime-specific integrations and examples.
 It should remain usable whether the operator runs it through OpenClaw, Codex-style apps, Claude-oriented agent workspaces, or other agent runtimes.
@@ -99,13 +99,14 @@ This project is not trying to be:
 - or silent fully autonomous tax filing.
 
 This project is trying to be:
-- a Korea-specific tax workflow product,
-- an agent-guided preparation and review system,
+- a Korea-specific assisted filing product,
+- an AI agent + MCP workflow system that moves from material preparation to submission,
 - a consent-gated and checkpoint-driven filing flow,
 - and a portable MCP surface that different agent runtimes can adopt.
 
 In short:
-- **product scope:** Korean comprehensive income tax workflow
+- **product scope:** Korean comprehensive income tax, from material preparation to supported-path submission
+- **launch goal:** supported paths completion
 - **core interface:** host-agnostic MCP contracts and state model
 - **runtime posture:** works with multiple agent runtimes; not tied to one bridge or messenger
 - **submission posture:** assisted and explicit, not silent automation
@@ -121,11 +122,11 @@ Users often need to:
 - review risky classifications,
 - and manually move through government-facing steps that do not feel API-native.
 
-This project treats tax filing as an **agent-guided workflow** rather than a single form or calculator.
+This project treats tax filing as an **AI agent + MCP assisted workflow** rather than a single form or calculator.
 
 ## Current status
 
-This repository is now in an **executable prototype** stage.
+This repository is now in an **executable prototype** stage aligned to a clear launch target: improve supported-path completion for Korean comprehensive income tax filing by letting the AI agent lead material preparation while the user intervenes only for login, consent, and judgment checkpoints.
 
 That means:
 - core workflow contracts are documented,
@@ -164,6 +165,14 @@ If you want to stay in Korean, start here instead:
 This repo is intended to be readable in either language without losing the main path.
 When a Korean companion exists, Korean readers should be able to continue in Korean.
 When a Korean companion does not exist, the English original is linked explicitly.
+
+## Product test
+
+The core product test is:
+- the AI agent leads material preparation,
+- the user intervenes only for login, consent, and judgment,
+- supported paths progress from estimate-ready to draft-ready to submission-assist-ready with explicit checkpoints,
+- and no part of that flow depends on silent automation.
 
 ## Prototype workflow snapshot
 

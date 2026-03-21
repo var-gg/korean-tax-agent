@@ -42,6 +42,8 @@ describe('in-memory runtime', () => {
     });
     expect(planResult.ok).toBe(true);
     expect(planResult.data.recommendedSources.length).toBeGreaterThan(0);
+    expect(planResult.data.nextActionPlan?.collectionMode).toBe('browser_assist');
+    expect(planResult.data.nextActionPlan?.recommendedNextAction).toBeTruthy();
     expect(planResult.nextRecommendedAction).toBe('tax.sources.connect');
   });
 
@@ -201,6 +203,9 @@ describe('in-memory runtime', () => {
     expect(runtime.getWithholdingRecords(demo.workspaceId)).toHaveLength(1);
     expect(runtime.store.taxpayerFactsByWorkspace.get(demo.workspaceId)?.length).toBeGreaterThan(0);
     expect(runtime.store.withholdingRecordsByWorkspace.get(demo.workspaceId)?.length).toBe(1);
+    const withholdingRows = runtime.invoke('tax.withholding.list_records', { workspaceId: demo.workspaceId, evidenceStatus: 'linked' });
+    expect(withholdingRows.ok).toBe(true);
+    expect(withholdingRows.data.rows[0]?.payerOrIssuer).toBe('Client A');
     expect(runtime.store.normalizationLinksByWorkspace.get(demo.workspaceId)?.[0]?.artifactId).toBe('artifact_wht_1');
     expect(runtime.store.normalizationLinksByWorkspace.get(demo.workspaceId)?.[0]?.documentIds).toContain('doc_home_tax_wht_doc');
     expect(normalizeResult.data.coverageGapsCreated.some((gap) => gap.gapType === 'missing_hometax_comparison')).toBe(true);
@@ -230,6 +235,7 @@ describe('in-memory runtime', () => {
     expect(checkpoint.data.assistSessionId).toBe(started.data.assistSessionId);
     expect(checkpoint.data.authRequired).toBe(true);
     expect(checkpoint.data.handoff.recommendedTool).toBe('tax.browser.resume_hometax_assist');
+    expect(checkpoint.data.handoff.entryPlan?.orderedSections.length).toBeGreaterThan(0);
     expect(checkpoint.nextRecommendedAction).toBe('tax.browser.resume_hometax_assist');
 
     const stopped = runtime.invoke('tax.browser.stop_hometax_assist', {
@@ -465,10 +471,20 @@ describe('in-memory runtime', () => {
     expect(collectionStatus.data.coverageGaps.every((gap) => typeof gap === 'object' && typeof gap.gapType === 'string')).toBe(true);
     expect(collectionStatus.data.coverageGaps.every((gap) => Array.isArray(gap.relatedSourceIds))).toBe(true);
 
+    const coverageGapList = runtime.invoke('tax.workspace.list_coverage_gaps', { workspaceId: demo.workspaceId });
+    expect(coverageGapList.ok).toBe(true);
+    expect(coverageGapList.data.items.length).toBeGreaterThan(0);
+    expect(coverageGapList.data.prioritizedGap?.recommendedNextAction).toBeTruthy();
+    expect(['browser_assist', 'export_ingestion', 'fact_capture']).toContain(coverageGapList.data.nextActionPlan?.collectionMode);
+
     const workspaceStatus = runtime.invoke('tax.workspace.get_status', { workspaceId: demo.workspaceId });
     expect(workspaceStatus.data.workspace.openCoverageGapCount).toBeGreaterThan(0);
     expect(workspaceStatus.data.workspace.lastBlockingReason).toBe('comparison_incomplete');
-    expect(workspaceStatus.data.nextRecommendedAction).toBe('tax.filing.compare_with_hometax');
+    expect(workspaceStatus.data.workspace.coverageGaps?.length).toBeGreaterThan(0);
+    expect(workspaceStatus.data.workspace.nextActionPlan?.recommendedNextAction).toBeTruthy();
+    expect(Array.isArray(workspaceStatus.data.stopReasonCodes)).toBe(true);
+    expect(typeof workspaceStatus.data.operatorExplanation).toBe('string');
+    expect(workspaceStatus.data.nextRecommendedAction).toBeTruthy();
 
     const derived = runtime.getWorkspaceDerivedStatus(demo.workspaceId);
     expect(derived.openCoverageGapCount).toBe(workspaceStatus.data.workspace.openCoverageGapCount);

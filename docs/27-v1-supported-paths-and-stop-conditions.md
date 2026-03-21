@@ -35,9 +35,9 @@ That boundary is critical for trust.
 
 ## Framing principle
 V1 should optimize for:
-- realistic completion,
+- supported paths completion,
 - honest readiness reporting,
-- narrow but high-confidence assisted filing,
+- high-confidence assisted filing on supported paths,
 - and explicit user checkpoints.
 
 V1 should not optimize for:
@@ -50,8 +50,8 @@ V1 should not optimize for:
 ### Tier A — supported assisted paths
 Meaning:
 - the project intends to support this path as a normal V1 workflow,
-- the agent can collect, review, draft, and assist through HomeTax with clear checkpoints,
-- and the system has a credible path to produce a submission-ready draft.
+- the AI agent can collect, review, draft, and assist through HomeTax with clear checkpoints,
+- and the system has a credible path to produce a submission-assist-ready draft.
 
 ### Tier B — manual-heavy / limited support paths
 Meaning:
@@ -337,6 +337,7 @@ See also:
 V1 should be narrow on purpose.
 A trustworthy V1 is one that:
 - clearly says which filing paths it supports,
-- distinguishes estimate-ready from submission-ready,
+- distinguishes estimate-ready, draft-ready, and submission-assist-ready,
 - stops on material domain uncertainty,
+- optimizes for supported paths completion,
 - and keeps the user in visible control through the final filing steps.

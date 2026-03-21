@@ -15,14 +15,15 @@
 
 
 ## 1. Product
-Korean Tax Agent is an open-source, agent-native workflow for Korean comprehensive income tax preparation.
+Korean Tax Agent is an open-source, agent-native product for Korean comprehensive income tax that uses an AI agent + MCP workflow to raise supported-path completion rates from material preparation through submission.
 
 V1 focuses on helping an AI-capable user:
 - collect relevant tax materials,
 - normalize and classify them,
 - review ambiguous items efficiently,
-- generate a filing-ready draft,
-- optionally complete HomeTax-adjacent entry work with visible browser assistance.
+- generate an estimate-ready or draft-ready filing state,
+- reach submission-assist-ready only when supported-path conditions are satisfied,
+- complete visible HomeTax-assisted filing with explicit checkpoints.
 
 ## 2. Target user
 Primary target user:
@@ -48,8 +49,8 @@ Today, comprehensive income tax filing is painful because users must:
 ## 4. V1 promise
 V1 should let the user say:
 - "I can get my tax materials into one workflow."
-- "The agent handles the repetitive structuring work."
-- "I only spend time on the items that actually matter."
+- "The AI agent leads material preparation and repetitive structuring work."
+- "I only step in for login, consent, and judgment."
 - "I stay in control of risky decisions and final submission."
 
 ## 5. Core jobs to be done
@@ -99,6 +100,7 @@ V1 should let the user say:
 ## 9. Success criteria
 A V1 workflow is successful if a target user can:
 - create a filing workspace,
+- let the AI agent lead material preparation,
 - import representative documents/transactions,
 - generate a draft summary,
 - resolve a manageable review queue,
@@ -108,6 +110,8 @@ A V1 workflow is successful if a target user can:
 
 ## 10. Success metrics
 Product-level success metrics for early validation:
+- supported-path completion rate
+- progress toward 99% assisted filing success on supported paths
 - time-to-first-draft
 - number of review items per 100 imported records
 - percentage of records auto-classified above confidence threshold
@@ -132,10 +136,12 @@ Main V1 risks:
 
 ## 13. Release standard
 Do not call V1 complete until:
-- import -> normalize -> classify -> review -> draft flow is coherent,
+- import -> normalize -> classify -> review -> draft -> submission-assist flow is coherent,
 - consent checkpoints are explicit,
 - HomeTax-assist checkpoints are modeled,
+- launch goal is clearly described as supported paths completion,
 - supported filing paths and stop conditions are documented clearly,
 - the system distinguishes estimate-ready, draft-ready, and submission-assist-ready states,
+- the product test remains true: the AI agent leads material preparation while the user intervenes only for login, consent, and judgment,
 - system outputs are auditable enough for user trust,
 - documentation is sufficient for an early open-source adopter to understand the architecture.

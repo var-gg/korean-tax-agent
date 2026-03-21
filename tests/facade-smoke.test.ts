@@ -57,7 +57,15 @@ describe('mcp facade', () => {
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.import.import_hometax_materials');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.browser.get_checkpoint');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.browser.stop_hometax_assist');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.profile.upsert_facts');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.profile.list_missing_facts');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.withholding.list_records');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.list_adjustment_candidates');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.record_submission_approval');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.export_package');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.browser.record_submission_result');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.workspace.get_status');
+    expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.workspace.list_coverage_gaps');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.filing.get_summary');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.ledger.normalize');
     expect(SUPPORTED_RUNTIME_TOOLS).toContain('tax.ledger.list_transactions');
@@ -144,6 +152,56 @@ describe('mcp facade', () => {
     });
     expect(browserStopInvalid.ok).toBe(false);
     expect(browserStopInvalid.errorCode).toBe('invalid_input');
+
+    const upsertFactsInvalid = facade.invokeTool({
+      name: 'tax.profile.upsert_facts',
+      input: { workspaceId: demo.workspaceId },
+    });
+    expect(upsertFactsInvalid.ok).toBe(false);
+    expect(upsertFactsInvalid.errorCode).toBe('invalid_input');
+
+    const listMissingFacts = facade.invokeTool({
+      name: 'tax.profile.list_missing_facts',
+      input: { workspaceId: demo.workspaceId },
+    });
+    expect(listMissingFacts.ok).toBe(true);
+
+    const withholdingList = facade.invokeTool({
+      name: 'tax.withholding.list_records',
+      input: { workspaceId: demo.workspaceId },
+    });
+    expect(withholdingList.ok).toBe(true);
+
+    const adjustmentList = facade.invokeTool({
+      name: 'tax.filing.list_adjustment_candidates',
+      input: { workspaceId: demo.workspaceId },
+    });
+    expect(adjustmentList.ok).toBe(true);
+
+    const coverageGapList = facade.invokeTool({
+      name: 'tax.workspace.list_coverage_gaps',
+      input: { workspaceId: demo.workspaceId },
+    });
+    expect(coverageGapList.ok).toBe(true);
+
+    const submissionApproval = facade.invokeTool({
+      name: 'tax.filing.record_submission_approval',
+      input: { workspaceId: demo.workspaceId, draftId: demo.workspace.currentDraftId ?? 'draft_demo_001', approvedBy: 'operator:test' },
+    });
+    expect(submissionApproval.ok).toBe(true);
+
+    const submissionResult = facade.invokeTool({
+      name: 'tax.browser.record_submission_result',
+      input: { workspaceId: demo.workspaceId, draftId: demo.workspace.currentDraftId ?? 'draft_demo_001', result: 'unknown' },
+    });
+    expect(submissionResult.ok).toBe(true);
+
+    const exportPackage = facade.invokeTool({
+      name: 'tax.filing.export_package',
+      input: { workspaceId: demo.workspaceId, formats: ['json_package', 'evidence_index', 'submission_prep_checklist', 'submission_receipt_bundle'] },
+    });
+    expect(exportPackage.ok).toBe(true);
+    expect(exportPackage.data.artifacts.length).toBeGreaterThan(0);
 
     const pathResult = facade.invokeTool({
       name: 'tax.profile.detect_filing_path',

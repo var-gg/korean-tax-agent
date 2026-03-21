@@ -15,7 +15,7 @@
 
 
 ## Objective
-Support assisted HomeTax filing while preserving visible user control.
+Support assisted HomeTax filing while preserving visible user control and improving supported-path completion from material preparation through submission.
 
 The browser-assist layer should help the user move faster, but should never make the filing feel invisible or uncontrolled.
 
@@ -30,11 +30,11 @@ HomeTax assist should only start for cases that are inside the currently support
 If the filing path is unsupported, materially under-collected, or still blocked on high-severity review, the workflow should stop before browser assist begins.
 
 The system should distinguish at least:
-- `estimate_ready`
-- `draft_ready`
-- `submission_assist_ready`
+- `estimate_ready` (`estimate-ready`)
+- `draft_ready` (`draft-ready`)
+- `submission_assist_ready` (`submission-assist-ready`)
 
-Only `submission_assist_ready` cases should proceed into active HomeTax assistance.
+Only `submission_assist_ready` / `submission-assist-ready` cases should proceed into active HomeTax assistance.
 See also: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md).
 
 ## Proposed end-to-end flow
@@ -76,8 +76,8 @@ Rules:
 - authentication success does not imply final submission approval
 
 ### Phase 4. Section navigation and field mapping
-1. Agent navigates filing sections.
-2. System matches draft values to HomeTax sections/fields.
+1. The external AI agent navigates filing sections.
+2. MCP provides the workflow state, section plan, and field mapping.
 3. Unsupported, ambiguous, or blocked fields are surfaced clearly.
 
 Possible field states:

@@ -8,12 +8,15 @@ import type {
   ConsentRecord,
   CoverageGap,
   EvidenceDocument,
+  FilingFactCompleteness,
   FilingFieldValue,
   FilingWorkspace,
   LedgerTransaction,
   ReviewItem,
   SourceArtifact,
   SourceConnection,
+  SubmissionApprovalRecord,
+  SubmissionResultRecord,
   SyncAttempt,
   TaxpayerFact,
   WithholdingRecord,
@@ -34,10 +37,20 @@ import type {
   CompareWithHomeTaxInput,
   ComputeDraftData,
   ComputeDraftInput,
+  ExportPackageData,
+  ExportPackageInput,
   ConnectSourceData,
   ConnectSourceInput,
   ListSourcesData,
   ListSourcesInput,
+  ListAdjustmentCandidatesData,
+  ListAdjustmentCandidatesInput,
+  ListCoverageGapsData,
+  ListCoverageGapsInput,
+  ListMissingFactsData,
+  ListWithholdingRecordsData,
+  ListWithholdingRecordsInput,
+  ListMissingFactsInput,
   DetectFilingPathData,
   DetectFilingPathInput,
   GetCollectionStatusInput,
@@ -61,6 +74,10 @@ import type {
   NormalizeLedgerInput,
   PrepareHomeTaxData,
   PrepareHomeTaxInput,
+  RecordSubmissionApprovalData,
+  RecordSubmissionApprovalInput,
+  RecordSubmissionResultData,
+  RecordSubmissionResultInput,
   RefreshOfficialDataData,
   RefreshOfficialDataInput,
   ResolveReviewItemData,
@@ -70,6 +87,8 @@ import type {
   ResumeSyncData,
   ResumeSyncInput,
   RunClassificationData,
+  UpsertTaxpayerFactsData,
+  UpsertTaxpayerFactsInput,
   UploadDocumentsData,
   UploadDocumentsInput,
   UploadTransactionsData,
@@ -88,6 +107,7 @@ import {
   taxClassifyRun,
   taxFilingCompareWithHomeTax,
   taxFilingComputeDraft,
+  taxFilingListAdjustmentCandidates,
   taxFilingPrepareHomeTax,
   taxFilingRefreshOfficialData,
   taxImportHomeTaxMaterials,
@@ -95,7 +115,10 @@ import {
   taxImportUploadDocuments,
   taxImportUploadTransactions,
   taxLedgerNormalize,
+  taxListMissingFacts,
+  taxWorkspaceListCoverageGaps,
   taxProfileDetectFilingPath,
+  taxProfileUpsertFacts,
   taxSetupInitConfig,
   taxSetupInspectEnvironment,
   taxSourcesConnect,
@@ -113,6 +136,7 @@ export type SupportedRuntimeToolName =
   | 'tax.sources.plan_collection'
   | 'tax.sources.get_collection_status'
   | 'tax.workspace.get_status'
+  | 'tax.workspace.list_coverage_gaps'
   | 'tax.filing.get_summary'
   | 'tax.sources.connect'
   | 'tax.sources.list'
@@ -126,7 +150,11 @@ export type SupportedRuntimeToolName =
   | 'tax.ledger.normalize'
   | 'tax.ledger.list_transactions'
   | 'tax.ledger.link_evidence'
+  | 'tax.withholding.list_records'
+  | 'tax.filing.list_adjustment_candidates'
   | 'tax.profile.detect_filing_path'
+  | 'tax.profile.upsert_facts'
+  | 'tax.profile.list_missing_facts'
   | 'tax.classify.run'
   | 'tax.classify.list_review_items'
   | 'tax.classify.resolve_review_item'
@@ -134,7 +162,10 @@ export type SupportedRuntimeToolName =
   | 'tax.filing.compare_with_hometax'
   | 'tax.filing.refresh_official_data'
   | 'tax.filing.prepare_hometax'
+  | 'tax.filing.record_submission_approval'
+  | 'tax.filing.export_package'
   | 'tax.browser.start_hometax_assist'
+  | 'tax.browser.record_submission_result'
   | 'tax.browser.resume_hometax_assist'
   | 'tax.browser.get_checkpoint'
   | 'tax.browser.stop_hometax_assist';
@@ -270,6 +301,7 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.sources.plan_collection', input: { workspaceId: string; filingYear: number; currentCoverageSummary?: Record<string, unknown>; userProfileHints?: Record<string, unknown> }): MCPResponseEnvelope<{ recommendedSources: ReturnType<typeof taxSourcesPlanCollection>['data']['recommendedSources']; expectedValueBySource: Record<string, string>; likelyUserCheckpoints: ReturnType<typeof taxSourcesPlanCollection>['data']['likelyUserCheckpoints']; fallbackPathSuggestions: string[] }>;
   invoke(name: 'tax.sources.get_collection_status', input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData>;
   invoke(name: 'tax.workspace.get_status', input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData>;
+  invoke(name: 'tax.workspace.list_coverage_gaps', input: ListCoverageGapsInput): MCPResponseEnvelope<ListCoverageGapsData>;
   invoke(name: 'tax.filing.get_summary', input: GetFilingSummaryInput): MCPResponseEnvelope<GetFilingSummaryData>;
   invoke(name: 'tax.sources.connect', input: ConnectSourceInput): MCPResponseEnvelope<ConnectSourceData>;
   invoke(name: 'tax.sources.list', input: ListSourcesInput): MCPResponseEnvelope<ListSourcesData>;
@@ -283,7 +315,11 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.ledger.normalize', input: NormalizeLedgerInput): MCPResponseEnvelope<NormalizeLedgerData>;
   invoke(name: 'tax.ledger.list_transactions', input: ListTransactionsInput): MCPResponseEnvelope<ListTransactionsData>;
   invoke(name: 'tax.ledger.link_evidence', input: LinkEvidenceInput): MCPResponseEnvelope<LinkEvidenceData>;
+  invoke(name: 'tax.withholding.list_records', input: ListWithholdingRecordsInput): MCPResponseEnvelope<ListWithholdingRecordsData>;
+  invoke(name: 'tax.filing.list_adjustment_candidates', input: ListAdjustmentCandidatesInput): MCPResponseEnvelope<ListAdjustmentCandidatesData>;
   invoke(name: 'tax.profile.detect_filing_path', input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData>;
+  invoke(name: 'tax.profile.upsert_facts', input: UpsertTaxpayerFactsInput): MCPResponseEnvelope<UpsertTaxpayerFactsData>;
+  invoke(name: 'tax.profile.list_missing_facts', input: ListMissingFactsInput): MCPResponseEnvelope<ListMissingFactsData>;
   invoke(name: 'tax.classify.run', input: RunClassificationInput): MCPResponseEnvelope<RunClassificationData>;
   invoke(name: 'tax.classify.list_review_items', input: { workspaceId: string }): MCPResponseEnvelope<{ items: ReviewItem[]; summary: ReturnType<typeof taxClassifyListReviewItems>['data']['summary'] }>;
   invoke(name: 'tax.classify.resolve_review_item', input: ResolveReviewItemInput): MCPResponseEnvelope<ResolveReviewItemData>;
@@ -291,7 +327,10 @@ export class InMemoryKoreanTaxMCPRuntime {
   invoke(name: 'tax.filing.compare_with_hometax', input: CompareWithHomeTaxInput): MCPResponseEnvelope<CompareWithHomeTaxData>;
   invoke(name: 'tax.filing.refresh_official_data', input: RefreshOfficialDataInput): MCPResponseEnvelope<RefreshOfficialDataData>;
   invoke(name: 'tax.filing.prepare_hometax', input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData>;
+  invoke(name: 'tax.filing.record_submission_approval', input: RecordSubmissionApprovalInput): MCPResponseEnvelope<RecordSubmissionApprovalData>;
+  invoke(name: 'tax.filing.export_package', input: ExportPackageInput): MCPResponseEnvelope<ExportPackageData>;
   invoke(name: 'tax.browser.start_hometax_assist', input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData>;
+  invoke(name: 'tax.browser.record_submission_result', input: RecordSubmissionResultInput): MCPResponseEnvelope<RecordSubmissionResultData>;
   invoke(name: 'tax.browser.resume_hometax_assist', input: ResumeHomeTaxAssistInput): MCPResponseEnvelope<ResumeHomeTaxAssistData>;
   invoke(name: 'tax.browser.get_checkpoint', input: GetHomeTaxCheckpointInput): MCPResponseEnvelope<GetHomeTaxCheckpointData>;
   invoke(name: 'tax.browser.stop_hometax_assist', input: StopHomeTaxAssistInput): MCPResponseEnvelope<StopHomeTaxAssistData>;
@@ -315,6 +354,9 @@ export class InMemoryKoreanTaxMCPRuntime {
         break;
       case 'tax.workspace.get_status':
         result = this.getWorkspaceStatus(input as GetWorkspaceStatusInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.workspace.list_coverage_gaps':
+        result = this.listCoverageGaps(input as ListCoverageGapsInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
       case 'tax.filing.get_summary':
         result = this.getFilingSummary(input as GetFilingSummaryInput) as KoreanTaxMCPContracts[TName]['output'];
@@ -355,8 +397,20 @@ export class InMemoryKoreanTaxMCPRuntime {
       case 'tax.ledger.link_evidence':
         result = this.linkEvidence(input as LinkEvidenceInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
+      case 'tax.withholding.list_records':
+        result = this.listWithholdingRecords(input as ListWithholdingRecordsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.filing.list_adjustment_candidates':
+        result = this.listAdjustmentCandidates(input as ListAdjustmentCandidatesInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.profile.detect_filing_path':
         result = this.detectFilingPath(input as DetectFilingPathInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.profile.upsert_facts':
+        result = this.upsertFacts(input as UpsertTaxpayerFactsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.profile.list_missing_facts':
+        result = this.listMissingFacts(input as ListMissingFactsInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
       case 'tax.classify.run':
         result = this.runClassification(input as RunClassificationInput) as KoreanTaxMCPContracts[TName]['output'];
@@ -379,8 +433,17 @@ export class InMemoryKoreanTaxMCPRuntime {
       case 'tax.filing.prepare_hometax':
         result = this.prepareHomeTax(input as PrepareHomeTaxInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
+      case 'tax.filing.record_submission_approval':
+        result = this.recordSubmissionApproval(input as RecordSubmissionApprovalInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.filing.export_package':
+        result = this.exportPackage(input as ExportPackageInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.browser.start_hometax_assist':
         result = this.startHomeTaxAssist(input as StartHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.browser.record_submission_result':
+        result = this.recordSubmissionResult(input as RecordSubmissionResultInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
       case 'tax.browser.resume_hometax_assist':
         result = this.resumeHomeTaxAssist(input as ResumeHomeTaxAssistInput) as KoreanTaxMCPContracts[TName]['output'];
@@ -620,7 +683,14 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private planCollection(input: KoreanTaxMCPContracts['tax.sources.plan_collection']['input']): KoreanTaxMCPContracts['tax.sources.plan_collection']['output'] {
-    return taxSourcesPlanCollection(input);
+    const result = taxSourcesPlanCollection(input);
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        targetedFactCapture: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items.slice(0, 3),
+      },
+    };
   }
 
   private getCollectionStatus(input: GetCollectionStatusInput): MCPResponseEnvelope<CollectionStatusData> {
@@ -633,8 +703,12 @@ export class InMemoryKoreanTaxMCPRuntime {
     return {
       ...result,
       blockingReason: derived.lastBlockingReason,
-      nextRecommendedAction: derived.nextRecommendedAction ?? result.nextRecommendedAction,
+      nextRecommendedAction: result.data.nextActionPlan?.recommendedNextAction ?? derived.nextRecommendedAction ?? result.nextRecommendedAction,
     };
+  }
+
+  private listCoverageGaps(input: ListCoverageGapsInput): MCPResponseEnvelope<ListCoverageGapsData> {
+    return taxWorkspaceListCoverageGaps(input, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []);
   }
 
   private getWorkspaceStatus(input: GetWorkspaceStatusInput): MCPResponseEnvelope<GetWorkspaceStatusData> {
@@ -644,14 +718,27 @@ export class InMemoryKoreanTaxMCPRuntime {
     const runtimeSnapshot = buildRuntimeSnapshot(workspace);
     const readiness = buildRuntimeReadiness(workspace, runtimeSnapshot.blockerCodes);
     const readinessState = buildRuntimeReadinessState(workspace);
+    const coverageGapView = taxWorkspaceListCoverageGaps({ workspaceId: input.workspaceId }, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).data;
+    const derived = this.getWorkspaceDerivedStatus(input.workspaceId);
 
+    const trustState = deriveOperatorTrustState({ draft, workspace, reviewItems: this.listReviewItems(input.workspaceId) });
     return {
       ok: true,
       status: 'completed',
       data: {
+        stopReasonCodes: trustState.stopReasonCodes,
+        escalationReason: trustState.escalationReason,
+        operatorExplanation: trustState.operatorExplanation,
+        reviewBatchId: trustState.reviewBatchId,
         workspace: {
           workspaceId: workspace.workspaceId,
           status: workspace.status,
+          submissionApproval: workspace.submissionApproval,
+          submissionResult: workspace.submissionResult,
+          missingFacts: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items,
+          coverageGaps: coverageGapView.items,
+          prioritizedGap: coverageGapView.prioritizedGap,
+          nextActionPlan: coverageGapView.nextActionPlan,
           currentDraftId: workspace.currentDraftId,
           unresolvedReviewCount: workspace.unresolvedReviewCount,
           openCoverageGapCount: workspace.openCoverageGapCount,
@@ -676,11 +763,11 @@ export class InMemoryKoreanTaxMCPRuntime {
             }
           : undefined,
         runtimeSnapshot,
-        nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
+        nextRecommendedAction: coverageGapView.nextActionPlan?.recommendedNextAction ?? derived.nextRecommendedAction,
       },
       readiness,
       readinessState,
-      nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
+      nextRecommendedAction: coverageGapView.nextActionPlan?.recommendedNextAction ?? derived.nextRecommendedAction,
     };
   }
 
@@ -698,6 +785,9 @@ export class InMemoryKoreanTaxMCPRuntime {
     const readiness = buildRuntimeReadiness(workspace, blockers.filter(isBlockingReason));
     const readinessState = buildRuntimeReadinessState(workspace);
 
+    const missingFacts = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items;
+    const coverageGapView = taxWorkspaceListCoverageGaps({ workspaceId: input.workspaceId }, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).data;
+    const adjustmentCandidates = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, this.getTaxpayerFacts(input.workspaceId), Array.from(this.store.transactions.values()), this.getWithholdingRecords(input.workspaceId)).data.items;
     const keyPoints = [
       `workspace_status=${workspace.status}`,
       workspace.currentDraftId ? `current_draft=${workspace.currentDraftId}` : 'current_draft=none',
@@ -705,6 +795,11 @@ export class InMemoryKoreanTaxMCPRuntime {
       `submission_readiness=${getRuntimeSubmissionReadiness(workspace)}`,
       `comparison=${getRuntimeComparisonState(workspace)}`,
       `freshness=${workspace.freshnessState ?? 'stale_unknown'}`,
+      `missing_facts=${missingFacts.length}`,
+      `open_coverage_gaps=${coverageGapView.items.length}`,
+      `adjustment_candidates=${adjustmentCandidates.length}`,
+      `submission_approval=${workspace.submissionApproval ? 'recorded' : 'missing'}`,
+      `submission_result=${workspace.submissionResult?.result ?? 'none'}`,
     ];
 
     const detailLevel = input.detailLevel ?? 'standard';
@@ -725,12 +820,28 @@ export class InMemoryKoreanTaxMCPRuntime {
       headline,
     });
 
+    const adjustmentSummary = {
+      considered: adjustmentCandidates.length,
+      applied: adjustmentCandidates.filter((item) => item.eligibilityState === 'supported' && !item.reviewRequired).length,
+      deferred: adjustmentCandidates.filter((item) => item.eligibilityState !== 'out_of_scope' && item.reviewRequired).length,
+      unsupported: adjustmentCandidates.filter((item) => item.eligibilityState === 'out_of_scope').length,
+    };
+    const trustState = deriveOperatorTrustState({ draft, workspace, reviewItems: this.listReviewItems(input.workspaceId) });
     return {
       ok: true,
       status: 'completed',
       data: {
         workspaceId: input.workspaceId,
+        stopReasonCodes: trustState.stopReasonCodes,
+        escalationReason: trustState.escalationReason,
+        operatorExplanation: trustState.operatorExplanation,
+        reviewBatchId: trustState.reviewBatchId,
         draftId: input.draftId ?? draft?.draftId,
+        submissionApproval: workspace.submissionApproval,
+        submissionResult: workspace.submissionResult,
+        adjustmentCandidates,
+        adjustmentSummary,
+        missingFacts: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items,
         headline,
         summaryText,
         operatorUpdate,
@@ -738,7 +849,9 @@ export class InMemoryKoreanTaxMCPRuntime {
         keyPoints,
         blockers,
         runtimeSnapshot,
-        nextRecommendedAction: nextAction,
+        nextRecommendedAction: blockers.includes('awaiting_review_decision') || blockers.includes('comparison_incomplete')
+          ? nextAction
+          : coverageGapView.nextActionPlan?.recommendedNextAction ?? nextAction,
         metrics: {
           unresolvedReviewCount: workspace.unresolvedReviewCount,
           warningCount: draft?.warnings.length ?? 0,
@@ -1291,15 +1404,113 @@ export class InMemoryKoreanTaxMCPRuntime {
     };
   }
 
+  private listWithholdingRecords(input: ListWithholdingRecordsInput): MCPResponseEnvelope<ListWithholdingRecordsData> {
+    const rows = this.getWithholdingRecords(input.workspaceId)
+      .filter((record) => input.filingYear === undefined || record.filingYear === input.filingYear)
+      .filter((record) => !input.payerOrIssuer || (record.payerOrIssuer ?? record.payerName ?? '').includes(input.payerOrIssuer))
+      .filter((record) => !input.reviewStatus || (record.reviewStatus ?? '') === input.reviewStatus)
+      .filter((record) => !input.evidenceStatus || (input.evidenceStatus === 'linked' ? record.evidenceRefs.length > 0 : record.evidenceRefs.length === 0))
+      .map((record) => ({
+        withholdingRecordId: record.withholdingRecordId,
+        filingYear: record.filingYear,
+        payerOrIssuer: record.payerOrIssuer ?? record.payerName,
+        incomeSourceRef: record.incomeSourceRef,
+        grossAmount: record.grossAmount,
+        withheldTaxAmount: record.withheldTaxAmount,
+        localTaxAmount: record.localTaxAmount,
+        evidenceRefs: record.evidenceRefs,
+        sourceType: record.sourceType,
+        confidenceScore: record.confidenceScore ?? record.extractionConfidence,
+        reviewStatus: record.reviewStatus,
+        hasEvidence: record.evidenceRefs.length > 0,
+      }));
+    const warnings = rows.some((row) => row.reviewStatus === 'conflict_detected')
+      ? ['withholding_conflicts_present']
+      : rows.some((row) => row.reviewStatus === 'review_required')
+        ? ['withholding_review_required']
+        : [];
+    return {
+      ok: true,
+      status: 'completed',
+      data: { workspaceId: input.workspaceId, rows, warnings },
+      nextRecommendedAction: warnings.length > 0 ? 'tax.classify.list_review_items' : 'tax.filing.compute_draft',
+    };
+  }
+
+  private listAdjustmentCandidates(input: ListAdjustmentCandidatesInput): MCPResponseEnvelope<ListAdjustmentCandidatesData> {
+    return taxFilingListAdjustmentCandidates(
+      input,
+      this.getTaxpayerFacts(input.workspaceId),
+      Array.from(this.store.transactions.values()),
+      this.getWithholdingRecords(input.workspaceId),
+    );
+  }
+
   private detectFilingPath(input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData> {
+    const missingFacts = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items;
     const result = taxProfileDetectFilingPath(
       input,
       Array.from(this.store.transactions.values()),
       this.listReviewItems(input.workspaceId),
       this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
+      this.getTaxpayerFacts(input.workspaceId),
     );
     this.syncWorkspaceSnapshot(input.workspaceId);
-    return result;
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        missingFactDetails: missingFacts,
+      },
+    };
+  }
+
+  private upsertFacts(input: UpsertTaxpayerFactsInput): MCPResponseEnvelope<UpsertTaxpayerFactsData> {
+    const existing = new Map(this.getTaxpayerFacts(input.workspaceId).map((fact) => [fact.factKey, fact] as const));
+    const now = new Date().toISOString();
+    const updatedFacts = input.facts.map((fact) => ({
+      ...existing.get(fact.factKey),
+      factId: existing.get(fact.factKey)?.factId ?? `fact_${input.workspaceId}_${fact.factKey}`,
+      workspaceId: input.workspaceId,
+      category: fact.category,
+      factKey: fact.factKey,
+      value: fact.value,
+      status: fact.status,
+      sourceOfTruth: fact.sourceOfTruth,
+      confidence: fact.confidence,
+      evidenceRefs: fact.evidenceRefs,
+      note: fact.note,
+      provenance: fact.provenance,
+      updatedAt: now,
+    }));
+    const merged = new Map(existing);
+    for (const fact of updatedFacts) merged.set(fact.factKey, fact);
+    this.store.taxpayerFactsByWorkspace.set(input.workspaceId, Array.from(merged.values()));
+
+    const missingFactSummary = taxListMissingFacts(input.workspaceId, Array.from(merged.values())).data.items;
+    this.store.coverageGapsByWorkspace.set(
+      input.workspaceId,
+      reconcileFactCoverageGaps(input.workspaceId, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [], missingFactSummary),
+    );
+    syncFactReviewItems(this.store.reviewItems, input.workspaceId, missingFactSummary);
+    this.syncWorkspaceSnapshot(input.workspaceId);
+
+    return {
+      ok: true,
+      status: 'completed',
+      data: { updatedFacts, missingFactSummary },
+      nextRecommendedAction: missingFactSummary.length > 0 ? 'tax.profile.list_missing_facts' : 'tax.profile.detect_filing_path',
+      audit: { eventType: 'taxpayer_facts_upserted', eventId: `evt_taxpayer_facts_upserted_${input.workspaceId}` },
+    };
+  }
+
+  private listMissingFacts(input: ListMissingFactsInput): MCPResponseEnvelope<ListMissingFactsData> {
+    const result = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId));
+    return {
+      ...result,
+      blockingReason: result.data.items.some((item) => item.priority === 'high') ? 'insufficient_metadata' : result.blockingReason,
+      nextRecommendedAction: result.data.items.length > 0 ? 'tax.profile.upsert_facts' : 'tax.profile.detect_filing_path',
+    };
   }
 
   private runClassification(input: RunClassificationInput): MCPResponseEnvelope<RunClassificationData> {
@@ -1441,7 +1652,10 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
       this.getFilingFieldValues(input.workspaceId),
     );
-    this.store.draftsByWorkspace.set(input.workspaceId, result.data);
+    this.store.draftsByWorkspace.set(input.workspaceId, {
+      ...result.data,
+      factCompleteness: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items,
+    });
     this.store.taxpayerFactsByWorkspace.set(input.workspaceId, result.data.taxpayerFacts ?? this.getTaxpayerFacts(input.workspaceId));
     this.store.withholdingRecordsByWorkspace.set(input.workspaceId, result.data.withholdingRecords ?? this.getWithholdingRecords(input.workspaceId));
     this.setFieldValuesForWorkspace(input.workspaceId, result.data.fieldValues ?? []);
@@ -1546,6 +1760,45 @@ export class InMemoryKoreanTaxMCPRuntime {
         filingPathKind: draft?.filingPathKind ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown'),
       },
     );
+    const adjustmentCandidates = taxFilingListAdjustmentCandidates(
+      { workspaceId: input.workspaceId },
+      this.getTaxpayerFacts(input.workspaceId),
+      Array.from(this.store.transactions.values()),
+      this.getWithholdingRecords(input.workspaceId),
+    ).data.items;
+    result.data.adjustmentCandidates = adjustmentCandidates;
+    if (adjustmentCandidates.some((item) => item.eligibilityState !== 'supported' || item.reviewRequired)) {
+      result.data.handoff.manualVerificationChecklist.push('공제/세액공제/조정 candidate 중 수기 확인 또는 판단이 필요한 항목을 확인');
+      result.data.handoff.blockingItems = Array.from(new Set([
+        ...result.data.handoff.blockingItems,
+        'adjustment_manual_confirmation_required',
+      ]));
+      result.data.orderedSections.push({
+        order: result.data.orderedSections.length + 1,
+        sectionKey: 'filing_adjustments',
+        checkpointType: 'review_judgment',
+        fieldRefs: adjustmentCandidates.map((item) => `adjustment.${item.adjustmentType}`),
+        mappedFields: adjustmentCandidates.map((item) => ({
+          fieldKey: item.adjustmentType,
+          fieldRef: `adjustment.${item.adjustmentType}`,
+          value: item.amountCandidate ?? item.eligibilityState,
+          comparisonState: 'not_compared',
+          sourceOfTruth: 'inferred',
+          requiresManualEntry: item.eligibilityState !== 'supported',
+          blocked: item.reviewRequired || item.eligibilityState !== 'supported',
+          comparisonNeeded: false,
+          sourceProvenanceRefs: item.requiredEvidenceRefs,
+          mismatchState: item.reviewRequired ? 'review_required' : 'matched',
+          reviewStatus: item.reviewRequired ? 'open' : 'none',
+          entryInstruction: item.eligibilityState === 'supported' ? '공제/세액공제 적용 여부 및 금액을 수기 확인' : '수기 판단 또는 수기 입력 필요',
+        })),
+        manualOnlyFields: adjustmentCandidates.filter((item) => item.eligibilityState !== 'supported').map((item) => `adjustment.${item.adjustmentType}`),
+        blockedFields: adjustmentCandidates.filter((item) => item.reviewRequired || item.eligibilityState !== 'supported').map((item) => `adjustment.${item.adjustmentType}`),
+        comparisonNeededFields: [],
+        mismatchFields: [],
+        blockingItems: ['adjustment_manual_confirmation_required'],
+      });
+    }
     if (draft) {
       this.store.draftsByWorkspace.set(input.workspaceId, {
         ...draft,
@@ -1559,10 +1812,134 @@ export class InMemoryKoreanTaxMCPRuntime {
     return result;
   }
 
+  private exportPackage(input: ExportPackageInput): MCPResponseEnvelope<ExportPackageData> {
+    const workspace = this.getWorkspace(input.workspaceId);
+    const draft = this.getDraft(input.workspaceId);
+    const draftId = input.draftId ?? draft?.draftId ?? workspace?.currentDraftId;
+    const now = new Date().toISOString();
+    const exportBatchId = `export_${input.workspaceId}_${Date.now()}`;
+    const summary = this.invoke('tax.filing.get_summary', { workspaceId: input.workspaceId, draftId, detailLevel: 'standard' }).data;
+    const reviewItems = this.listReviewItems(input.workspaceId);
+    const evidenceDocuments = Array.from(this.store.evidenceDocuments.values()).filter((doc) => doc.workspaceId === input.workspaceId);
+    const sourceArtifacts = Array.from(this.store.sourceArtifacts.values()).filter((artifact) => artifact.workspaceId === input.workspaceId);
+    const checklistPreview = [
+      `final_approval=${workspace?.submissionApproval ? 'recorded' : 'missing'}`,
+      `material_mismatch=${draft?.stopReasonCodes?.includes('severe_mismatch') ? 'present' : 'none'}`,
+      `missing_coverage=${(workspace?.openCoverageGapCount ?? 0) > 0 ? 'present' : 'none'}`,
+      `receipt_confirmation=${workspace?.submissionResult?.receiptNumber || (workspace?.submissionResult?.receiptArtifactRefs?.length ?? 0) > 0 ? 'recorded' : 'pending'}`,
+    ];
+    const unresolvedBlockers = summary.stopReasonCodes ?? draft?.stopReasonCodes ?? [];
+    const artifacts: SourceArtifact[] = [];
+    const pushArtifact = (suffix: string, artifactType: SourceArtifact['artifactType'], payload: Record<string, unknown>) => {
+      const artifact: SourceArtifact = {
+        artifactId: `${exportBatchId}_${suffix}`,
+        workspaceId: input.workspaceId,
+        sourceId: `source_export_${input.workspaceId}`,
+        artifactType,
+        ingestedAt: now,
+        parseStatus: 'parsed',
+        parseState: 'parsed',
+        contentRef: `snapshot://exports/${exportBatchId}/${suffix}`,
+        provenance: {
+          exportTool: 'tax.filing.export_package',
+          exportBatchId,
+          readOnly: true,
+          payload,
+        },
+      };
+      this.store.sourceArtifacts.set(artifact.artifactId, artifact);
+      artifacts.push(artifact);
+    };
+
+    if (input.formats.includes('json_package')) {
+      pushArtifact('json_package', 'json', {
+        workspace,
+        draft,
+        summary,
+        reviewItems,
+        unresolvedBlockers,
+      });
+    }
+    if (input.formats.includes('csv_review_report')) {
+      pushArtifact('csv_review_report', 'csv', {
+        rows: reviewItems.map((item) => ({ reviewItemId: item.reviewItemId, severity: item.severity, reasonCode: item.reasonCode, status: item.resolutionState })),
+        unresolvedBlockers,
+      });
+    }
+    if (input.formats.includes('evidence_index')) {
+      pushArtifact('evidence_index', 'json', {
+        sources: this.listSources(input.workspaceId).map((source) => ({ sourceId: source.sourceId, sourceType: source.sourceType, state: source.state })),
+        evidenceDocuments: evidenceDocuments.map((doc) => ({ documentId: doc.documentId, sourceId: doc.sourceId, documentType: doc.documentType, fileRef: doc.fileRef, linkedTransactionIds: doc.linkedTransactionIds, extractionStatus: doc.extractionStatus })),
+        sourceArtifacts: sourceArtifacts.map((artifact) => ({ artifactId: artifact.artifactId, sourceId: artifact.sourceId, artifactType: artifact.artifactType, contentRef: artifact.contentRef, provenance: artifact.provenance })),
+        reviewItems: reviewItems.map((item) => ({ reviewItemId: item.reviewItemId, status: item.resolutionState, severity: item.severity })),
+      });
+    }
+    if (input.formats.includes('submission_prep_checklist')) {
+      pushArtifact('submission_prep_checklist', 'json', {
+        checklist: checklistPreview,
+        unresolvedBlockers,
+        submissionApproval: workspace?.submissionApproval,
+        submissionResult: workspace?.submissionResult,
+      });
+    }
+    if (input.formats.includes('submission_receipt_bundle') && workspace?.submissionResult) {
+      pushArtifact('submission_receipt_bundle', 'json', {
+        submissionResult: workspace.submissionResult,
+        receiptArtifactRefs: workspace.submissionResult.receiptArtifactRefs,
+      });
+    }
+
+    this.appendAuditEvent(input.workspaceId, { eventType: 'draft_computed', eventId: `evt_export_package_${exportBatchId}` }, { exportBatchId, formats: input.formats, artifactIds: artifacts.map((a) => a.artifactId) });
+    return {
+      ok: true,
+      status: 'completed',
+      data: {
+        workspaceId: input.workspaceId,
+        draftId,
+        exportBatchId,
+        artifacts,
+        includedFormats: input.formats.filter((format) => format !== 'submission_receipt_bundle' || Boolean(workspace?.submissionResult)),
+        unresolvedBlockers,
+        checklistPreview,
+      },
+      nextRecommendedAction: unresolvedBlockers.length > 0 ? 'tax.workspace.get_status' : 'tax.filing.get_summary',
+    };
+  }
+
+  private recordSubmissionApproval(input: RecordSubmissionApprovalInput): MCPResponseEnvelope<RecordSubmissionApprovalData> {
+    const approval: SubmissionApprovalRecord = {
+      approvalId: `submission_approval_${input.workspaceId}_${input.draftId}`,
+      workspaceId: input.workspaceId,
+      draftId: input.draftId,
+      approvedBy: input.approvedBy,
+      approvedAt: input.approvedAt ?? new Date().toISOString(),
+      note: input.note,
+    };
+    const workspace = this.store.workspaces.get(input.workspaceId);
+    if (workspace) {
+      workspace.submissionApproval = approval;
+      workspace.status = 'awaiting_final_approval';
+      this.store.workspaces.set(input.workspaceId, workspace);
+    }
+    const session = this.getBrowserAssistSession(input.workspaceId);
+    if (session) {
+      session.submissionState = 'awaiting_final_approval';
+      this.store.assistSessionsByWorkspace.set(input.workspaceId, session);
+    }
+    this.appendAuditEvent(input.workspaceId, { eventType: 'submission_approval_recorded', eventId: `evt_submission_approval_${input.workspaceId}` }, { draftId: input.draftId, approvedBy: input.approvedBy });
+    return { ok: true, status: 'completed', data: { approval }, nextRecommendedAction: 'tax.browser.record_submission_result' };
+  }
+
   private startHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {
     const result = taxBrowserStartHomeTaxAssist(input);
     const prepared = this.prepareHomeTax({ workspaceId: input.workspaceId, draftId: input.draftId });
     result.data.handoff = prepared.data.handoff;
+    result.data.entryPlan = prepared.data.handoff;
+    result.data.submissionState = this.store.workspaces.get(input.workspaceId)?.submissionResult
+      ? this.store.workspaces.get(input.workspaceId)?.status as StartHomeTaxAssistData['submissionState']
+      : this.store.workspaces.get(input.workspaceId)?.submissionApproval
+        ? 'awaiting_final_approval'
+        : undefined;
     const browserAssistSession: BrowserAssistSession = {
       assistSessionId: result.data.assistSessionId,
       workspaceId: input.workspaceId,
@@ -1596,6 +1973,59 @@ export class InMemoryKoreanTaxMCPRuntime {
       status: 'submission_in_progress',
     });
     return result;
+  }
+
+  private recordSubmissionResult(input: RecordSubmissionResultInput): MCPResponseEnvelope<RecordSubmissionResultData> {
+    const workspace = this.store.workspaces.get(input.workspaceId);
+    if (!workspace?.submissionApproval || workspace.submissionApproval.draftId !== input.draftId) {
+      return {
+        ok: false,
+        status: 'blocked',
+        blockingReason: 'awaiting_final_approval',
+        data: { submissionResult: {
+          submissionResultId: `submission_result_${input.workspaceId}_${input.draftId}`,
+          workspaceId: input.workspaceId,
+          draftId: input.draftId,
+          result: 'unknown',
+          portalObservedAt: input.portalObservedAt ?? new Date().toISOString(),
+          portalSummary: 'Final approval record is missing.',
+          receiptArtifactRefs: input.receiptArtifactRefs ?? [],
+          receiptNumber: input.receiptNumber,
+          submittedAt: input.submittedAt,
+          nextSteps: ['Record final approval before submission result.'],
+          verificationRequired: true,
+        } },
+        nextRecommendedAction: 'tax.filing.record_submission_approval',
+      };
+    }
+    const submissionResult: SubmissionResultRecord = {
+      submissionResultId: `submission_result_${input.workspaceId}_${input.draftId}`,
+      workspaceId: input.workspaceId,
+      draftId: input.draftId,
+      result: input.result,
+      portalObservedAt: input.portalObservedAt ?? new Date().toISOString(),
+      portalSummary: input.portalSummary,
+      receiptArtifactRefs: input.receiptArtifactRefs ?? [],
+      receiptNumber: input.receiptNumber,
+      submittedAt: input.submittedAt,
+      nextSteps: input.nextSteps ?? (input.result === 'success' ? ['Verify receipt and archive filing artifacts.'] : input.result === 'fail' ? ['Inspect portal error and retry with review.'] : ['Verify portal state manually before claiming success.']),
+      verificationRequired: input.verificationRequired ?? input.result !== 'success',
+    };
+    workspace.submissionResult = submissionResult;
+    workspace.status = input.result === 'success' ? 'submitted' : input.result === 'fail' ? 'submission_failed' : 'submission_uncertain';
+    this.store.workspaces.set(input.workspaceId, workspace);
+    const session = this.getBrowserAssistSession(input.workspaceId);
+    if (session) {
+      session.submissionState = workspace.status as BrowserAssistSession['submissionState'];
+      this.store.assistSessionsByWorkspace.set(input.workspaceId, session);
+    }
+    this.appendAuditEvent(input.workspaceId, { eventType: 'submission_result_recorded', eventId: `evt_submission_result_${input.workspaceId}` }, { draftId: input.draftId, result: input.result, receiptNumber: input.receiptNumber, receiptArtifactRefs: submissionResult.receiptArtifactRefs });
+    return {
+      ok: true,
+      status: 'completed',
+      data: { submissionResult },
+      nextRecommendedAction: submissionResult.verificationRequired ? 'tax.browser.get_checkpoint' : 'tax.workspace.get_status',
+    };
   }
 
   private resumeHomeTaxAssist(input: ResumeHomeTaxAssistInput): MCPResponseEnvelope<ResumeHomeTaxAssistData> {
@@ -1672,10 +2102,12 @@ export class InMemoryKoreanTaxMCPRuntime {
     }
 
     const stopped = Boolean(session.endedAt);
+    const workspace = this.store.workspaces.get(session.workspaceId);
     return {
       ok: true,
       status: stopped ? 'blocked' : (session.authState === 'completed' ? 'in_progress' : 'awaiting_auth'),
-      data: buildBrowserAssistCheckpointSnapshot({
+      data: {
+        ...buildBrowserAssistCheckpointSnapshot({
         assistSessionId: session.assistSessionId,
         workspaceId: session.workspaceId,
         draftId: session.draftId,
@@ -1696,6 +2128,9 @@ export class InMemoryKoreanTaxMCPRuntime {
         endedAt: session.endedAt,
         authState: session.authState,
       }),
+        submissionApproval: workspace?.submissionApproval,
+        submissionResult: workspace?.submissionResult,
+      },
       blockingReason: stopped ? 'awaiting_final_approval' : (session.authState !== 'completed' ? 'missing_auth' : undefined),
       pendingUserAction: stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : session.pendingUserAction,
       nextRecommendedAction: stopped ? 'tax.browser.start_hometax_assist' : 'tax.browser.resume_hometax_assist',
@@ -2247,6 +2682,69 @@ function buildComparisonReviewItems(
     resolutionState: 'open',
     resolutionNote: 'Generated from HomeTax comparison mismatch.',
   }));
+}
+
+function reconcileFactCoverageGaps(workspaceId: string, existing: CoverageGap[], missingFacts: FilingFactCompleteness[]): CoverageGap[] {
+  const nonFactGaps = existing.filter((gap) => !gap.gapId.startsWith(`gap_fact_${workspaceId}_`));
+  const factGaps = missingFacts
+    .filter((item) => item.priority === 'high')
+    .map((item) => ({
+      gapId: `gap_fact_${workspaceId}_${item.factKey}`,
+      workspaceId,
+      gapType: item.blockingStage === 'draft' ? 'missing_deduction_fact' as const : 'missing_filing_path_determination' as const,
+      severity: item.materiality === 'high' ? 'high' as const : 'medium' as const,
+      description: `Missing taxpayer fact: ${item.factKey}. ${item.whyItMatters}`,
+      affectedArea: item.blockingStage,
+      affectedDomains: (item.blockingStage === 'draft' ? ['deductionFacts'] : ['filingPath']) as CoverageGap['affectedDomains'],
+      materiality: item.materiality === 'high' ? 'high' as const : 'medium' as const,
+      blocksEstimate: item.blockingStage === 'collection' || item.blockingStage === 'filing_path',
+      blocksDraft: item.blockingStage === 'draft' || item.blockingStage === 'filing_path',
+      blocksSubmission: true,
+      recommendedNextAction: 'tax.profile.upsert_facts',
+      relatedSourceIds: [],
+      state: 'open' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+  return [...nonFactGaps, ...factGaps];
+}
+
+function syncFactReviewItems(reviewItems: Map<string, ReviewItem>, workspaceId: string, missingFacts: FilingFactCompleteness[]): void {
+  for (const item of missingFacts.filter((fact) => fact.priority === 'high')) {
+    const reviewItemId = `review_fact_${workspaceId}_${item.factKey}`;
+    reviewItems.set(reviewItemId, {
+      reviewItemId,
+      workspaceId,
+      reasonCode: 'missing_information',
+      severity: item.materiality === 'high' ? 'high' : 'medium',
+      question: item.bestQuestion,
+      candidateOptions: ['answered', 'not_applicable', 'needs_review'],
+      linkedEntityIds: [item.factKey],
+      resolutionState: 'open',
+      resolutionNote: item.whyItMatters,
+    });
+  }
+}
+
+function deriveOperatorTrustState(params: {
+  draft?: ComputeDraftData;
+  workspace?: FilingWorkspace;
+  reviewItems?: ReviewItem[];
+}) {
+  const stopReasonCodes = [
+    ...(params.draft?.stopReasonCodes ?? []),
+    ...((params.draft?.submissionReadiness !== 'submission_assist_ready' && params.draft?.submissionReadiness) ? [params.draft.submissionReadiness] : []),
+  ].filter((value, index, array) => array.indexOf(value) === index);
+  const escalationReason = params.draft?.escalationReason
+    ?? (params.workspace?.status === 'submission_uncertain' ? 'Submission result is ambiguous and requires verification.' : undefined);
+  const operatorExplanation = stopReasonCodes.length > 0
+    ? `현재 진행이 막히거나 낮춰진 이유: ${stopReasonCodes.join(', ')}.`
+    : params.workspace?.status === 'submitted'
+      ? '제출 결과가 기록되었고 추가 stop reason은 없습니다.'
+      : '현재 명시적 stop reason은 없습니다.';
+  const reviewBatchId = params.draft?.reviewBatchId
+    ?? ((params.reviewItems?.length ?? 0) > 0 ? `review_batch_${params.workspace?.workspaceId ?? 'workspace'}_${params.reviewItems?.length ?? 0}` : undefined);
+  return { stopReasonCodes, escalationReason, operatorExplanation, reviewBatchId };
 }
 
 function getDraftHomeTaxPreparation(draft?: ComputeDraftData): PrepareHomeTaxData | undefined {
