@@ -1940,12 +1940,42 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private startHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {
-    const result = taxBrowserStartHomeTaxAssist(input);
     const prepared = this.prepareHomeTax({ workspaceId: input.workspaceId, draftId: input.draftId });
+    const draft = this.getDraft(input.workspaceId);
+    const submissionReadiness = prepared.readiness?.submissionReadiness ?? draft?.submissionReadiness;
+
+    if (!prepared.ok || submissionReadiness !== 'submission_assist_ready') {
+      return {
+        ok: false,
+        status: 'blocked',
+        blockingReason: prepared.blockingReason ?? 'submission_not_ready',
+        pendingUserAction: prepared.pendingUserAction ?? 'HomeTax assist can start only after submission-assist-ready state is reached.',
+        nextRecommendedAction: prepared.nextRecommendedAction ?? 'tax.filing.prepare_hometax',
+        data: {
+          assistSessionId: `assist_${input.workspaceId}_${input.draftId}`,
+          checkpointType: prepared.checkpointType ?? 'review_judgment',
+          checkpointKey: prepared.data.handoff?.orderedSections[0]?.checkpointKey,
+          screenKey: prepared.data.handoff?.orderedSections[0]?.screenKey,
+          authRequired: false,
+          handoff: prepared.data.handoff,
+          entryPlan: prepared.data.handoff,
+          submissionState: this.store.workspaces.get(input.workspaceId)?.submissionResult
+            ? this.store.workspaces.get(input.workspaceId)?.status as StartHomeTaxAssistData['submissionState']
+            : this.store.workspaces.get(input.workspaceId)?.submissionApproval
+              ? 'awaiting_final_approval'
+              : undefined,
+          allowedNextActions: prepared.data.handoff?.allowedNextActions,
+          resumePreconditions: prepared.data.handoff?.resumePreconditions,
+          retryPolicy: prepared.data.handoff?.retryPolicy,
+        },
+      };
+    }
+
+    const result = taxBrowserStartHomeTaxAssist(input);
     result.data.handoff = prepared.data.handoff;
     result.data.entryPlan = prepared.data.handoff;
     const assistContract = deriveAssistCheckpointContract({
-      draft: this.getDraft(input.workspaceId),
+      draft,
       prepared: prepared.data,
       reviewItems: this.listReviewItems(input.workspaceId),
     });
@@ -1967,7 +1997,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       checkpointType: result.data.checkpointType,
       checkpointKey: result.data.checkpointKey,
       screenKey: result.data.screenKey,
-      draftVersion: this.getDraft(input.workspaceId)?.draftVersion,
+      draftVersion: draft?.draftVersion,
       authState: result.requiresAuth ? 'pending' : 'completed',
       pendingUserAction: result.pendingUserAction,
       handoff: prepared.data.handoff,

@@ -56,9 +56,10 @@ Expected outputs:
 - comparison readiness / freshness note
 
 ### Phase 2. Session start
-1. Browser assist opens HomeTax flow.
-2. System creates an assist session id.
-3. Agent explains the next expected checkpoint.
+1. Browser assist opens HomeTax flow only after `prepare_hometax` confirms `submission_assist_ready`.
+2. If `prepare_hometax` is blocked or readiness is below `submission_assist_ready`, the system must hard-fail start and must not create an assist session or auth checkpoint.
+3. Only the success path creates an assist session id.
+4. Agent explains the next expected checkpoint.
 
 Expected outputs:
 - assist session id

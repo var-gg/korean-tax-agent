@@ -65,7 +65,8 @@ Canonical high-level sequence:
 12. `tax.filing.refresh_official_data`
 13. `tax.filing.compare_with_hometax`
 14. `tax.filing.prepare_hometax`
-15. `tax.browser.start_hometax_assist`
+15. `tax.browser.start_hometax_assist`  
+   - only valid when `prepare_hometax` is ok and submission readiness is `submission_assist_ready`
 16. `tax.browser.resume_hometax_assist`
 17. `tax.filing.record_submission_approval`
 18. external browser agent performs final click

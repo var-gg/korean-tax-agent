@@ -296,5 +296,10 @@ describe('supported-path acceptance suite', () => {
     const prepare = runtime.invoke('tax.filing.prepare_hometax', { workspaceId, draftId: draft.data.draftId });
     expect(prepare.ok).toBe(false);
     expect(prepare.blockingReason).toBeTruthy();
+
+    const start = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId, draftId: draft.data.draftId });
+    expect(start.ok).toBe(false);
+    expect(start.blockingReason).toBe(prepare.blockingReason);
+    expect(runtime.getBrowserAssistSession(workspaceId)).toBeUndefined();
   });
 });
