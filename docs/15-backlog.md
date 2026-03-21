@@ -1,40 +1,38 @@
 # Backlog
 
+- Status: active
+- Canonical: English
+- Parent: [README.md](../README.md)
+
+## Purpose
+This backlog tracks **remaining product and operational work** after the current MCP/runtime surface landed.
+It should not repeat already-implemented runtime/facade exposure work.
+
 ## Product
-- define supported taxpayer profiles for v1 more precisely
-- define minimum filing success criteria
-- define explicit stop conditions before submission
-- define readiness downgrade rules after refresh or new evidence
-- define support-tier examples for Tier A / B / C paths
+- tighten Tier A / Tier B / Tier C supported-path examples with concrete taxpayer scenarios
+- define operator-facing acceptance criteria for "99% assisted filing success" measurement
+- add release-ready disclaimer / operator guidance language for public packaging
 
-## State and contracts
-- define filing-path detection contract
-- define readiness-level fields across workspace, draft, and assist session
-- define HomeTax comparison-state payloads
-- define official-data refresh / diff / recompute flow
+## Operational trust and review
+- refine review batching so high-materiality items split cleanly while low-impact items stay grouped
+- improve duplicate-group explanation UX for operators and external AI agents beyond the current deterministic duplicateGroup/link rules
+- define operator playbooks for ambiguous submission results and receipt-verification follow-up
 
-## Connectors
-- evaluate HomeTax data import options
-- evaluate CSV-first bank/card strategy
-- evaluate email receipt ingestion patterns
+## Collection and evidence operations
+- improve source-priority heuristics for mixed-income edge cases
+- standardize evidence-index conventions for long-running workspaces with many imports
+- tighten stale-official-data handling for refresh / recompute / compare loops
 
-## Core logic
-- draft canonical schema in code
-- define confidence scoring for classification
-- define duplicate detection strategy
+## Browser assist and handoff
+- map more HomeTax screen variants and page-state transitions for assist checkpoints
+- improve restart/recovery guidance for interrupted browser-assist sessions
+- document assist-session handoff examples for more host runtimes
 
-## Browser assist
-- map HomeTax screens and checkpoints
-- define retry and pause behavior
-- define mismatch reporting format
+## Exports and audit
+- add richer operator examples for export-package consumption across review / audit / handoff scenarios
+- define retention guidance for snapshot-friendly export artifacts and receipt bundles
 
 ## Open questions
-- how much of deduction handling belongs in v1
-- what distribution/setup path is simplest for agent users
-- what legal/disclaimer language should ship in repo docs
-
-## MCP boundary / contract alignment
-- close runtime/facade exposure gap for `tax.sources.plan_collection`
-- decide whether `tax.setup.inspect_environment` and `tax.setup.init_config` should be implemented now or temporarily removed from exported contracts
-- add an implemented-tool matrix check across docs, contracts, and runtime/facade
-- keep import contracts ref-based and extraction-result-based rather than path-based or OCR-execution-based
+- what is the smallest operator-facing packaging/distribution path for real pilot use
+- which supported-path examples should become canonical demo fixtures
+- how much post-submission follow-up guidance belongs in MCP docs versus host/runtime docs

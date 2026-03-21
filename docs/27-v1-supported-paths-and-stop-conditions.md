@@ -45,6 +45,27 @@ V1 should not optimize for:
 - silently forcing unsupported cases through the workflow,
 - or masking domain uncertainty behind generic automation.
 
+## Acceptance-suite success / stop criteria
+The supported-path acceptance suite should prove that current surfaces are usable end to end.
+
+Success means:
+- the workflow can move through init_config → plan_collection → import/normalize → facts → review → draft → refresh → compare → prepare → assist → approval/result → export
+- `nextRecommendedAction` stays meaningful at each major step
+- readiness can be observed moving through `estimate_ready` → `draft_ready` → `submission_assist_ready`
+- user intervention stays limited to login / consent / judgment / targeted fact answer
+- export_package includes blockers, checklist, and receipt information when available
+
+Stop means:
+- Tier C or unsupported/manual-heavy conditions still block submission-assist progression
+- unresolved material mismatch, unresolved duplicate, conflicting withholding, or unsupported adjustment blocks submission-assist-ready progression
+- approval/result boundaries are respected and ambiguous portal states do not claim success
+
+Trust-policy reminders:
+- low-confidence classification must generate review work and readiness downgrade
+- duplicate detection should be deterministic across repeated imports, not heuristic guesswork hidden from the operator
+- operator-facing summaries should explain blockers in plain language while also returning machine-readable stopReasonCodes
+- assumptions used in drafting must be disclosed explicitly
+
 ## Support tier definitions
 
 ### Tier A — supported assisted paths

@@ -3,294 +3,145 @@
 - Status: active
 - Canonical: English
 - Korean companion: [26-domain-model-gap-analysis.ko.md](./26-domain-model-gap-analysis.ko.md)
-- Parent: [README.md](./README.md)
+- Parent: [README.md](../README.md)
 - Related:
-  - [25-korean-comprehensive-income-tax-data-research.md](./25-korean-comprehensive-income-tax-data-research.md)
-  - [22-core-type-gap-analysis.md](./22-core-type-gap-analysis.md)
-  - [24-workflow-state-machine.md](./24-workflow-state-machine.md)
-  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
-- Next recommended reading:
-  - [20-workspace-state-model.md](./20-workspace-state-model.md)
   - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
-
+  - [20-workspace-state-model.md](./20-workspace-state-model.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
+  - [39-agent-operator-quickstart.md](./39-agent-operator-quickstart.md)
 
 ## Objective
-Translate the domain research in `25-korean-comprehensive-income-tax-data-research.md` into concrete product and implementation gaps.
+This document no longer tracks already-landed domain entities as gaps.
+Instead, it records the **remaining operational risks** now that the repo already has first-class support for:
+- taxpayer facts
+- withholding / prepaid-tax records
+- filing adjustment candidates
+- filing field values / section-level output
+- submission approval / result / receipt capture
+- export-package artifacts
 
-This document answers a narrower question than the broader architecture docs:
-**what is still missing in the current code and contracts if the system is to support real Korean comprehensive income tax preparation inputs rather than only workflow skeleton behavior?**
+## Current implementation baseline
+The current codebase already models and exposes:
+- targeted taxpayer fact capture and missing-fact planning
+- explicit withholding records with provenance and review state
+- adjustment candidates with supported / manual_only / out_of_scope posture
+- field-level filing draft values and section-level HomeTax handoff output
+- comparison-state and mismatch severity on filing fields
+- submission approval records, submission results, and receipt refs
+- read-only export packages for audit / handoff / review
 
-## Current state
-The repository already has meaningful support for:
-- workflow checkpoints
-- source connection and resumable sync flow
-- transaction classification
-- review queue generation
-- draft generation
-- HomeTax-assist preparation state
-- explicit readiness vocabulary across estimate-ready, draft-ready, and submission-assist-ready
+That means those areas should not be described as "missing domain model" anymore.
 
-This is good progress.
+## Remaining operational-risk summary
+The biggest remaining risks are now less about missing nouns and more about:
+- maintaining honest transitions across **estimate-ready**, **draft-ready**, and **submission-assist-ready** states
+- calibration quality
+- operator load management
+- source/evidence scale
+- recovery behavior under ambiguous portal conditions
+- host-runtime consistency for browser assist
 
-However, the current implementation still leans heavily toward a generic pipeline of:
-- transactions
-- decisions
-- review items
-- draft summaries
-
-That is not yet enough for a trustworthy real-world tax-preparation product.
-
-## Main gap summary
-The biggest missing layer is not routing or transport anymore.
-It is **domain-specific filing inputs**.
-
-In practice, the current model under-represents:
-- taxpayer filing posture facts
-- withholding/prepaid tax as a first-class domain
-- deduction/credit eligibility facts
-- estimate confidence and provenance
-- section-level filing outputs that can be compared against HomeTax
-
-## Gap 1. Taxpayer facts are too thin
+## Risk 1. Confidence calibration is still heuristic-heavy
 Current state:
-- `TaxpayerProfile` exists
-- it contains useful top-level identity and hint fields
+- confidenceScore, duplicateRisk, materiality, mismatchSeverity, and stopReasonCodes exist
+- low-confidence classification and severe mismatch can already downgrade or stop readiness
 
-Why this is not enough:
-Real filing readiness depends on facts such as:
-- whether the user has salary + side income
-- whether business-use expense claims are expected
-- whether certain deduction/credit categories even apply
-- whether the filing path should be treated as freelancer-like, sole-proprietor-like, or mixed-income-like
+Remaining risk:
+- confidence and escalation behavior still depend on heuristic thresholds rather than fully validated production calibration
+- supported-path accuracy needs real operator feedback loops to tune stop/downgrade decisions
 
 Recommendation:
-Introduce a clearer taxpayer-facts layer, either as:
-- a stronger `TaxpayerProfile`, or
-- a related `TaxpayerFact` / `FilingFact` model
-
-Minimum additions to model somewhere:
-- filing posture / support tier
-- income stream checklist
-- deduction eligibility fact checklist
-- business-use explanations for ambiguous items
-- fact completeness status
-
-Priority:
-- **very high**
-
-## Gap 2. Withholding / prepaid tax is not first-class enough
-Current state:
-- the system can carry transactions and documents
-- draft computation can summarize outputs
-
-Why this is not enough:
-Refund or tax-due estimation is highly sensitive to already withheld or prepaid amounts.
-These values should not depend on generic ledger interpretation alone.
-
-Recommendation:
-Add explicit modeling for withholding/prepaid tax records.
-Possible shapes:
-- a dedicated entity such as `WithholdingRecord`
-- or a typed extension of document/extracted-value structures with first-class semantics
-
-Minimum needed fields:
-- workspaceId
-- incomeSourceRef or payer/issuer clue
-- filingYear
-- grossAmount if available
-- withheldTaxAmount
-- localTaxAmount if applicable
-- evidenceRefs
-- sourceType / provenance
-- extractionConfidence
-- reviewStatus
-
-Priority:
-- **critical**
-
-## Gap 3. Deduction and credit support is under-modeled
-Current state:
-- deductions are represented only indirectly in draft summaries and generic metadata hints
-
-Why this matters:
-Many filing-relevant items do not arise naturally from transactions alone.
-The system needs a place to track:
-- whether a deduction/credit category was considered
-- whether required taxpayer facts are present
-- whether supporting evidence exists
-- whether the category is supported, unsupported, or deferred in v1
-
-Recommendation:
-Add a domain model such as `DeductionFact`, `CreditFact`, or a unified `FilingAdjustmentCandidate`.
-
-Minimum fields:
-- workspaceId
-- adjustmentType
-- eligibilityState
-- requiredFactKeys[]
-- providedFactKeys[]
-- requiredEvidenceRefs[]
-- amountCandidate
-- confidence
-- reviewRequired
-- supportTier (`supported`, `manual_only`, `out_of_scope`)
+- validate thresholds with replay fixtures and pilot operator feedback
+- add scenario-level calibration examples for Tier A / B / C boundaries
 
 Priority:
 - **high**
 
-## Gap 4. Draft outputs are summaries, but not yet comparison-ready filing outputs
+## Risk 2. Duplicate handling is modeled, but operator ergonomics can improve
 Current state:
-- `ComputeDraftData` contains summary objects
-- `PrepareHomeTaxData` contains placeholder section mapping
+- duplicate candidate risk is surfaced
+- duplicate-related review paths already exist
 
-Why this is not enough:
-Before HomeTax assistance becomes trustworthy, the system should be able to show:
-- which computed values belong to which filing section
-- which fields were auto-derived versus manual-only
-- which values depend on assumptions
-- what mismatches appear when compared to visible HomeTax values
+Remaining risk:
+- large workspaces can still produce too many duplicate-oriented review moments
+- duplicate grouping/explanation quality matters for operator trust and user question count
 
 Recommendation:
-Add a more explicit filing-output model.
-Possible entity:
-- `DraftFieldValue`
-- `FilingSectionValue`
-
-Minimum fields:
-- draftId
-- fieldKey / sectionKey
-- value
-- sourceRefs[]
-- evidenceRefs[]
-- confidence
-- isEstimated
-- requiresManualEntry
-- portalComparisonState
-- portalObservedValue
-- mismatchSeverity
-
-Priority:
-- **very high**
-
-## Gap 5. Provenance is present in fragments but not consistently exposed
-Current state:
-- some entities already carry provenance-like references and evidence links
-
-Why this matters:
-A tax workflow product must answer "why do you think this number is right?"
-without forcing users to reverse-engineer the pipeline.
-
-Recommendation:
-Normalize provenance and confidence across draft-significant entities.
-
-The implementation should converge on a reusable pattern such as:
-- `sourceOfTruthType = official | imported | inferred | user_asserted`
-- `confidenceScore`
-- `materiality`
-- `evidenceRefs[]`
-- `reviewStatus`
+- strengthen duplicate-group rendering in summaries, exports, and review batches
+- document operator decision patterns for duplicate-heavy imports
 
 Priority:
 - **high**
 
-## Gap 6. Coverage gaps need domain-aware categories
+## Risk 3. Review batching needs more production-grade tuning
 Current state:
-- `CoverageGap` exists in core types
-- runtime currently stores only lightweight gap descriptions
+- reviewBatchId exists and hardening metadata can guide batching
 
-Why this is not enough:
-A filing workflow must distinguish between:
-- missing income evidence
-- missing withholding records
-- missing expense evidence
-- missing deduction facts
-- missing HomeTax comparison state
+Remaining risk:
+- batching policy is still basic
+- the system should better separate high-materiality questions from low-impact grouped questions
 
 Recommendation:
-Refine coverage gaps into domain-aware categories.
-
-Examples:
-- `missing_income_source`
-- `missing_withholding_record`
-- `missing_expense_evidence`
-- `missing_deduction_fact`
-- `missing_submission_comparison`
+- refine batch construction rules
+- add explicit examples for grouped vs isolated review prompts
 
 Priority:
 - **high**
 
-## Gap 7. Runtime does not yet model estimate confidence separately from submission readiness
+## Risk 4. Evidence operations need stronger scale conventions
 Current state:
-- runtime can block on review and move toward HomeTax assist readiness
+- evidence linking, evidence index export, provenance refs, and review state are present
 
-Why this matters:
-The product needs to tell the truth at three distinct moments:
-- rough estimate
-- filing draft
-- HomeTax-assist-ready draft
+Remaining risk:
+- large workspaces can accumulate many artifacts/documents quickly
+- operator review becomes harder if evidence naming/indexing conventions drift across imports and exports
 
 Recommendation:
-Represent readiness by level rather than a single broad draft notion.
-
-Suggested states or fields:
-- `estimateReadiness`
-- `draftReadiness`
-- `submissionReadiness`
-- `confidenceBand`
-- `majorUnknowns[]`
+- standardize evidence-index conventions and artifact naming guidance
+- document retention / archive expectations for export-package outputs
 
 Priority:
 - **medium-high**
 
-## Product-boundary implication
-These domain gaps are not only implementation details.
-They directly determine whether a filing path belongs in Tier A, Tier B, or Tier C support,
-and whether the product can honestly claim estimate readiness, draft readiness, or submission-assist readiness.
+## Risk 5. Ambiguous portal outcomes still need more recovery examples
+Current state:
+- submission_result supports success / fail / unknown
+- false success is blocked
+- receipt refs and verificationRequired are stored
 
-See also: [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md).
+Remaining risk:
+- operators and external AI agents still need clearer examples for ambiguous portal states, partial receipts, and post-submit verification loops
 
-## Contract-level implications
-The MCP contract surface will likely need additional or richer tools over time.
-Not all need implementation now, but the domain direction should be explicit.
+Recommendation:
+- add scenario docs for submission_uncertain and ambiguous receipt capture
+- define operator follow-up patterns after unknown results
 
-Likely future tool needs:
-- `tax.profile.capture_facts`
-- `tax.profile.detect_filing_path`
-- `tax.withholding.import_records`
-- `tax.withholding.list_records`
-- `tax.filing.list_blockers`
-- `tax.filing.get_field_mapping`
-- `tax.filing.compare_with_hometax`
-- `tax.filing.refresh_official_data`
-- `tax.deductions.capture_facts`
+Priority:
+- **medium-high**
 
-## Short-term implementation recommendation
-Before expanding browser assist or persistence too far, the codebase should add support for at least:
-1. taxpayer filing facts
-2. withholding/prepaid tax records
-3. comparison-ready draft field mapping
-4. domain-specific coverage gap categories
+## Risk 6. Browser-assist portability remains an operational concern
+Current state:
+- MCP/browser boundary is explicit
+- start/resume/checkpoint handoff is structured
+- host-agnostic browser runtime seam exists
 
-These four additions will do more to make the system trustworthy than adding more runtime plumbing alone.
+Remaining risk:
+- different host runtimes may still vary in checkpoint handling, reconnect quality, and operator narration style
+- browser assist is only as strong as the host/runtime discipline around MCP stop conditions
 
-## Recommended sequencing
-### Step 1
-Strengthen the docs and examples around filing inputs.
+Recommendation:
+- keep host-runtime docs and examples aligned with the current MCP boundary
+- add more restart/recovery examples for assist interruption cases
 
-### Step 2
-Extend core types for:
-- taxpayer facts
-- withholding records
-- filing field values
-
-### Step 3
-Update contracts/runtime to expose those values in draft and review flows.
-
-### Step 4
-Only then deepen HomeTax assist and persistence around those richer entities.
+Priority:
+- **medium**
 
 ## Bottom line
-The architecture is no longer the main unknown.
-The next major risk is domain under-modeling.
+The repo is past the stage where taxpayer facts, withholding, adjustment candidates, or filing field values should be called domain gaps.
 
-If the repo adds first-class support for withholding, taxpayer facts, and comparison-ready filing outputs, it will be much closer to a system that can produce an honest estimate-ready state, a meaningful draft-ready state, and a safer submission-assist-ready workflow on supported paths.
+The remaining risk is operational hardening:
+- calibrate trust policy better
+- reduce review/operator load
+- improve evidence scale hygiene
+- improve ambiguous-result recovery
+- keep browser-assist integrations disciplined around the MCP boundary

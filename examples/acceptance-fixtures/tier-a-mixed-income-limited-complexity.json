@@ -1,0 +1,32 @@
+{
+  "scenarioId": "tier_a_mixed_income_limited_complexity",
+  "label": "Mixed-income but limited complexity",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "mixed_income_individual",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "mixed_income_individual", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["salary", "freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "business_use", "factKey": "business_use_explanations", "value": { "software": "used for side freelance design work" }, "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 },
+    { "category": "deduction_eligibility", "factKey": "deduction_eligibility_facts", "value": { "basic_only": true }, "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 }
+  ],
+  "transactions": [
+    { "externalId": "salary-101", "occurredAt": "2025-01-25", "amount": 4100000, "normalizedDirection": "income", "counterparty": "Day Job Co", "description": "salary january payroll", "sourceReference": "salary-101" },
+    { "externalId": "freelance-101", "occurredAt": "2025-01-29", "amount": 800000, "normalizedDirection": "income", "counterparty": "Client B", "description": "design service payment", "sourceReference": "freelance-101" },
+    { "externalId": "expense-101", "occurredAt": "2025-01-30", "amount": 90000, "normalizedDirection": "expense", "counterparty": "Software Shop", "description": "software subscription", "sourceReference": "expense-101", "evidenceDocumentRefs": ["expense-doc-101"] }
+  ],
+  "documents": [
+    { "externalId": "salary-doc-101", "documentType": "income_statement", "issuedAt": "2025-01-25", "issuer": "Day Job Co", "fileRef": "file://salary-doc-101.pdf", "linkedTransactionRefs": ["salary-101"] },
+    { "externalId": "freelance-doc-101", "documentType": "income_statement", "issuedAt": "2025-01-29", "issuer": "Client B", "fileRef": "file://freelance-doc-101.pdf", "linkedTransactionRefs": ["freelance-101"] },
+    { "externalId": "expense-doc-101", "documentType": "receipt", "issuedAt": "2025-01-30", "issuer": "Software Shop", "fileRef": "file://expense-doc-101.pdf", "linkedTransactionRefs": ["expense-101"] },
+    { "externalId": "withholding-doc-101", "documentType": "tax_certificate", "issuedAt": "2025-01-29", "issuer": "Client B", "fileRef": "file://withholding-doc-101.pdf", "linkedTransactionRefs": ["freelance-101"] }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-101", "incomeSourceRef": "freelance-101", "payerName": "Client B", "grossAmount": 800000, "withheldTaxAmount": 24000, "localTaxAmount": 2400, "evidenceDocumentRefs": ["withholding-doc-101"] }
+  ],
+  "expected": {
+    "finalStatus": "submission_in_progress",
+    "remainingBlockers": ["low_confidence_classification", "unsupported_adjustment"],
+    "operatorQuestionCount": 4
+  }
+}

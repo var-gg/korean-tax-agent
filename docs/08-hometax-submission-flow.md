@@ -78,7 +78,22 @@ Rules:
 ### Phase 4. Section navigation and field mapping
 1. The external AI agent navigates filing sections.
 2. MCP provides the workflow state, section plan, and field mapping.
-3. Unsupported, ambiguous, or blocked fields are surfaced clearly.
+3. `prepare_hometax`, `start_hometax_assist`, `resume_hometax_assist`, and `get_checkpoint` should reuse the same section/field plan.
+4. Unsupported, ambiguous, or blocked fields are surfaced clearly.
+
+Checkpoint payloads should expose operational contract fields such as:
+- `screenKey`
+- `checkpointKey`
+- `sectionKey`
+- `entryMode`
+- `allowedNextActions`
+- `requiredEvidenceRefs`
+- `mismatchBatchId`
+- `lastConfirmedDraftId`
+- `lastConfirmedDraftVersion`
+- `staleAfterRefresh`
+- `retryPolicy`
+- `resumePreconditions`
 
 Possible field states:
 - `auto_fill_ready`
@@ -141,6 +156,10 @@ Suggested session fields:
 - field values differ from expected mapping
 - required supporting material is missing
 - browser session closed unexpectedly
+
+Boundary reminder:
+- selector / DOM / OCR responsibility is still outside MCP
+- MCP should expose workflow truth and checkpoint contract, not browser implementation detail
 
 ## Stop conditions inside HomeTax assist
 The assist flow should pause or stop when:

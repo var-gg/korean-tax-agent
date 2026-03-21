@@ -590,6 +590,7 @@ export type DetectFilingPathInput = {
 
 export type TrustPolicySummary = {
   confidenceScore?: number;
+  confidenceBand?: 'low' | 'medium' | 'high';
   duplicateRisk?: 'low' | 'medium' | 'high';
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
@@ -650,6 +651,7 @@ export type RunClassificationData = {
   generatedReviewItemCount: number;
   summaryByCategory: Record<string, number>;
   confidenceScore?: number;
+  confidenceBand?: 'low' | 'medium' | 'high';
   duplicateRisk?: 'low' | 'medium' | 'high';
   materiality?: 'low' | 'medium' | 'high';
   stopReasonCodes?: string[];
@@ -686,7 +688,9 @@ export type ComputeDraftInput = {
 
 export type ComputeDraftData = {
   draftId: string;
+  draftVersion?: number;
   confidenceScore?: number;
+  confidenceBand?: 'low' | 'medium' | 'high';
   duplicateRisk?: 'low' | 'medium' | 'high';
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
@@ -745,6 +749,7 @@ export type CompareWithHomeTaxInput = {
 export type CompareWithHomeTaxData = {
   draftId: string;
   confidenceScore?: number;
+  confidenceBand?: 'low' | 'medium' | 'high';
   duplicateRisk?: 'low' | 'medium' | 'high';
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
@@ -801,6 +806,9 @@ export type PrepareHomeTaxInput = {
 export type HomeTaxEntryFieldTask = {
   fieldKey: string;
   fieldRef: string;
+  sectionKey?: string;
+  screenKey?: string;
+  checkpointKey?: string;
   value: FilingFieldValue['value'];
   comparisonState: FilingFieldValue['comparisonState'] | 'not_compared';
   sourceOfTruth: FilingFieldValue['sourceOfTruth'];
@@ -808,14 +816,23 @@ export type HomeTaxEntryFieldTask = {
   blocked: boolean;
   comparisonNeeded: boolean;
   sourceProvenanceRefs: string[];
+  requiredEvidenceRefs?: string[];
+  mismatchBatchId?: string;
   mismatchState: 'matched' | 'mismatch' | 'review_required' | 'not_compared';
   reviewStatus: 'none' | 'open' | 'resolved';
+  entryMode?: 'auto_fill_ready' | 'manual_confirmation_required' | 'manual_entry_required' | 'blocked' | 'mismatch_detected';
+  allowedNextActions?: string[];
+  staleAfterRefresh?: boolean;
+  retryPolicy?: 'reauth_then_resume' | 'refresh_prepare_then_restart' | 'manual_confirmation_then_resume' | 'stop_and_recompute';
+  resumePreconditions?: string[];
   entryInstruction: string;
 };
 
 export type HomeTaxEntrySectionPlan = {
   order: number;
   sectionKey: string;
+  screenKey?: string;
+  checkpointKey?: string;
   checkpointType: CheckpointType | 'data_entry';
   fieldRefs: string[];
   mappedFields: HomeTaxEntryFieldTask[];
@@ -823,11 +840,21 @@ export type HomeTaxEntrySectionPlan = {
   blockedFields: string[];
   comparisonNeededFields: string[];
   mismatchFields: string[];
+  allowedNextActions?: string[];
+  resumePreconditions?: string[];
+  retryPolicy?: 'reauth_then_resume' | 'refresh_prepare_then_restart' | 'manual_confirmation_then_resume' | 'stop_and_recompute';
   blockingItems: string[];
 };
 
 export type HomeTaxHandoffPayload = {
   orderedSections: HomeTaxEntrySectionPlan[];
+  lastConfirmedDraftId?: string;
+  lastConfirmedDraftVersion?: number;
+  staleAfterRefresh?: boolean;
+  mismatchBatchId?: string;
+  allowedNextActions?: string[];
+  resumePreconditions?: string[];
+  retryPolicy?: 'reauth_then_resume' | 'refresh_prepare_then_restart' | 'manual_confirmation_then_resume' | 'stop_and_recompute';
   mismatchSummary: {
     hasUnresolvedMismatch: boolean;
     hasHighSeverityReview: boolean;
@@ -843,6 +870,7 @@ export type HomeTaxHandoffPayload = {
 
 export type PrepareHomeTaxData = {
   confidenceScore?: number;
+  confidenceBand?: 'low' | 'medium' | 'high';
   duplicateRisk?: 'low' | 'medium' | 'high';
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
@@ -880,10 +908,15 @@ export type StartHomeTaxAssistInput = {
 export type StartHomeTaxAssistData = {
   assistSessionId: string;
   checkpointType: CheckpointType;
+  checkpointKey?: string;
+  screenKey?: string;
   authRequired: boolean;
   handoff?: HomeTaxHandoffPayload;
   entryPlan?: HomeTaxHandoffPayload;
   submissionState?: 'awaiting_final_approval' | 'submission_in_progress' | 'submitted' | 'submission_uncertain' | 'submission_failed';
+  allowedNextActions?: string[];
+  resumePreconditions?: string[];
+  retryPolicy?: 'reauth_then_resume' | 'refresh_prepare_then_restart' | 'manual_confirmation_then_resume' | 'stop_and_recompute';
 };
 
 export type ResumeHomeTaxAssistInput = {
@@ -895,8 +928,13 @@ export type ResumeHomeTaxAssistData = {
   assistSessionId: string;
   draftId: string;
   checkpointType: CheckpointType;
+  checkpointKey?: string;
+  screenKey?: string;
   authRequired: boolean;
   pendingUserAction?: string;
+  allowedNextActions?: string[];
+  resumePreconditions?: string[];
+  retryPolicy?: 'reauth_then_resume' | 'refresh_prepare_then_restart' | 'manual_confirmation_then_resume' | 'stop_and_recompute';
   handoff: {
     provider: string;
     targetSection?: string;
@@ -915,10 +953,15 @@ export type BrowserAssistCheckpointSnapshot = {
   workspaceId: string;
   draftId: string;
   checkpointType: CheckpointType;
+  checkpointKey?: string;
+  screenKey?: string;
   stopped: boolean;
   authRequired: boolean;
   blocker?: BlockingReason;
   pendingUserAction?: string;
+  allowedNextActions?: string[];
+  resumePreconditions?: string[];
+  retryPolicy?: 'reauth_then_resume' | 'refresh_prepare_then_restart' | 'manual_confirmation_then_resume' | 'stop_and_recompute';
   sessionRef: string;
   workspaceRef: string;
   draftRef: string;

@@ -698,8 +698,12 @@ export interface BrowserAssistSession {
   assistSessionId: string;
   workspaceId: string;
   draftId: string;
+  draftVersion?: number;
   provider?: string;
   checkpointType: CheckpointType;
+  checkpointKey?: string;
+  screenKey?: string;
+  handoff?: Record<string, unknown>;
   submissionState?: 'awaiting_final_approval' | 'submission_in_progress' | 'submitted' | 'submission_uncertain' | 'submission_failed';
   lastKnownSection?: string;
   authState?: AuthCheckpointState;

@@ -163,6 +163,8 @@ describe('in-memory runtime filing flow', () => {
     expect(Array.isArray(prepareResult.data.comparisonNeededFields)).toBe(true);
     expect(prepareResult.data.orderedSections.length).toBeGreaterThan(0);
     expect(prepareResult.data.handoff.orderedSections.length).toBe(prepareResult.data.orderedSections.length);
+    expect(prepareResult.data.handoff.lastConfirmedDraftId).toBe(resolvedDraft.data.draftId);
+    expect(Array.isArray(prepareResult.data.handoff.allowedNextActions)).toBe(true);
     expect(prepareResult.data.handoff.manualVerificationChecklist.length).toBeGreaterThan(0);
     expect(Array.isArray(prepareResult.data.adjustmentCandidates)).toBe(true);
     expect(prepareResult.data.draftFieldValues?.length).toBeGreaterThan(0);
@@ -175,6 +177,12 @@ describe('in-memory runtime filing flow', () => {
       blockedFields: expect.any(Array),
       comparisonNeededFields: expect.any(Array),
     });
+    const firstSection = prepareResult.data.orderedSections[0];
+    expect(firstSection.screenKey).toBeTruthy();
+    expect(firstSection.checkpointKey).toBeTruthy();
+    expect(Array.isArray(firstSection.allowedNextActions)).toBe(true);
+    expect(Array.isArray(firstSection.resumePreconditions)).toBe(true);
+    expect(firstSection.mappedFields[0]?.entryMode).toBeTruthy();
     expect(prepareResult.readiness?.submissionReadiness).toBe('submission_assist_ready');
     expect(runtime.getWorkspace(demo.workspaceId)?.submissionReadiness).toBe('submission_assist_ready');
     expect(runtime.getWorkspace(demo.workspaceId)?.status).toBe('ready_for_hometax_assist');
@@ -188,6 +196,10 @@ describe('in-memory runtime filing flow', () => {
     expect(assistResult.status).toBe('awaiting_auth');
     expect(assistResult.nextRecommendedAction).toBe('tax.browser.resume_hometax_assist');
     expect(assistResult.data.handoff?.orderedSections.length).toBeGreaterThan(0);
+    expect(assistResult.data.screenKey).toBeTruthy();
+    expect(assistResult.data.checkpointKey).toBeTruthy();
+    expect(Array.isArray(assistResult.data.allowedNextActions)).toBe(true);
+    expect(Array.isArray(assistResult.data.resumePreconditions)).toBe(true);
     expect(assistResult.data.entryPlan?.orderedSections).toEqual(assistResult.data.handoff?.orderedSections);
     expect(runtime.getBrowserAssistSession(demo.workspaceId)?.assistSessionId).toBe(assistResult.data.assistSessionId);
     expect(runtime.getAuthCheckpoints(demo.workspaceId).some((checkpoint) => checkpoint.sessionBinding === assistResult.data.assistSessionId)).toBe(true);
@@ -201,8 +213,89 @@ describe('in-memory runtime filing flow', () => {
     expect(resumeAssistResult.ok).toBe(true);
     expect(resumeAssistResult.data.assistSessionId).toBe(assistResult.data.assistSessionId);
     expect(resumeAssistResult.data.handoff.recommendedTool).toBe('tax.browser.resume_hometax_assist');
+    expect(resumeAssistResult.data.screenKey).toBeTruthy();
+    expect(resumeAssistResult.data.checkpointKey).toBeTruthy();
+    expect(Array.isArray(resumeAssistResult.data.allowedNextActions)).toBe(true);
     expect(resumeAssistResult.data.handoff.entryPlan?.orderedSections.length).toBeGreaterThan(0);
     expect(resumeAssistResult.data.handoff.entryPlan?.orderedSections).toEqual(assistResult.data.handoff?.orderedSections);
+  });
+
+  it('detects repeated-import duplicates deterministically and blocks prepare until resolved', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_duplicate_demo';
+
+    const payload = {
+      sourceType: 'statement_pdf' as const,
+      transactions: [
+        {
+          externalId: 'dup-1',
+          occurredAt: '2025-04-01',
+          amount: 120000,
+          currency: 'KRW',
+          normalizedDirection: 'expense' as const,
+          counterparty: 'Office Mart',
+          description: 'office supplies purchase',
+          sourceReference: 'dup-1',
+        },
+      ],
+    };
+
+    runtime.invoke('tax.ledger.normalize', { workspaceId, extractedPayloads: [payload] });
+    const secondNormalize = runtime.invoke('tax.ledger.normalize', { workspaceId, extractedPayloads: [payload] });
+    expect(secondNormalize.data.duplicateCandidateCount).toBeGreaterThan(0);
+    expect(Array.from(runtime.store.transactions.values()).filter((tx) => tx.workspaceId === workspaceId && tx.duplicateGroupId).length).toBeGreaterThan(0);
+
+    const classify = runtime.invoke('tax.classify.run', { workspaceId });
+    expect(classify.data.stopReasonCodes).toContain('unresolved_duplicate');
+    expect(classify.data.reviewItems?.some((item) => item.reasonCode === 'duplicate_conflict')).toBe(true);
+
+    const facts = runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'freelancer', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    expect(facts.ok).toBe(true);
+
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'refresh' });
+    expect(draft.data.stopReasonCodes).toContain('unresolved_duplicate');
+    const prepare = runtime.invoke('tax.filing.prepare_hometax', { workspaceId, draftId: draft.data.draftId });
+    expect(prepare.ok).toBe(false);
+    expect(prepare.blockingReason).toBe('awaiting_review_decision');
+  });
+
+  it('captures conflicting withholding records as blockers', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_withholding_conflict_demo';
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [{
+          externalId: 'income-1', occurredAt: '2025-05-01', amount: 1000000, normalizedDirection: 'income', counterparty: 'Client A', description: 'consulting payment', sourceReference: 'income-1',
+        }],
+        withholdingRecords: [{
+          externalId: 'wh-a', incomeSourceRef: 'income-1', payerName: 'Client A', grossAmount: 1000000, withheldTaxAmount: 30000, localTaxAmount: 3000,
+        }],
+      }],
+    });
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [],
+        withholdingRecords: [{
+          externalId: 'wh-b', incomeSourceRef: 'income-1', payerName: 'Client A', grossAmount: 1000000, withheldTaxAmount: 50000, localTaxAmount: 5000,
+        }],
+      }],
+    });
+
+    const records = runtime.getWithholdingRecords(workspaceId);
+    expect(records.some((record) => record.reviewStatus === 'conflict_detected')).toBe(true);
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'refresh' });
+    expect(draft.data.stopReasonCodes).toContain('conflicting_withholding_record');
   });
 
   it('captures taxpayer facts and explains missing facts before draft readiness', () => {
@@ -412,6 +505,32 @@ describe('in-memory runtime filing flow', () => {
     expect(prepare.ok).toBe(false);
     expect(prepare.data.handoff.mismatchSummary.hasUnresolvedMismatch).toBe(true);
     expect(prepare.data.handoff.immediateUserConfirmations.some((item) => item.includes('mismatch'))).toBe(true);
+  });
+
+  it('blocks browser resume when draft changes after assist start', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime({
+      consentRecords: demo.consentRecords,
+      workspaces: [demo.workspace],
+      sources: demo.sources,
+      syncAttempts: demo.syncAttempts,
+      coverageGapsByWorkspace: { [demo.workspaceId]: demo.coverageGaps },
+      transactions: demo.transactions,
+      decisions: demo.decisions,
+      taxpayerFacts: seededTaxpayerFacts,
+      withholdingRecords: seededWithholdingRecords,
+    });
+
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId: demo.workspaceId, draftMode: 'new_version', includeAssumptions: true });
+    runtime.invoke('tax.filing.refresh_official_data', { workspaceId: demo.workspaceId, draftId: draft.data.draftId });
+    runtime.invoke('tax.filing.compare_with_hometax', { workspaceId: demo.workspaceId, draftId: draft.data.draftId, comparisonMode: 'visible_portal', sectionKeys: ['income'] });
+    runtime.invoke('tax.filing.prepare_hometax', { workspaceId: demo.workspaceId, draftId: draft.data.draftId });
+    const started = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId: demo.workspaceId, draftId: draft.data.draftId, mode: 'fill_assist' });
+
+    runtime.invoke('tax.filing.compute_draft', { workspaceId: demo.workspaceId, draftMode: 'new_version', includeAssumptions: true });
+    const resumed = runtime.invoke('tax.browser.resume_hometax_assist', { workspaceId: demo.workspaceId, assistSessionId: started.data.assistSessionId });
+    expect(resumed.ok).toBe(false);
+    expect(resumed.blockingReason).toBe('official_data_refresh_required');
+    expect(resumed.nextRecommendedAction).toBe('tax.browser.get_checkpoint');
   });
 
   it('applies resolved hometax mismatch reviews back to the draft', () => {

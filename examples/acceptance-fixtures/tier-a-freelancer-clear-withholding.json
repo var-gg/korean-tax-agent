@@ -1,0 +1,30 @@
+{
+  "scenarioId": "tier_a_freelancer_clear_withholding",
+  "label": "Freelancer-style with clear withholding",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "sole_freelancer_light",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "sole_freelancer_light", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "business_use", "factKey": "business_use_explanations", "value": { "laptop": "used for client delivery work" }, "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 },
+    { "category": "deduction_eligibility", "factKey": "deduction_eligibility_facts", "value": { "basic_only": true }, "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 }
+  ],
+  "transactions": [
+    { "externalId": "client-001", "occurredAt": "2025-02-10", "amount": 2200000, "normalizedDirection": "income", "counterparty": "Client A", "description": "consulting service payment", "sourceReference": "client-001" },
+    { "externalId": "expense-001", "occurredAt": "2025-02-12", "amount": 320000, "normalizedDirection": "expense", "counterparty": "Tech Store", "description": "laptop purchase for business", "sourceReference": "expense-001", "evidenceDocumentRefs": ["expense-doc-001"] }
+  ],
+  "documents": [
+    { "externalId": "income-doc-001", "documentType": "income_statement", "issuedAt": "2025-02-10", "issuer": "Client A", "fileRef": "file://income-doc-001.pdf", "linkedTransactionRefs": ["client-001"] },
+    { "externalId": "expense-doc-001", "documentType": "receipt", "issuedAt": "2025-02-12", "issuer": "Tech Store", "fileRef": "file://expense-doc-001.pdf", "linkedTransactionRefs": ["expense-001"] },
+    { "externalId": "withholding-doc-001", "documentType": "tax_certificate", "issuedAt": "2025-02-10", "issuer": "Client A", "fileRef": "file://withholding-doc-001.pdf", "linkedTransactionRefs": ["client-001"] }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-002", "incomeSourceRef": "client-001", "payerName": "Client A", "grossAmount": 2200000, "withheldTaxAmount": 66000, "localTaxAmount": 6600, "evidenceDocumentRefs": ["withholding-doc-001"] }
+  ],
+  "expected": {
+    "finalStatus": "submission_in_progress",
+    "remainingBlockers": ["unsupported_adjustment"],
+    "operatorQuestionCount": 3
+  }
+}

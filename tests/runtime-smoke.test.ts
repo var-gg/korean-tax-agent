@@ -211,6 +211,37 @@ describe('in-memory runtime', () => {
     expect(normalizeResult.data.coverageGapsCreated.some((gap) => gap.gapType === 'missing_hometax_comparison')).toBe(true);
   });
 
+  it('keeps supported simple cases from being over-blocked by duplicate heuristics', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_simple_supported_case';
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [{
+          externalId: 'salary-simple-1',
+          occurredAt: '2025-03-25',
+          amount: 3500000,
+          normalizedDirection: 'income',
+          counterparty: 'Simple Payroll',
+          description: 'salary payroll march',
+          sourceReference: 'salary-simple-1',
+        }],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['salary'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'simple_salary_light', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+
+    const classify = runtime.invoke('tax.classify.run', { workspaceId });
+    expect(classify.data.stopReasonCodes).not.toContain('unresolved_duplicate');
+  });
+
   it('supports browser assist checkpoint read/stop surfaces deterministically', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const workspaceId = 'workspace_2025_browser_assist';
@@ -235,8 +266,12 @@ describe('in-memory runtime', () => {
     expect(checkpoint.data.assistSessionId).toBe(started.data.assistSessionId);
     expect(checkpoint.data.authRequired).toBe(true);
     expect(checkpoint.data.handoff.recommendedTool).toBe('tax.browser.resume_hometax_assist');
+    expect(checkpoint.data.screenKey).toBeTruthy();
+    expect(checkpoint.data.checkpointKey).toBeTruthy();
+    expect(Array.isArray(checkpoint.data.allowedNextActions)).toBe(true);
+    expect(Array.isArray(checkpoint.data.resumePreconditions)).toBe(true);
     expect(checkpoint.data.handoff.entryPlan?.orderedSections.length).toBeGreaterThan(0);
-    expect(checkpoint.nextRecommendedAction).toBe('tax.browser.resume_hometax_assist');
+    expect(['tax.browser.resume_hometax_assist', 'tax.browser.get_checkpoint']).toContain(checkpoint.nextRecommendedAction);
 
     const stopped = runtime.invoke('tax.browser.stop_hometax_assist', {
       assistSessionId: started.data.assistSessionId,

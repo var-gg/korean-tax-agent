@@ -1,98 +1,93 @@
-# MCP / External Agent Boundary and Contract Gaps
+# MCP / External Agent Boundary (Current Contract)
 
 - Status: active
 - Canonical: English
-- Parent: [README.md](./README.md)
+- Parent: [README.md](../README.md)
 - Related:
   - [05-architecture.md](./05-architecture.md)
   - [09-mcp-tool-spec.md](./09-mcp-tool-spec.md)
-  - [13-implementation-roadmap.md](./13-implementation-roadmap.md)
-  - [15-backlog.md](./15-backlog.md)
+  - [27-v1-supported-paths-and-stop-conditions.md](./27-v1-supported-paths-and-stop-conditions.md)
+  - [39-agent-operator-quickstart.md](./39-agent-operator-quickstart.md)
 
 ## Purpose
+This document is now a **current-boundary reference**, not an old tranche gap list.
 
-This document fixes the tranche-[1/6] boundary first: **MCP is the workflow server called by an external AI agent.**
+It explains the implementation reality the repo already follows:
+- MCP is the workflow/control-plane layer
+- the external AI agent owns browser, file, OCR, and user-facing conversation
+- the user should only be interrupted for login, consent, and judgment checkpoints
 
-That means MCP is the domain/tool layer: workflow state, checkpoints, validation, normalization, classification, drafting, comparison, readiness, blockers, and audit.
-The external AI agent side owns browser automation, local file access, OCR/document extraction, and user-facing conversation/explanation/persuasion.
+## Current boundary
 
-If a future change makes MCP look like it is discovering local files, reading screenshots directly, or driving HomeTax as product responsibility, that change is crossing the intended boundary.
+### MCP owns
+- workspace state
+- collection planning and coverage gaps
+- artifact ingestion by reference
+- normalization, classification, review, draft computation, comparison, readiness, blockers, and audit
+- HomeTax handoff/session state
+- submission approval/result/receipt records
+- read-only export-package generation
 
-## Scope boundary
+### External AI agent owns
+- browser control and visible portal operation
+- local file discovery / selection
+- OCR or extraction before structured payloads are sent into MCP
+- user-facing explanation and checkpoint narration
+- the actual final click in submission flow
 
-### MCP is in scope for
-- workspace and source state
-- sync attempts, checkpoints, and resume semantics
-- artifact registration and ingestion by reference
-- normalization, classification, review, drafting, comparison, readiness, blockers, and audit
-- narrow session/handoff contracts for browser assist
+### User intervention policy
+The user should be asked to act only for:
+- **login**
+- **consent**
+- **judgment**
 
-### MCP is out of scope for
-- opening `C:\...` paths directly
-- driving tabs/pages/selectors directly as product responsibility
-- OCRing receipts or PDFs itself
-- being the conversational UX layer that convinces or explains to the user
+That includes:
+- authentication checkpoints
+- permission / scope approval
+- review resolution
+- final approval before submit
 
-## Public contract cleanup applied in this tranche
+It does **not** mean the user should be asked to manually reconstruct hidden MCP state or guess the next step when MCP already exposes it.
 
-### Reframed responsibilities
-- import tools/docs now prefer **artifact refs / uploaded file refs** instead of local file-path responsibility
-- comparison docs/contracts now prefer **portal-observed values supplied by the external agent** instead of implying MCP itself saw the browser page
-- browser-assist start is framed as **workflow handoff/checkpoint session creation**, not as MCP becoming the browser controller
-- OCR-shaped import responsibility in docs was reframed from `tax.import.scan_receipts` to `tax.import.submit_extracted_receipt_fields`
+## Historical note
+Earlier versions of this document focused on runtime/facade exposure gaps.
+Those specific gaps are no longer the main issue:
+- `tax.setup.inspect_environment` and `tax.setup.init_config` are exposed
+- `tax.sources.plan_collection` is exposed
+- runtime/facade/tool-manifest/docs drift is covered by tests
 
-### Minimal contract change landed in code
-- `CompareWithHomeTaxInput` now accepts optional `portalObservedFields[]` so the caller can provide structured HomeTax-observed values directly
-- runtime/tool implementation prefers those supplied observed values when present
+So this document should no longer be read as a "missing implementation" checklist.
+It should be read as the **current contract boundary** for future PRs and agent integrations.
 
-## Runtime / contracts / tool consistency findings
+## Practical rules for future changes
 
-### Implemented in runtime/facade today
-- `tax.sources.get_collection_status`
-- `tax.workspace.get_status`
-- `tax.filing.get_summary`
-- `tax.sources.connect`
-- `tax.sources.sync`
-- `tax.sources.resume_sync`
-- `tax.profile.detect_filing_path`
-- `tax.classify.run`
-- `tax.classify.list_review_items`
-- `tax.classify.resolve_review_item`
-- `tax.filing.compute_draft`
-- `tax.filing.compare_with_hometax`
-- `tax.filing.refresh_official_data`
-- `tax.filing.prepare_hometax`
-- `tax.browser.start_hometax_assist`
+### In scope
+Good MCP changes usually look like:
+- richer state models
+- better stop reason codes
+- stronger review/audit outputs
+- better read-only exports
+- more precise handoff/checkpoint metadata
+- better readiness / blocker decisions
 
-### Declared in docs/contracts but not implemented in runtime/facade
-Priority 1 — should be resolved before broadening scope further:
-- `tax.setup.inspect_environment`
-- `tax.setup.init_config`
-- `tax.sources.plan_collection` (implemented as a function in `tools.ts`, but not exposed through runtime/facade contract dispatch)
+### Out of scope
+Boundary-violating changes usually look like:
+- MCP directly browsing HomeTax pages as product responsibility
+- MCP opening arbitrary local paths itself
+- MCP running OCR internally as product responsibility
+- MCP becoming the user-facing persuasive/conversational layer
+- MCP silently bypassing consent, login, review, or final approval checkpoints
 
-Priority 2 — keep as documented backlog until the runtime surface is ready:
-- `tax.sources.plan_collection`
-- `tax.sources.list`
-- `tax.sources.disconnect`
-- `tax.ledger.normalize`
-- documented import tool family (`tax.import.*`)
-- `tax.ledger.list_transactions`
-- `tax.ledger.link_evidence`
-- `tax.browser.resume_hometax_assist`
-- `tax.browser.stop_hometax_assist`
-- `tax.browser.get_checkpoint`
+## Contract discipline
+When adding or changing MCP tools:
+1. update the canonical tool manifest
+2. update contracts/runtime/facade/docs/tests together
+3. preserve the boundary: MCP accepts refs, extracted payloads, and observations
+4. do not smuggle browser/file/OCR responsibilities into MCP just because a host runtime can do them
 
-## Why these gaps matter
-
-The main risk is not missing breadth by itself; it is **declared capability drift**.
-If docs or exported contracts imply MCP can do more than the runtime actually exposes, future PRs are likely to reintroduce blurred responsibilities or build against non-existent tools.
-
-## Recommended next tranche after [1/6]
-
-**[2/6] Close the smallest contract/runtime gaps before expanding capability.**
-
-Exact recommendation:
-1. expose `tax.sources.plan_collection` through runtime/facade
-2. either implement or temporarily de-scope `tax.setup.inspect_environment` and `tax.setup.init_config` from exported contracts
-3. add a single source-of-truth implemented-tool matrix test so docs/contracts/runtime stay aligned
-4. keep new work focused on MCP-side workflow/state/validation semantics, not browser/file/OCR orchestration
+## Why this matters
+The repo is now broad enough that a smart AI agent can use it end to end.
+That only stays true if the boundary remains simple and stable:
+- MCP decides and records workflow truth
+- the external AI agent performs browser/file/OCR/user interaction work around that truth
+- the user intervenes only for login, consent, and judgment

@@ -14,6 +14,10 @@ const scenarioPath = join(repoRoot, 'docs', '21-first-agentic-scenario.md');
 const supportPath = join(repoRoot, 'docs', '27-v1-supported-paths-and-stop-conditions.md');
 const hometaxFlowPath = join(repoRoot, 'docs', '08-hometax-submission-flow.md');
 const domainGapPath = join(repoRoot, 'docs', '26-domain-model-gap-analysis.md');
+const backlogPath = join(repoRoot, 'docs', '15-backlog.md');
+const boundaryPath = join(repoRoot, 'docs', '38-mcp-agent-boundary-and-contract-gaps.md');
+const readmeKoPath = join(repoRoot, 'README.ko.md');
+const quickstartPath = join(repoRoot, 'docs', '39-agent-operator-quickstart.md');
 
 function sorted(values: string[]): string[] {
   return [...values].sort();
@@ -59,6 +63,8 @@ describe('tool manifest drift checks', () => {
 
   it('keeps README/PRD/flow/support docs aligned on product terminology', () => {
     const readme = readFileSync(readmePath, 'utf8');
+    const readmeKo = readFileSync(readmeKoPath, 'utf8');
+    const quickstart = readFileSync(quickstartPath, 'utf8');
     const prd = readFileSync(prdPath, 'utf8');
     const collection = readFileSync(collectionPath, 'utf8');
     const scenario = readFileSync(scenarioPath, 'utf8');
@@ -85,11 +91,34 @@ describe('tool manifest drift checks', () => {
 
     expect(toolSpec).toContain('domain/workflow/control-plane layer');
     expect(toolSpec).toContain('supported paths completion');
+    expect(readmeKo).toContain('tax.filing.export_package');
+    expect(quickstart).toContain('login');
+    expect(quickstart).toContain('consent');
+    expect(quickstart).toContain('judgment');
+    expect(quickstart).toContain('tax.filing.export_package');
+    expect(toolSpec).toContain('tax.filing.export_package');
     expect(hometaxFlow).toContain('external AI agent');
 
     for (const doc of [readme, prd, scenario, support]) {
       expect(doc).not.toContain('narrowest realistic path');
       expect(doc).not.toContain('HomeTax-adjacent entry work');
+    }
+  });
+
+  it('rejects stale documentation claims in backlog/gap/boundary/readme-ko docs', () => {
+    const backlog = readFileSync(backlogPath, 'utf8');
+    const domainGap = readFileSync(domainGapPath, 'utf8');
+    const boundary = readFileSync(boundaryPath, 'utf8');
+    const readmeKo = readFileSync(readmeKoPath, 'utf8');
+
+    for (const doc of [backlog, domainGap, boundary, readmeKo]) {
+      expect(doc).not.toContain('close runtime/facade exposure gap');
+      expect(doc).not.toContain('taxpayer facts are too thin');
+      expect(doc).not.toContain('Withholding / prepaid tax is not first-class enough');
+      expect(doc).not.toContain('Deduction and credit support is under-modeled');
+      expect(doc).not.toContain('Draft outputs are summaries, but not yet comparison-ready filing outputs');
+      expect(doc).not.toContain('future/pending (documented, not implemented in runtime/facade)');
+      expect(doc).not.toContain('Declared in docs/contracts but not implemented in runtime/facade');
     }
   });
 });
