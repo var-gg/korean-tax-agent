@@ -241,7 +241,7 @@ Input:
 - target artifact type
 - method tried
 - artifact shape seen
-- outcome (`found`, `blocked`, `auth_expired`, `ui_changed`, `export_only`, `insufficient_artifact`, `provider_unavailable`)
+- outcome (`found`, `blocked`, `auth_expired`, `ui_changed`, `export_only`, `insufficient_artifact`, `provider_unavailable`, `attachment_required`, `password_required`, `summary_only`)
 - optional portal-observed fields / note / verifiedAt
 
 Output:

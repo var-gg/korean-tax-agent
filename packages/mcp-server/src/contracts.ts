@@ -168,8 +168,9 @@ export type CollectionTask = {
   rejectedArtifactShapes: string[];
   portalPathHints: string[];
   whyThisSourceNow: string;
-  blockingIfMissing: boolean;
   userCheckpointBrief: string;
+  sufficiencyRule?: string;
+  blockingIfMissing: boolean;
   fallbackTaskIds: string[];
   verifiedAt?: string;
   nextRecommendedAction: string;
@@ -205,7 +206,7 @@ export type RecordCollectionObservationInput = {
   targetArtifactType: string;
   methodTried: string;
   artifactShapeSeen?: string;
-  outcome: 'found' | 'blocked' | 'auth_expired' | 'ui_changed' | 'export_only' | 'insufficient_artifact' | 'provider_unavailable';
+  outcome: 'found' | 'blocked' | 'auth_expired' | 'ui_changed' | 'export_only' | 'insufficient_artifact' | 'provider_unavailable' | 'attachment_required' | 'password_required' | 'summary_only';
   portalObservedFields?: Record<string, unknown>;
   note?: string;
   verifiedAt?: string;
@@ -619,6 +620,9 @@ export type ListAdjustmentCandidatesData = {
   workspaceId: string;
   items: FilingAdjustmentCandidate[];
   warnings: string[];
+  businessExpenseAllocationCandidates?: Array<{ code: string; allocationBasis: string; businessUseRatio?: number; evidenceRefs: string[]; reviewLevel: 'high' | 'medium' }>;
+  opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string }>;
+  operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
 export type DetectFilingPathInput = {
@@ -651,6 +655,10 @@ export type DetectFilingPathData = {
   missingFacts: string[];
   missingFactDetails?: FilingFactCompleteness[];
   escalationFlags: string[];
+  bookkeepingMode?: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry';
+  taxpayerPosture?: 'pure_business' | 'mixed_wage_business' | 'manual_heavy';
+  specialCreditEligibility?: Array<{ code: string; state: 'possible' | 'not_applicable' | 'review_required'; rationale: string }>;
+  operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
 export type UpsertTaxpayerFactsInput = {
@@ -679,6 +687,7 @@ export type ListMissingFactsInput = {
 
 export type ListMissingFactsData = {
   items: FilingFactCompleteness[];
+  operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
 export type RunClassificationInput = {
@@ -772,6 +781,12 @@ export type ComputeDraftData = {
   freshnessState?: DataFreshnessState;
   majorUnknowns?: string[];
   calibration?: DraftCalibrationSnapshot;
+  bookkeepingMode?: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry';
+  taxpayerPosture?: 'pure_business' | 'mixed_wage_business' | 'manual_heavy';
+  specialCreditEligibility?: Array<{ code: string; state: 'possible' | 'not_applicable' | 'review_required'; rationale: string }>;
+  businessExpenseAllocationCandidates?: Array<{ code: string; allocationBasis: string; businessUseRatio?: number; evidenceRefs: string[]; reviewLevel: 'high' | 'medium' }>;
+  opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string }>;
+  operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
 export type CompareWithHomeTaxInput = {

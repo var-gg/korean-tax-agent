@@ -200,7 +200,7 @@ export type RuntimeStore = {
     targetArtifactType: string;
     methodTried: string;
     artifactShapeSeen?: string;
-    outcome: 'found' | 'blocked' | 'auth_expired' | 'ui_changed' | 'export_only' | 'insufficient_artifact' | 'provider_unavailable';
+    outcome: 'found' | 'blocked' | 'auth_expired' | 'ui_changed' | 'export_only' | 'insufficient_artifact' | 'provider_unavailable' | 'attachment_required' | 'password_required' | 'summary_only';
     portalObservedFields?: Record<string, unknown>;
     note?: string;
     verifiedAt: string;
@@ -714,13 +714,18 @@ export class InMemoryKoreanTaxMCPRuntime {
     const observationSummary = observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`);
     const collectionTasks = [...(result.data.collectionTasks ?? [])];
     const insufficientOfficialPdf = observations.some((item) => item.targetArtifactType === 'withholding_receipt' && item.outcome === 'insufficient_artifact');
+    const summaryOnlyCard = observations.some((item) => item.targetArtifactType === 'card_itemized_detail' && item.outcome === 'summary_only');
+    const secureMailBlocked = observations.some((item) => item.targetArtifactType === 'secure_mail_attachment' && (item.outcome === 'attachment_required' || item.outcome === 'password_required'));
     const uiChanged = observations.some((item) => item.outcome === 'ui_changed');
-    if (insufficientOfficialPdf) {
+    if (insufficientOfficialPdf || summaryOnlyCard) {
       collectionTasks.sort((a, b) => (a.collectionMode === 'export_ingestion' ? -1 : 0) - (b.collectionMode === 'export_ingestion' ? -1 : 0));
+    }
+    if (secureMailBlocked) {
+      collectionTasks.sort((a, b) => (a.targetArtifactType === 'secure_mail_attachment' ? -1 : 0) - (b.targetArtifactType === 'secure_mail_attachment' ? -1 : 0));
     }
     return {
       ...result,
-      nextRecommendedAction: uiChanged ? 'tax.sources.get_collection_status' : (collectionTasks[0]?.nextRecommendedAction ?? result.nextRecommendedAction),
+      nextRecommendedAction: uiChanged ? 'tax.sources.get_collection_status' : secureMailBlocked ? 'tax.import.upload_documents' : (collectionTasks[0]?.nextRecommendedAction ?? result.nextRecommendedAction),
       data: {
         ...result.data,
         collectionTasks,
@@ -772,6 +777,16 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private recordCollectionObservation(input: RecordCollectionObservationInput): MCPResponseEnvelope<RecordCollectionObservationData> {
     const verifiedAt = input.verifiedAt ?? new Date().toISOString();
+    if (new Date(verifiedAt) > new Date()) {
+      return {
+        ok: false,
+        status: 'failed',
+        data: { updatedSourceState: 'planned' },
+        errorCode: 'invalid_future_verified_at',
+        errorMessage: 'verifiedAt cannot be in the future relative to runtime now.',
+        nextRecommendedAction: 'tax.sources.get_collection_status',
+      };
+    }
     const current = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
     current.push({ ...input, verifiedAt });
     this.store.collectionObservationsByWorkspace.set(input.workspaceId, current);
@@ -794,6 +809,16 @@ export class InMemoryKoreanTaxMCPRuntime {
     } else if (input.outcome === 'insufficient_artifact') {
       updatedSourceState = 'blocked';
       recommendedFallback = 'Use an accepted official print/PDF or switch to export ingestion fallback.';
+      nextRecommendedAction = 'tax.sources.plan_collection';
+      knownBadMethodUntil = verifiedAt;
+    } else if (input.outcome === 'attachment_required' || input.outcome === 'password_required') {
+      updatedSourceState = 'blocked';
+      recommendedFallback = 'Complete the attachment/password checkpoint and collect the real attachment rather than the shell HTML.';
+      nextRecommendedAction = 'tax.sources.get_collection_status';
+      knownBadMethodUntil = verifiedAt;
+    } else if (input.outcome === 'summary_only') {
+      updatedSourceState = 'blocked';
+      recommendedFallback = 'Request the itemized detail artifact; summary-only bundles are insufficient for detailed evidence review.';
       nextRecommendedAction = 'tax.sources.plan_collection';
       knownBadMethodUntil = verifiedAt;
     } else if (input.outcome === 'provider_unavailable' || input.outcome === 'blocked') {

@@ -48,6 +48,75 @@ const seededWithholdingRecords: WithholdingRecord[] = [
 ];
 
 describe('in-memory runtime filing flow', () => {
+  it('surfaces posture-aware filing regime, eligibility, and allocation warnings', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_2025_posture_matrix';
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [
+          { externalId: 'biz-1', occurredAt: '2025-03-01', amount: 2000000, normalizedDirection: 'income', counterparty: 'Client Biz', description: 'freelance revenue', sourceReference: 'biz-1' },
+          { externalId: 'veh-1', occurredAt: '2025-03-02', amount: 300000, normalizedDirection: 'expense', counterparty: 'Auto Center', description: 'vehicle fuel card', sourceReference: 'veh-1' },
+        ],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'pure_business', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'bookkeeping_mode', category: 'taxpayer_profile', value: 'double_entry', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'prior_year_regime', category: 'taxpayer_profile', value: '3.3%', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+
+    const path = runtime.invoke('tax.profile.detect_filing_path', { workspaceId });
+    expect(path.data.taxpayerPosture).toBe('pure_business');
+    expect(path.data.bookkeepingMode).toBe('double_entry');
+    expect(path.data.operatorWarnings?.some((item) => item.code === 'regime_shift_detected')).toBe(true);
+    expect(path.data.specialCreditEligibility?.[0]?.state).toBe('not_applicable');
+
+    const missingFacts = runtime.invoke('tax.profile.list_missing_facts', { workspaceId });
+    expect(missingFacts.data.operatorWarnings?.some((item) => item.code === 'mixed_use_allocation_basis_missing')).toBe(true);
+
+    const adjustments = runtime.invoke('tax.filing.list_adjustment_candidates', { workspaceId });
+    expect(adjustments.data.businessExpenseAllocationCandidates?.some((item) => item.code === 'vehicle_rule_applicable')).toBe(true);
+    expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'business_expense_review')).toBe(true);
+
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+    expect(draft.data.taxpayerPosture).toBe('pure_business');
+    expect(draft.data.bookkeepingMode).toBe('double_entry');
+    expect(draft.data.specialCreditEligibility?.[0]?.state).toBe('not_applicable');
+    expect(draft.data.businessExpenseAllocationCandidates?.some((item) => item.code === 'vehicle_rule_applicable' && item.reviewLevel === 'high')).toBe(true);
+    expect(draft.data.operatorWarnings?.some((item) => item.code === 'mixed_use_review_scope')).toBe(true);
+  });
+
+  it('handles mixed wage and business posture without auto-denying wage-linked opportunities', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_2025_mixed_posture';
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [{ externalId: 'mix-1', occurredAt: '2025-03-01', amount: 1000000, normalizedDirection: 'income', counterparty: 'Employer', description: 'salary payroll' }],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['salary', 'freelance'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'mixed_wage_business', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'deduction_eligibility_facts', category: 'deduction_eligibility', value: { card: true, insurance: true }, status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    const path = runtime.invoke('tax.profile.detect_filing_path', { workspaceId });
+    expect(path.data.taxpayerPosture).toBe('mixed_wage_business');
+    expect(path.data.specialCreditEligibility?.[0]?.state).not.toBe('not_applicable');
+    const adjustments = runtime.invoke('tax.filing.list_adjustment_candidates', { workspaceId });
+    expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'mixed_posture_credit_review')).toBe(true);
+  });
+
   it('persists classification, review resolution, drafting, and hometax assist state', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime({
       consentRecords: demo.consentRecords,

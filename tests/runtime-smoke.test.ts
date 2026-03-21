@@ -47,7 +47,10 @@ describe('in-memory runtime', () => {
     expect(planResult.data.collectionTasks?.[0]?.acceptedArtifactShapes.length).toBeGreaterThan(0);
     expect(planResult.data.collectionTasks?.[0]?.rejectedArtifactShapes.length).toBeGreaterThan(0);
     expect(planResult.data.collectionTasks?.[0]?.portalPathHints.some((hint) => hint.includes('Known invalid methods'))).toBe(true);
+    expect(planResult.data.collectionTasks?.[0]?.sufficiencyRule).toContain('official PDF/print');
     expect(planResult.data.collectionTasks?.[1]?.whyThisSourceNow).toContain('Re-verify recommended');
+    expect(planResult.data.collectionTasks?.some((task) => task.targetArtifactType === 'resident_register')).toBe(true);
+    expect(planResult.data.collectionTasks?.some((task) => task.targetArtifactType === 'secure_mail_attachment')).toBe(true);
     expect(planResult.data.nextActionPlan?.collectionMode).toBe('browser_assist');
     expect(planResult.data.nextActionPlan?.recommendedNextAction).toBeTruthy();
     expect(planResult.data.collectionTasks?.[0]?.nextRecommendedAction).toBe(planResult.data.nextActionPlan?.recommendedNextAction);
@@ -215,6 +218,59 @@ describe('in-memory runtime', () => {
     const statusAfterUi = runtime.invoke('tax.sources.get_collection_status', { workspaceId });
     expect(statusAfterUi.nextRecommendedAction).toBe('tax.sources.plan_collection');
     expect(statusAfterUi.blockingReason).toBe('ui_changed');
+  });
+
+  it('supports 2023 season packet and summary/secure-mail recovery semantics', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    const plan = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: 2025 });
+    const packetTask = plan.data.collectionTasks?.find((task) => task.targetArtifactType === 'year_end_tax_bundle');
+    expect(packetTask?.acceptedArtifactShapes.some((shape) => shape.includes('2023 season packet'))).toBe(true);
+
+    const connect = runtime.invoke('tax.sources.connect', { workspaceId, sourceType: 'hometax', requestedScope: ['read_documents'] });
+    const secureMail = runtime.invoke('tax.sources.record_collection_observation', {
+      workspaceId,
+      sourceId: connect.data.sourceId,
+      targetArtifactType: 'secure_mail_attachment',
+      methodTried: 'password_gated_secure_mail_html_only',
+      artifactShapeSeen: 'html shell only',
+      outcome: 'password_required',
+    });
+    expect(secureMail.ok).toBe(true);
+    expect(secureMail.data.recommendedFallback).toContain('attachment/password checkpoint');
+
+    const afterSecureMail = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: 2025 });
+    expect(afterSecureMail.nextRecommendedAction).toBe('tax.import.upload_documents');
+
+    const summaryOnly = runtime.invoke('tax.sources.record_collection_observation', {
+      workspaceId,
+      sourceId: connect.data.sourceId,
+      targetArtifactType: 'card_itemized_detail',
+      methodTried: 'card_bundle_summary_only',
+      artifactShapeSeen: 'summary-only card bundle',
+      outcome: 'summary_only',
+    });
+    expect(summaryOnly.data.recommendedFallback).toContain('itemized detail');
+    const afterSummary = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: 2025 });
+    expect(afterSummary.data.collectionTasks?.some((task) => task.targetArtifactType === 'card_itemized_detail' && task.sufficiencyRule?.includes('Summary-only card bundles are insufficient'))).toBe(true);
+  });
+
+  it('rejects future verifiedAt in collection observations', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    const connect = runtime.invoke('tax.sources.connect', { workspaceId, sourceType: 'hometax', requestedScope: ['read_documents'] });
+    const result = runtime.invoke('tax.sources.record_collection_observation', {
+      workspaceId,
+      sourceId: connect.data.sourceId,
+      targetArtifactType: 'withholding_receipt',
+      methodTried: 'hometax_list_xls_only',
+      outcome: 'insufficient_artifact',
+      verifiedAt: '2099-01-01T00:00:00.000Z',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errorCode).toBe('invalid_future_verified_at');
   });
 
   it('accepts extracted payloads and creates withholding workflow state', () => {

@@ -14,7 +14,7 @@ import {
   derivePendingUserAction,
   transitionSourceState,
 } from '../../core/src/state.js';
-import { getRegistryFreshness, getSourceMethodRegistryEntry } from './source-method-registry.js';
+import { getRegistryFreshness, getSourceMethodRegistryEntry, validateRegistryEntryDates } from './source-method-registry.js';
 import type {
   ClassificationDecision,
   ConsentRecord,
@@ -316,11 +316,65 @@ const FACT_CAPTURE_RULES: Array<{
   blockingStage: FilingFactCompleteness['blockingStage'];
 }> = [
   { factKey: 'income_streams', category: 'income_stream', priority: 'high', materiality: 'high', whyItMatters: 'Determines what income categories and schedules must be included.', bestQuestion: '올해 신고 대상 소득 흐름을 모두 말해 주세요. 급여/프리랜서/사업/플랫폼/해외소득이 있었나요?', blockingStage: 'collection' },
-  { factKey: 'taxpayer_posture', category: 'taxpayer_profile', priority: 'high', materiality: 'high', whyItMatters: 'Controls path selection and whether the case fits a supported filing path.', bestQuestion: '이번 신고에서 본인 상황을 가장 잘 설명하는 형태는 무엇인가요? 근로+기타, 프리랜서, 사업자 중 어디에 가까운가요?', blockingStage: 'filing_path' },
+  { factKey: 'taxpayer_posture', category: 'taxpayer_profile', priority: 'high', materiality: 'high', whyItMatters: 'Controls path selection and whether the case fits a supported filing path.', bestQuestion: '이번 신고에서 본인 상황을 가장 잘 설명하는 형태는 무엇인가요? 근로+사업, 순수사업, 수동검토가 많은 편 중 어디에 가까운가요?', blockingStage: 'filing_path' },
   { factKey: 'residency_context', category: 'taxpayer_profile', priority: 'high', materiality: 'high', whyItMatters: 'Residency can materially change filing treatment and supported-path eligibility.', bestQuestion: '신고 연도 기준 거주자/비거주자 판단에 영향 줄 해외 체류나 거주 이슈가 있었나요?', blockingStage: 'filing_path' },
-  { factKey: 'business_use_explanations', category: 'business_use', priority: 'medium', materiality: 'high', whyItMatters: 'Business-use explanations determine whether expense evidence can be used in the draft.', bestQuestion: '사업 관련 비용 중 개인 사용과 섞일 수 있는 지출이 있다면 업무 사용 설명을 남겨 주세요.', blockingStage: 'draft' },
+  { factKey: 'business_use_explanations', category: 'business_use', priority: 'medium', materiality: 'high', whyItMatters: 'Business-use explanations determine whether mixed-use expense evidence can be used in the draft.', bestQuestion: '사업 관련 비용 중 개인 사용과 섞일 수 있는 지출이 있다면 업무 사용 비율과 근거를 남겨 주세요.', blockingStage: 'draft' },
   { factKey: 'deduction_eligibility_facts', category: 'deduction_eligibility', priority: 'medium', materiality: 'medium', whyItMatters: 'Deduction eligibility facts affect whether deductions can be claimed safely.', bestQuestion: '공제 적용 판단에 필요한 가족/보험/교육/의료/기부 사실 중 빠진 것이 있나요?', blockingStage: 'draft' },
 ];
+
+function getFactValue(facts: TaxpayerFact[], key: string) {
+  return facts.find((fact) => fact.factKey === key && fact.status !== 'missing')?.value;
+}
+
+function deriveTaxProfileSignals(facts: TaxpayerFact[], transactions: LedgerTransaction[]) {
+  const streamsText = JSON.stringify(getFactValue(facts, 'income_streams') ?? '').toLowerCase();
+  const postureText = String(getFactValue(facts, 'taxpayer_posture') ?? '').toLowerCase();
+  const bookkeepingText = String(getFactValue(facts, 'bookkeeping_mode') ?? '').toLowerCase();
+  const priorYearText = JSON.stringify(getFactValue(facts, 'prior_year_regime') ?? '').toLowerCase();
+  const hasWage = streamsText.includes('salary') || streamsText.includes('wage') || postureText.includes('wage') || postureText.includes('근로');
+  const hasBusiness = streamsText.includes('business') || streamsText.includes('freelance') || streamsText.includes('platform') || postureText.includes('business') || postureText.includes('프리랜서') || postureText.includes('사업');
+  const taxpayerPosture: 'pure_business' | 'mixed_wage_business' | 'manual_heavy' = hasWage && hasBusiness ? 'mixed_wage_business' : hasBusiness ? 'pure_business' : 'manual_heavy';
+  const bookkeepingMode: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry' = bookkeepingText.includes('double') || bookkeepingText.includes('복식') ? 'double_entry' : bookkeepingText.includes('simple_book') || bookkeepingText.includes('간편장부') ? 'simple_book' : bookkeepingText.includes('standard') ? 'standard_rate' : 'simple_rate';
+  const operatorWarnings: Array<{ code: string; message: string }> = [];
+  if ((priorYearText.includes('3.3') || priorYearText.includes('simple_rate')) && bookkeepingMode === 'double_entry') {
+    operatorWarnings.push({ code: 'regime_shift_detected', message: 'Year-over-year regime shift detected: prior year 3.3%/simple treatment versus current double-entry posture.' });
+  }
+  if (transactions.some((tx) => /vehicle|car|phone|internet|telecom|home/i.test(`${tx.description ?? ''} ${tx.counterparty ?? ''}`))) {
+    operatorWarnings.push({ code: 'mixed_use_review_scope', message: 'Mixed-use expense candidates detected; allocation basis and evidence must be reviewed before applying benefits.' });
+  }
+  return { taxpayerPosture, bookkeepingMode, operatorWarnings };
+}
+
+function buildAllocationCandidates(workspaceId: string, facts: TaxpayerFact[], transactions: LedgerTransaction[]) {
+  const explanations = JSON.stringify(getFactValue(facts, 'business_use_explanations') ?? '').toLowerCase();
+  return transactions
+    .filter((tx) => tx.workspaceId === workspaceId)
+    .filter((tx) => /vehicle|car|phone|internet|telecom|home|card/i.test(`${tx.description ?? ''} ${tx.counterparty ?? ''}`))
+    .map((tx) => ({
+      code: /vehicle|car/i.test(`${tx.description ?? ''} ${tx.counterparty ?? ''}`) ? 'vehicle_rule_applicable' : 'mixed_use_allocation_required',
+      allocationBasis: explanations.includes('ratio') || explanations.includes('업무') ? 'operator_provided_basis' : 'missing_allocation_basis',
+      businessUseRatio: explanations.includes('ratio') || explanations.includes('업무') ? 0.5 : undefined,
+      evidenceRefs: tx.evidenceRefs ?? [],
+      reviewLevel: explanations.includes('ratio') && (tx.evidenceRefs?.length ?? 0) > 0 ? 'medium' as const : 'high' as const,
+    }));
+}
+
+function buildSpecialCreditEligibility(posture: 'pure_business' | 'mixed_wage_business' | 'manual_heavy', facts: TaxpayerFact[]) {
+  const deductionFacts = JSON.stringify(getFactValue(facts, 'deduction_eligibility_facts') ?? '').toLowerCase();
+  return [{
+    code: 'wage_income_credit_bundle',
+    state: posture === 'pure_business' ? 'not_applicable' as const : deductionFacts.length > 2 ? 'possible' as const : 'review_required' as const,
+    rationale: posture === 'pure_business' ? 'Wage-income-assumption credits like insurance/card/cash-receipt should not auto-apply to pure business cases.' : 'Potential wage-linked credits need explicit eligibility review before application.',
+  }];
+}
+
+function buildOpportunityCandidates(posture: 'pure_business' | 'mixed_wage_business' | 'manual_heavy', facts: TaxpayerFact[]) {
+  const deductionFacts = JSON.stringify(getFactValue(facts, 'deduction_eligibility_facts') ?? '').toLowerCase();
+  return [
+    { code: 'card_summary_opportunity', status: deductionFacts.includes('card') ? 'review_required' as const : 'possible' as const, rationale: 'Card/insurance/cash-receipt summaries create opportunity signals only; they do not confirm a tax benefit.' },
+    { code: posture === 'mixed_wage_business' ? 'mixed_posture_credit_review' : 'business_expense_review', status: 'review_required' as const, rationale: 'Opportunity depends on taxpayer posture, regime, and evidence-backed allocation.' },
+  ];
+}
 
 function enrichCoverageGap(gap: CoverageGap): CoverageGap {
   if (gap.whyItBlocks && gap.recommendedNextAction && gap.collectionMode) return gap;
@@ -388,9 +442,10 @@ function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: nu
   const task = (base: CollectionTask): CollectionTask => {
     const entry = getSourceMethodRegistryEntry(base.sourceCategory, base.targetArtifactType);
     const freshness = entry ? getRegistryFreshness(entry) : undefined;
+    const dateWarnings = entry ? validateRegistryEntryDates(entry) : [];
     return {
       ...base,
-      whyThisSourceNow: `${base.whyThisSourceNow}${entry ? ` Preferred method: ${entry.preferredMethod}.` : ''}${freshness?.reverifyRecommended ? ' Re-verify recommended before relying on this method guidance.' : ''}`,
+      whyThisSourceNow: `${base.whyThisSourceNow}${entry ? ` Preferred method: ${entry.preferredMethod}.` : ''}${freshness?.reverifyRecommended ? ' Re-verify recommended before relying on this method guidance.' : ''}${dateWarnings.length ? ` Registry date warning: ${dateWarnings.join(', ')}.` : ''}`,
       portalPathHints: [
         ...base.portalPathHints,
         ...(entry?.knownInvalidMethods.length ? [`Known invalid methods: ${entry.knownInvalidMethods.map((item) => `${item.method} (invalid as of ${item.invalidAsOf})`).join(', ')}`] : []),
@@ -407,12 +462,13 @@ function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: nu
       collectionMode: 'browser_assist',
       targetArtifactType: 'withholding_receipt',
       acceptedArtifactShapes: ['HomeTax official withholding tax receipt print/PDF', 'HomeTax printable official certificate/export rendered as PDF'],
-      rejectedArtifactShapes: ['withholding list XLS only without the official print/PDF', 'payer-side informal screenshot without official receipt details'],
+      rejectedArtifactShapes: ['withholding list XLS only without the official print/PDF', 'payer-side informal screenshot without official receipt details', 'summary-only withholding table without official printable form'],
       portalPathHints: ['HomeTax > MyHomeTax > 지급명세서/원천징수영수증', 'Use print/PDF output, not only table list view'],
       whyThisSourceNow: 'Official withholding receipts are the highest-authority prepaid tax source and block Tier A filing if missing.',
-      blockingIfMissing: true,
       userCheckpointBrief: 'Log into HomeTax and let the external browser agent collect the official withholding receipt PDF/print.',
-      fallbackTaskIds: [`task_${workspaceId}_manual_income_facts_${filingYear}`],
+      sufficiencyRule: 'HomeTax withholding is sufficient only with the official PDF/print or equivalent official printable certificate. XLS/list/summary-only is insufficient_artifact.',
+      blockingIfMissing: true,
+      fallbackTaskIds: [`task_${workspaceId}_hometax_packet_${filingYear}`, `task_${workspaceId}_manual_income_facts_${filingYear}`],
       verifiedAt,
       nextRecommendedAction: 'tax.sources.connect',
     }),
@@ -425,26 +481,156 @@ function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: nu
       rejectedArtifactShapes: ['free-text summary from memory', 'cropped screenshot without year/taxpayer context'],
       portalPathHints: ['HomeTax > 종합소득세 > 신고도움서비스 / 신고안내정보'],
       whyThisSourceNow: 'The filing guidance notice helps confirm prefilled scope, notices, and supported-path assumptions early.',
-      blockingIfMissing: true,
       userCheckpointBrief: 'Collect the official HomeTax filing guidance notice print/PDF for the filing year.',
+      sufficiencyRule: 'The notice must preserve year and taxpayer context; memory-based summaries are not enough.',
+      blockingIfMissing: true,
       fallbackTaskIds: [`task_${workspaceId}_hometax_withholding_${filingYear}`],
       verifiedAt,
       nextRecommendedAction: 'tax.sources.connect',
     }),
     task({
-      taskId: `task_${workspaceId}_hometax_simplified_bundle_${filingYear}`,
+      taskId: `task_${workspaceId}_hometax_packet_${filingYear}`,
       sourceCategory: 'hometax',
       collectionMode: 'export_ingestion',
       targetArtifactType: 'year_end_tax_bundle',
-      acceptedArtifactShapes: ['연말정산 간소화 PDF bundle', 'official HomeTax export bundle with named deduction documents'],
-      rejectedArtifactShapes: ['single deduction screenshot without bundle context', 'manually retyped deduction totals only'],
-      portalPathHints: ['HomeTax > 연말정산간소화 > PDF 내려받기 / 일괄 다운로드'],
-      whyThisSourceNow: 'The simplification bundle covers common deduction evidence with high leverage for Tier A freelancer paths.',
+      acceptedArtifactShapes: ['연말정산 간소화 PDF bundle', 'official HomeTax export bundle with named deduction documents', '2023 season packet with official PDFs attached'],
+      rejectedArtifactShapes: ['summary-only bundle cover page', 'manually retyped deduction totals only'],
+      portalPathHints: ['HomeTax > 연말정산간소화 > PDF 내려받기 / 일괄 다운로드', 'For older season packets, keep attachment filenames and packet date context'],
+      whyThisSourceNow: 'The HomeTax packet is a high-leverage first-wave export when official browser prints are blocked or an older season packet already exists.',
+      userCheckpointBrief: 'Upload the official HomeTax packet or simplification bundle with filenames and season context intact.',
+      sufficiencyRule: 'Bundle summaries help deduction overview but do not replace itemized business expense evidence.',
       blockingIfMissing: false,
-      userCheckpointBrief: 'Export the HomeTax year-end simplification bundle if deduction coverage is still needed.',
-      fallbackTaskIds: [`task_${workspaceId}_conditional_supporting_docs_${filingYear}`],
+      fallbackTaskIds: [`task_${workspaceId}_card_itemized_${filingYear}`, `task_${workspaceId}_conditional_supporting_docs_${filingYear}`],
       verifiedAt,
       nextRecommendedAction: 'tax.import.import_hometax_materials',
+    }),
+    task({
+      taskId: `task_${workspaceId}_card_itemized_${filingYear}`,
+      sourceCategory: 'card_statement',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'card_itemized_detail',
+      acceptedArtifactShapes: ['itemized card statement PDF/CSV with line items, merchant, date, and amount', 'official card transaction detail export'],
+      rejectedArtifactShapes: ['summary-only card monthly totals', 'bundle cover sheet without line items'],
+      portalPathHints: ['Request itemized detail only when expense review needs line-item support'],
+      whyThisSourceNow: 'Itemized card detail is the right follow-up when expense evidence is still weak after first-wave HomeTax collection.',
+      userCheckpointBrief: 'Provide itemized card detail, not just monthly totals or summary bundles.',
+      sufficiencyRule: 'Summary-only card bundles are insufficient; line-item detail is required for business-expense review.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_petty_receipts_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
+    }),
+    task({
+      taskId: `task_${workspaceId}_secure_mail_${filingYear}`,
+      sourceCategory: 'secure_mail',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'secure_mail_attachment',
+      acceptedArtifactShapes: ['actual downloadable attachment from secure mail', 'attachment after password checkpoint is completed'],
+      rejectedArtifactShapes: ['password-gated secure mail HTML only', 'secure mail screenshot without downloaded attachment'],
+      portalPathHints: ['Secure mail HTML itself is usually not evidence; retrieve the attachment or clear the password gate first'],
+      whyThisSourceNow: 'Use this only when the source delivers evidence through secure mail rather than a normal export portal.',
+      userCheckpointBrief: 'Complete the attachment/password checkpoint first, then upload the actual attachment.',
+      sufficiencyRule: 'Password-gated secure mail HTML is not importable evidence. The attachment itself is required.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_payroll_detail_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
+    }),
+    task({
+      taskId: `task_${workspaceId}_resident_register_${filingYear}`,
+      sourceCategory: 'government_record',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'resident_register',
+      acceptedArtifactShapes: ['official resident register PDF/print'],
+      rejectedArtifactShapes: ['typed household summary without official document'],
+      portalPathHints: ['Request only if household/address-linked deduction review actually needs it'],
+      whyThisSourceNow: 'Resident register should be requested only as conditional proof, not as default first-wave evidence.',
+      userCheckpointBrief: 'Upload the official resident register only if the deduction review explicitly asks for household/address proof.',
+      sufficiencyRule: 'Only the official document is sufficient for address/household proof.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_conditional_supporting_docs_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
+    }),
+    task({
+      taskId: `task_${workspaceId}_health_insurance_${filingYear}`,
+      sourceCategory: 'health_insurance',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'health_insurance_payment_history',
+      acceptedArtifactShapes: ['official health insurance payment history PDF/export'],
+      rejectedArtifactShapes: ['payment screenshot without payer/period context'],
+      portalPathHints: ['Collect only if deduction or reconciliation logic specifically needs health-insurance payment proof'],
+      whyThisSourceNow: 'Health-insurance history is a targeted conditional source, not a first-wave default.',
+      userCheckpointBrief: 'Export the official payment history only if MCP specifically asks for health-insurance proof.',
+      sufficiencyRule: 'History should preserve payer, period, and amount context.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_conditional_supporting_docs_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
+    }),
+    task({
+      taskId: `task_${workspaceId}_telecom_${filingYear}`,
+      sourceCategory: 'telecom',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'telecom_payment_history',
+      acceptedArtifactShapes: ['itemized telecom bill/payment history PDF'],
+      rejectedArtifactShapes: ['simple payment confirmation without service/use detail'],
+      portalPathHints: ['Collect only when business-use telecom review needs itemized history'],
+      whyThisSourceNow: 'Telecom history is useful only for narrow business-use review, so keep it targeted.',
+      userCheckpointBrief: 'Upload an itemized telecom statement only if business-use review explicitly needs it.',
+      sufficiencyRule: 'Simple paid/unpaid summaries are insufficient; itemized statement context is needed.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_manual_income_facts_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
+    }),
+    task({
+      taskId: `task_${workspaceId}_rent_contract_${filingYear}`,
+      sourceCategory: 'housing',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'rent_contract',
+      acceptedArtifactShapes: ['signed rent contract PDF/scan with parties and address visible'],
+      rejectedArtifactShapes: ['chat summary of rent terms only'],
+      portalPathHints: ['Collect only when rent-related deduction or business-use location review actually needs it'],
+      whyThisSourceNow: 'Rent contract is conditional support, not a default first-wave request.',
+      userCheckpointBrief: 'Provide the signed contract only if the rent deduction or business-use review requires it.',
+      sufficiencyRule: 'The document must show parties, term, and address details.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_conditional_supporting_docs_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
+    }),
+    task({
+      taskId: `task_${workspaceId}_petty_receipts_${filingYear}`,
+      sourceCategory: 'local_documents',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'petty_receipts_bundle',
+      acceptedArtifactShapes: ['curated petty receipts bundle with date/merchant/amount visible'],
+      rejectedArtifactShapes: ['unsorted phone photo dump with no scope note'],
+      portalPathHints: ['Use only after higher-authority sources and itemized statements are exhausted'],
+      whyThisSourceNow: 'Petty receipts are a last-mile evidence bundle, not the first source to request.',
+      userCheckpointBrief: 'Upload a curated, scoped receipt bundle rather than a raw dump of every image.',
+      sufficiencyRule: 'Bundle should be curated and scoped to the claimed expense set.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_manual_income_facts_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
+    }),
+    task({
+      taskId: `task_${workspaceId}_payroll_detail_${filingYear}`,
+      sourceCategory: 'payroll',
+      collectionMode: 'export_ingestion',
+      targetArtifactType: 'payroll_payment_detail',
+      acceptedArtifactShapes: ['official payroll payment detail PDF/export'],
+      rejectedArtifactShapes: ['salary transfer screenshot without payroll breakdown'],
+      portalPathHints: ['Collect only when salary-side reconciliation needs more detail than the withholding record gives'],
+      whyThisSourceNow: 'Payroll detail is a targeted reconciliation source, not a general first-wave request.',
+      userCheckpointBrief: 'Provide payroll detail only if salary reconciliation is still under-specified.',
+      sufficiencyRule: 'The detail should preserve pay period and pay item breakdowns.',
+      blockingIfMissing: false,
+      fallbackTaskIds: [`task_${workspaceId}_secure_mail_${filingYear}`],
+      verifiedAt,
+      nextRecommendedAction: 'tax.import.upload_documents',
     }),
     task({
       taskId: `task_${workspaceId}_conditional_supporting_docs_${filingYear}`,
@@ -455,8 +641,9 @@ function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: nu
       rejectedArtifactShapes: ['generic photo of a paper without identifying fields', 'chat message claiming eligibility without supporting document'],
       portalPathHints: ['Collect only if a deduction fact or review item specifically asks for it'],
       whyThisSourceNow: 'Conditional supporting documents should be requested only when a concrete deduction fact remains unresolved.',
-      blockingIfMissing: false,
       userCheckpointBrief: 'Answer the targeted deduction question first; upload the exact official proof only if MCP asks for it.',
+      sufficiencyRule: 'Only the exact official proof tied to the unresolved deduction fact should be requested.',
+      blockingIfMissing: false,
       fallbackTaskIds: [],
       verifiedAt,
       nextRecommendedAction: 'tax.profile.upsert_facts',
@@ -470,8 +657,9 @@ function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: nu
       rejectedArtifactShapes: ['vague statement like more files later', 'unstructured request to upload everything'],
       portalPathHints: ['Use only as fallback when official HomeTax materials are temporarily unavailable'],
       whyThisSourceNow: 'Fact capture is fallback only; it cannot replace authoritative withholding material for Tier A submission readiness.',
-      blockingIfMissing: false,
       userCheckpointBrief: 'Confirm which income streams exist and which official exports are still missing.',
+      sufficiencyRule: 'This confirms scope only; it does not replace authoritative evidence.',
+      blockingIfMissing: false,
       fallbackTaskIds: [],
       verifiedAt,
       nextRecommendedAction: 'tax.profile.upsert_facts',
@@ -1510,6 +1698,18 @@ export function taxFilingListAdjustmentCandidates(
     .filter((item) => input.eligibilityState === undefined || item.eligibilityState === input.eligibilityState)
     .filter((item) => input.reviewRequired === undefined || item.reviewRequired === input.reviewRequired);
 
+  const { taxpayerPosture, operatorWarnings: postureWarnings } = deriveTaxProfileSignals(facts, scopedTransactions);
+  const businessExpenseAllocationCandidates = buildAllocationCandidates(input.workspaceId, facts, scopedTransactions);
+  const opportunityCandidates = buildOpportunityCandidates(taxpayerPosture, facts);
+  if (taxpayerPosture === 'pure_business') {
+    for (const item of items) {
+      if (item.adjustmentType !== 'withholding_tax_credit' && /credit|insurance|card|cash/i.test(item.adjustmentType)) {
+        item.eligibilityState = 'manual_only';
+        item.reviewRequired = true;
+        item.rationale = `${item.rationale} Auto-application is blocked for pure business posture.`;
+      }
+    }
+  }
   const warnings = items.some((item) => item.eligibilityState === 'out_of_scope')
     ? ['unsupported_adjustment_candidates_present']
     : items.some((item) => item.reviewRequired)
@@ -1519,7 +1719,7 @@ export function taxFilingListAdjustmentCandidates(
   return {
     ok: true,
     status: 'completed',
-    data: { workspaceId: input.workspaceId, items, warnings },
+    data: { workspaceId: input.workspaceId, items, warnings, businessExpenseAllocationCandidates, opportunityCandidates, operatorWarnings: postureWarnings },
     nextRecommendedAction: warnings.length > 0 ? 'tax.classify.list_review_items' : 'tax.filing.compute_draft',
   };
 }
@@ -1555,11 +1755,17 @@ export function taxProfileUpsertFacts(input: UpsertTaxpayerFactsInput, existingF
 }
 
 export function taxListMissingFacts(workspaceId: string, facts: TaxpayerFact[] = []): MCPResponseEnvelope<ListMissingFactsData> {
+  const scopedFacts = facts.filter((fact) => fact.workspaceId === workspaceId);
+  const bookkeepingMode = String(getFactValue(scopedFacts, 'bookkeeping_mode') ?? '').toLowerCase();
+  const operatorWarnings = (bookkeepingMode.includes('double') || bookkeepingMode.includes('복식')) && !getFactValue(scopedFacts, 'business_use_explanations')
+    ? [{ code: 'mixed_use_allocation_basis_missing', message: 'Double-entry/business-heavy posture needs allocation basis for mixed-use expense claims.' }]
+    : [];
   return {
     ok: true,
     status: 'completed',
     data: {
-      items: computeMissingFactCompleteness(facts.filter((fact) => fact.workspaceId === workspaceId)),
+      items: computeMissingFactCompleteness(scopedFacts),
+      operatorWarnings,
     },
   };
 }
@@ -1573,8 +1779,9 @@ export function taxProfileDetectFilingPath(
 ): MCPResponseEnvelope<DetectFilingPathData> {
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
   const scopedReviewItems = reviewItems.filter((item) => item.workspaceId === input.workspaceId);
+  const scopedFacts = taxpayerFacts.filter((fact) => fact.workspaceId === input.workspaceId);
   const detection = detectFilingPath({
-    taxpayerFacts: taxpayerFacts.filter((fact) => fact.workspaceId === input.workspaceId),
+    taxpayerFacts: scopedFacts,
     transactions: scopedTransactions,
     reviewItems: scopedReviewItems,
     coverageGaps,
@@ -1591,6 +1798,8 @@ export function taxProfileDetectFilingPath(
     reviewItems: scopedReviewItems,
     coverageGaps,
   });
+  const { taxpayerPosture, bookkeepingMode, operatorWarnings } = deriveTaxProfileSignals(scopedFacts, scopedTransactions);
+  const specialCreditEligibility = buildSpecialCreditEligibility(taxpayerPosture, scopedFacts);
 
   return {
     ok: true,
@@ -1602,8 +1811,12 @@ export function taxProfileDetectFilingPath(
       confidence: detection.confidence,
       reasons: detection.reasons,
       missingFacts: detection.missingFacts,
-      missingFactDetails: computeMissingFactCompleteness(taxpayerFacts.filter((fact) => fact.workspaceId === input.workspaceId), detection.missingFacts),
+      missingFactDetails: computeMissingFactCompleteness(scopedFacts, detection.missingFacts),
       escalationFlags: detection.escalationFlags,
+      bookkeepingMode,
+      taxpayerPosture,
+      specialCreditEligibility,
+      operatorWarnings,
     },
     readiness: readiness,
     readinessState: mapCalibratedReadinessState(calibratedReadiness),
@@ -1802,7 +2015,9 @@ export function taxFilingComputeDraft(
     : scopedTaxpayerFacts.length === 0
       ? computeMissingFactCompleteness(scopedTaxpayerFacts)
       : computeMissingFactCompleteness(scopedTaxpayerFacts, filingPathDetection.missingFacts);
-  const adjustmentCandidates = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords).data.items;
+  const profileSignals = deriveTaxProfileSignals(scopedTaxpayerFacts, scopedTransactions);
+  const adjustmentView = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords).data;
+  const adjustmentCandidates = adjustmentView.items;
   const adjustmentSummary = {
     considered: adjustmentCandidates.length,
     applied: adjustmentCandidates.filter((item) => item.eligibilityState === 'supported' && !item.reviewRequired).length,
@@ -1822,9 +2037,10 @@ export function taxFilingComputeDraft(
   const readinessBlockingReason = deriveComputeDraftBlockingReason(readinessSummary);
   const missingFactsBlockDraft = factCompleteness.some((item) => item.priority === 'high')
     && scopedTransactions.length === 0;
+  const highAllocationMissing = (adjustmentView.businessExpenseAllocationCandidates ?? []).some((item) => item.reviewLevel === 'high' && item.allocationBasis === 'missing_allocation_basis');
   const computeBlockingReason = readinessBlockingReason === 'awaiting_review_decision'
     ? (trust.stopReasonCodes.length > 0 ? readinessBlockingReason : undefined)
-    : missingFactsBlockDraft
+    : missingFactsBlockDraft || highAllocationMissing
       ? 'insufficient_metadata'
       : readinessBlockingReason;
 
@@ -1856,6 +2072,12 @@ export function taxFilingComputeDraft(
       withholdingRecords: scopedWithholdingRecords,
       adjustmentCandidates,
       adjustmentSummary,
+      bookkeepingMode: profileSignals.bookkeepingMode,
+      taxpayerPosture: profileSignals.taxpayerPosture,
+      specialCreditEligibility: buildSpecialCreditEligibility(profileSignals.taxpayerPosture, scopedTaxpayerFacts),
+      businessExpenseAllocationCandidates: adjustmentView.businessExpenseAllocationCandidates,
+      opportunityCandidates: adjustmentView.opportunityCandidates,
+      operatorWarnings: [...profileSignals.operatorWarnings, ...(adjustmentView.operatorWarnings ?? [])],
       fieldValues: draft.fieldValues,
       draftFieldValues: draft.fieldValues,
       filingSections: buildFilingSections(draft.draftId, draft.fieldValues),
