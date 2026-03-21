@@ -243,6 +243,7 @@ describe('supported-path acceptance suite', () => {
       ]);
       expect(result.finalStatus).toBe(fixture.expected.finalStatus);
       expect(result.remainingBlockers).toEqual(fixture.expected.remainingBlockers);
+      expect(result.remainingBlockers.every((code) => !['unsupported_adjustment', 'unresolved_duplicate', 'severe_mismatch'].includes(code))).toBe(true);
       expect(result.operatorQuestionCount).toBe(fixture.expected.operatorQuestionCount);
       expect(result.readinessTimeline).toEqual({
         estimate: 'estimate_ready',

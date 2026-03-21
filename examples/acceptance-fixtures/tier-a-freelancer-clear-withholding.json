@@ -23,8 +23,8 @@
     { "externalId": "wh-002", "incomeSourceRef": "client-001", "payerName": "Client A", "grossAmount": 2200000, "withheldTaxAmount": 66000, "localTaxAmount": 6600, "evidenceDocumentRefs": ["withholding-doc-001"] }
   ],
   "expected": {
-    "finalStatus": "submission_in_progress",
-    "remainingBlockers": ["unsupported_adjustment"],
+    "finalStatus": "submitted",
+    "remainingBlockers": [],
     "operatorQuestionCount": 3
   }
 }

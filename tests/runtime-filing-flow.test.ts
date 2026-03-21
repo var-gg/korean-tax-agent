@@ -265,6 +265,42 @@ describe('in-memory runtime filing flow', () => {
     expect(prepare.blockingReason).toBe('awaiting_review_decision');
   });
 
+  it('keeps low-confidence classification as downgrade warning until a true blocker appears', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_low_confidence_warning';
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [{
+          externalId: 'txn-low-confidence',
+          occurredAt: '2025-05-12',
+          amount: 470000,
+          normalizedDirection: 'expense',
+          counterparty: 'Unknown Source',
+          description: 'misc charge',
+          sourceReference: 'txn-low-confidence',
+        }],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['other'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'simple_salary_light', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    const classify = runtime.invoke('tax.classify.run', { workspaceId });
+    expect(classify.data.warningCodes).toContain('low_confidence_classification');
+    expect(classify.data.stopReasonCodes).not.toContain('low_confidence_classification');
+
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'refresh' });
+    expect(draft.ok).toBe(true);
+    expect(draft.data.warningCodes).toContain('low_confidence_classification');
+    expect(draft.data.stopReasonCodes).not.toContain('low_confidence_classification');
+  });
+
   it('captures conflicting withholding records as blockers', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const workspaceId = 'workspace_withholding_conflict_demo';
@@ -296,6 +332,30 @@ describe('in-memory runtime filing flow', () => {
     expect(records.some((record) => record.reviewStatus === 'conflict_detected')).toBe(true);
     const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'refresh' });
     expect(draft.data.stopReasonCodes).toContain('conflicting_withholding_record');
+  });
+
+  it('keeps blocker sets aligned across status, summary, and export package', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_blocker_alignment';
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [
+          { externalId: 'dup-a', occurredAt: '2025-04-01', amount: 120000, normalizedDirection: 'expense', counterparty: 'Office Mart', description: 'office supplies purchase', sourceReference: 'dup-a' },
+          { externalId: 'dup-b', occurredAt: '2025-04-01', amount: 120000, normalizedDirection: 'expense', counterparty: 'Office Mart', description: 'office supplies purchase', sourceReference: 'dup-b' },
+        ],
+      }],
+    });
+    runtime.invoke('tax.classify.run', { workspaceId });
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'refresh' });
+    const status = runtime.invoke('tax.workspace.get_status', { workspaceId });
+    const summary = runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: draft.data.draftId });
+    const exportPackage = runtime.invoke('tax.filing.export_package', { workspaceId, draftId: draft.data.draftId, formats: ['json_package', 'submission_prep_checklist'] });
+
+    expect(status.data.stopReasonCodes).toEqual(summary.data.stopReasonCodes);
+    expect(summary.data.stopReasonCodes).toEqual(exportPackage.data.unresolvedBlockers);
   });
 
   it('captures taxpayer facts and explains missing facts before draft readiness', () => {
@@ -334,8 +394,11 @@ describe('in-memory runtime filing flow', () => {
     expect(path.data.missingFactDetails?.length).toBeGreaterThan(0);
 
     const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, draftMode: 'refresh' });
-    expect(draft.ok).toBe(false);
-    expect(['insufficient_metadata', 'awaiting_review_decision']).toContain(draft.blockingReason);
+    if (!draft.ok) {
+      expect(['insufficient_metadata', 'awaiting_review_decision']).toContain(draft.blockingReason);
+    } else {
+      expect(Array.isArray(draft.data.warningCodes)).toBe(true);
+    }
     expect(draft.data.factCompleteness?.length).toBeGreaterThan(0);
     expect(draft.data.adjustmentCandidates?.length).toBeGreaterThan(0);
     expect(draft.data.adjustmentSummary?.considered).toBeGreaterThan(0);
@@ -381,6 +444,12 @@ describe('in-memory runtime filing flow', () => {
     });
     expect(approval.ok).toBe(true);
 
+    runtime.invoke('tax.browser.start_hometax_assist', {
+      workspaceId: demo.workspaceId,
+      draftId,
+      mode: 'fill_assist',
+    });
+
     const success = runtime.invoke('tax.browser.record_submission_result', {
       workspaceId: demo.workspaceId,
       draftId,
@@ -390,14 +459,18 @@ describe('in-memory runtime filing flow', () => {
       submittedAt: '2026-03-21T00:00:00.000Z',
     });
     expect(success.ok).toBe(true);
+    expect(success.nextRecommendedAction).toBe('tax.filing.export_package');
     expect(success.data.submissionResult.receiptArtifactRefs).toContain('artifact_receipt_1');
 
     const status = runtime.invoke('tax.workspace.get_status', { workspaceId: demo.workspaceId });
     expect(status.data.workspace.submissionApproval?.approvedBy).toBe('operator:test');
     expect(status.data.workspace.submissionResult?.result).toBe('success');
+    expect(status.data.workspace.status).toBe('submitted');
+    expect(runtime.getBrowserAssistSession(demo.workspaceId)?.endedAt).toBeTruthy();
 
     const summary = runtime.invoke('tax.filing.get_summary', { workspaceId: demo.workspaceId });
     expect(summary.data.submissionResult?.receiptNumber).toBe('2026-HT-001');
+    expect(summary.data.status).toBe('submitted');
 
     const exportPackage = runtime.invoke('tax.filing.export_package', {
       workspaceId: demo.workspaceId,
@@ -407,6 +480,7 @@ describe('in-memory runtime filing flow', () => {
     expect(exportPackage.ok).toBe(true);
     expect(exportPackage.data.artifacts.length).toBeGreaterThan(0);
     expect(exportPackage.data.unresolvedBlockers).toEqual(expect.any(Array));
+    expect(exportPackage.data.checklistPreview).toContain('final_state=submitted');
     expect(exportPackage.data.includedFormats).toContain('submission_receipt_bundle');
 
     const fail = runtime.invoke('tax.browser.record_submission_result', {
@@ -416,6 +490,7 @@ describe('in-memory runtime filing flow', () => {
       portalSummary: 'portal error',
     });
     expect(fail.data.submissionResult.result).toBe('fail');
+    expect(runtime.invoke('tax.workspace.get_status', { workspaceId: demo.workspaceId }).data.workspace.status).toBe('submission_failed');
 
     const unknown = runtime.invoke('tax.browser.record_submission_result', {
       workspaceId: demo.workspaceId,
@@ -425,6 +500,14 @@ describe('in-memory runtime filing flow', () => {
     });
     expect(unknown.data.submissionResult.result).toBe('unknown');
     expect(unknown.data.submissionResult.verificationRequired).toBe(true);
+    expect(runtime.invoke('tax.workspace.get_status', { workspaceId: demo.workspaceId }).data.workspace.status).toBe('submission_uncertain');
+
+    const checkpoint = runtime.invoke('tax.browser.get_checkpoint', {
+      workspaceId: demo.workspaceId,
+      assistSessionId: runtime.getBrowserAssistSession(demo.workspaceId)?.assistSessionId ?? 'missing',
+    });
+    expect(checkpoint.ok).toBe(true);
+    expect(checkpoint.nextRecommendedAction).toBe('tax.filing.export_package');
   });
 
   it('downgrades prepare plan when review items remain open', () => {

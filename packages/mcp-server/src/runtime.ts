@@ -607,17 +607,23 @@ export class InMemoryKoreanTaxMCPRuntime {
     this.store.workspaces.set(workspaceId, {
       ...workspace,
       status: hints.status
-        ?? (browserAssistSession && !browserAssistSession.endedAt
-          ? 'submission_in_progress'
-          : draft?.submissionReadiness === 'submission_assist_ready'
-            ? 'ready_for_hometax_assist'
-            : draft?.draftReadiness === 'draft_ready'
-              ? 'draft_ready_for_review'
-              : unresolvedReviewCount > 0
-                ? 'review_pending'
-                : latestSyncAttempt || (latestAuthCheckpoint && latestAuthCheckpoint.state !== 'completed')
-                  ? 'collecting_sources'
-                  : workspace.status),
+        ?? (workspace.submissionResult?.result === 'success'
+          ? 'submitted'
+          : workspace.submissionResult?.result === 'fail'
+            ? 'submission_failed'
+            : workspace.submissionResult?.result === 'unknown'
+              ? 'submission_uncertain'
+              : browserAssistSession && !browserAssistSession.endedAt
+                ? 'submission_in_progress'
+                : draft?.submissionReadiness === 'submission_assist_ready'
+                  ? 'ready_for_hometax_assist'
+                  : draft?.draftReadiness === 'draft_ready'
+                    ? 'draft_ready_for_review'
+                    : unresolvedReviewCount > 0
+                      ? 'review_pending'
+                      : latestSyncAttempt || (latestAuthCheckpoint && latestAuthCheckpoint.state !== 'completed')
+                        ? 'collecting_sources'
+                        : workspace.status),
       supportTier: calibratedRuntime.supportTier,
       filingPathKind: calibratedRuntime.filingPathKind,
       estimateReadiness: draft?.estimateReadiness ?? workspace.estimateReadiness,
@@ -727,6 +733,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       status: 'completed',
       data: {
         stopReasonCodes: trustState.stopReasonCodes,
+        warningCodes: trustState.warningCodes,
         escalationReason: trustState.escalationReason,
         operatorExplanation: trustState.operatorExplanation,
         reviewBatchId: trustState.reviewBatchId,
@@ -833,6 +840,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       data: {
         workspaceId: input.workspaceId,
         stopReasonCodes: trustState.stopReasonCodes,
+        warningCodes: trustState.warningCodes,
         escalationReason: trustState.escalationReason,
         operatorExplanation: trustState.operatorExplanation,
         reviewBatchId: trustState.reviewBatchId,
@@ -1823,6 +1831,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const evidenceDocuments = Array.from(this.store.evidenceDocuments.values()).filter((doc) => doc.workspaceId === input.workspaceId);
     const sourceArtifacts = Array.from(this.store.sourceArtifacts.values()).filter((artifact) => artifact.workspaceId === input.workspaceId);
     const checklistPreview = [
+      `final_state=${workspace?.status ?? 'unknown'}`,
       `final_approval=${workspace?.submissionApproval ? 'recorded' : 'missing'}`,
       `material_mismatch=${draft?.stopReasonCodes?.includes('severe_mismatch') ? 'present' : 'none'}`,
       `missing_coverage=${(workspace?.openCoverageGapCount ?? 0) > 0 ? 'present' : 'none'}`,
@@ -2029,15 +2038,27 @@ export class InMemoryKoreanTaxMCPRuntime {
     this.store.workspaces.set(input.workspaceId, workspace);
     const session = this.getBrowserAssistSession(input.workspaceId);
     if (session) {
+      const endedAt = new Date().toISOString();
       session.submissionState = workspace.status as BrowserAssistSession['submissionState'];
+      session.pendingUserAction = input.result === 'success'
+        ? 'Submission recorded successfully. Verify receipt and archive artifacts.'
+        : input.result === 'fail'
+          ? 'Submission failed. Review portal error and decide whether to retry.'
+          : 'Submission result is uncertain. Verify portal state before claiming success.';
+      session.updatedAt = endedAt;
+      session.endedAt = endedAt;
       this.store.assistSessionsByWorkspace.set(input.workspaceId, session);
     }
-    this.appendAuditEvent(input.workspaceId, { eventType: 'submission_result_recorded', eventId: `evt_submission_result_${input.workspaceId}` }, { draftId: input.draftId, result: input.result, receiptNumber: input.receiptNumber, receiptArtifactRefs: submissionResult.receiptArtifactRefs });
+    this.syncWorkspaceSnapshot(input.workspaceId, {
+      status: workspace.status,
+      lastBlockingReason: undefined,
+    });
+    this.appendAuditEvent(input.workspaceId, { eventType: 'submission_result_recorded', eventId: `evt_submission_result_${input.workspaceId}` }, { draftId: input.draftId, result: input.result, receiptNumber: input.receiptNumber, receiptArtifactRefs: submissionResult.receiptArtifactRefs, assistSessionClosed: Boolean(session) });
     return {
       ok: true,
       status: 'completed',
       data: { submissionResult },
-      nextRecommendedAction: submissionResult.verificationRequired ? 'tax.browser.get_checkpoint' : 'tax.workspace.get_status',
+      nextRecommendedAction: 'tax.filing.export_package',
     };
   }
 
@@ -2144,9 +2165,10 @@ export class InMemoryKoreanTaxMCPRuntime {
     const currentDraft = this.getDraft(session.workspaceId);
     const prepared = getDraftHomeTaxPreparation(currentDraft);
     const assistContract = deriveAssistCheckpointContract({ draft: currentDraft, session, prepared, reviewItems: this.listReviewItems(session.workspaceId) });
+    const finalSubmissionState = session.submissionState ?? (workspace?.status === 'submitted' ? 'submitted' : workspace?.status === 'submission_failed' ? 'submission_failed' : workspace?.status === 'submission_uncertain' ? 'submission_uncertain' : undefined);
     return {
       ok: true,
-      status: stopped ? 'blocked' : (session.authState === 'completed' ? 'in_progress' : 'awaiting_auth'),
+      status: finalSubmissionState ? 'completed' : (stopped ? 'blocked' : (session.authState === 'completed' ? 'in_progress' : 'awaiting_auth')),
       data: {
         ...buildBrowserAssistCheckpointSnapshot({
         assistSessionId: session.assistSessionId,
@@ -2156,12 +2178,14 @@ export class InMemoryKoreanTaxMCPRuntime {
         checkpointKey: assistContract.checkpointKey ?? session.checkpointKey,
         screenKey: assistContract.screenKey ?? session.screenKey,
         stopped,
-        authRequired: session.authState !== 'completed',
-        blocker: stopped ? 'awaiting_final_approval' : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined)),
-        pendingUserAction: stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction),
-        allowedNextActions: assistContract.allowedNextActions,
-        resumePreconditions: assistContract.resumePreconditions,
-        retryPolicy: assistContract.retryPolicy,
+        authRequired: finalSubmissionState ? false : session.authState !== 'completed',
+        blocker: finalSubmissionState ? undefined : (stopped ? 'awaiting_final_approval' : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined))),
+        pendingUserAction: finalSubmissionState
+          ? (session.pendingUserAction ?? 'Submission lifecycle has been closed for this assist session.')
+          : (stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction)),
+        allowedNextActions: finalSubmissionState ? ['tax.filing.export_package', 'tax.workspace.get_status'] : assistContract.allowedNextActions,
+        resumePreconditions: finalSubmissionState ? [] : assistContract.resumePreconditions,
+        retryPolicy: finalSubmissionState ? undefined : assistContract.retryPolicy,
         sessionRef: session.assistSessionId,
         workspaceRef: session.workspaceId,
         draftRef: session.draftId,
@@ -2177,9 +2201,11 @@ export class InMemoryKoreanTaxMCPRuntime {
         submissionApproval: workspace?.submissionApproval,
         submissionResult: workspace?.submissionResult,
       },
-      blockingReason: stopped ? 'awaiting_final_approval' : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined)),
-      pendingUserAction: stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction),
-      nextRecommendedAction: stopped ? 'tax.browser.start_hometax_assist' : (assistContract.blockedReason ? 'tax.browser.get_checkpoint' : 'tax.browser.resume_hometax_assist'),
+      blockingReason: finalSubmissionState ? undefined : (stopped ? 'awaiting_final_approval' : (assistContract.blockedReason ?? (session.authState !== 'completed' ? 'missing_auth' : undefined))),
+      pendingUserAction: finalSubmissionState
+        ? (session.pendingUserAction ?? 'Submission lifecycle has been closed for this assist session.')
+        : (stopped ? '세션은 중단되었습니다. 재시작하려면 새 assist 세션을 시작하세요.' : (assistContract.blockedReason ? 'Resolve MCP blockers before browser progression.' : session.pendingUserAction)),
+      nextRecommendedAction: finalSubmissionState ? 'tax.filing.export_package' : (stopped ? 'tax.browser.start_hometax_assist' : (assistContract.blockedReason ? 'tax.browser.get_checkpoint' : 'tax.browser.resume_hometax_assist')),
     };
   }
 
@@ -2777,20 +2803,20 @@ function deriveOperatorTrustState(params: {
   workspace?: FilingWorkspace;
   reviewItems?: ReviewItem[];
 }) {
-  const stopReasonCodes = [
-    ...(params.draft?.stopReasonCodes ?? []),
-    ...((params.draft?.submissionReadiness !== 'submission_assist_ready' && params.draft?.submissionReadiness) ? [params.draft.submissionReadiness] : []),
-  ].filter((value, index, array) => array.indexOf(value) === index);
+  const stopReasonCodes = [...(params.draft?.stopReasonCodes ?? [])].filter((value, index, array) => array.indexOf(value) === index);
+  const warningCodes = [...(params.draft?.warningCodes ?? [])].filter((value, index, array) => array.indexOf(value) === index);
   const escalationReason = params.draft?.escalationReason
     ?? (params.workspace?.status === 'submission_uncertain' ? 'Submission result is ambiguous and requires verification.' : undefined);
   const operatorExplanation = stopReasonCodes.length > 0
-    ? `현재 진행이 막히거나 낮춰진 이유: ${stopReasonCodes.join(', ')}. 가정이 포함된 경우 반드시 명시적으로 공개해야 합니다.`
-    : params.workspace?.status === 'submitted'
-      ? '제출 결과가 기록되었고 추가 stop reason은 없습니다. 가정이 있었다면 함께 공개해야 합니다.'
-      : '현재 명시적 stop reason은 없습니다. 다만 가정이 있다면 공개해야 합니다.';
+    ? `현재 진행이 막힌 이유: ${stopReasonCodes.join(', ')}. 가정이 포함된 경우 반드시 명시적으로 공개해야 합니다.`
+    : warningCodes.length > 0
+      ? `현재 경고/다운그레이드 이유: ${warningCodes.join(', ')}. 가정이 포함된 경우 반드시 명시적으로 공개해야 합니다.`
+      : params.workspace?.status === 'submitted'
+        ? '제출 결과가 기록되었고 활성 blocker는 없습니다. 가정이 있었다면 함께 공개해야 합니다.'
+        : '현재 활성 blocker는 없습니다. 다만 가정이 있다면 공개해야 합니다.';
   const reviewBatchId = params.draft?.reviewBatchId
     ?? ((params.reviewItems?.length ?? 0) > 0 ? `review_batch_${params.workspace?.workspaceId ?? 'workspace'}_${params.reviewItems?.length ?? 0}` : undefined);
-  return { stopReasonCodes, escalationReason, operatorExplanation, reviewBatchId };
+  return { stopReasonCodes, warningCodes, escalationReason, operatorExplanation, reviewBatchId };
 }
 
 function getDraftHomeTaxPreparation(draft?: ComputeDraftData): PrepareHomeTaxData | undefined {
@@ -3165,3 +3191,5 @@ function buildRuntimeWithholdingRecords(workspaceId: string, transactions: Ledge
     capturedAt: transaction.occurredAt,
   }));
 }
+
+

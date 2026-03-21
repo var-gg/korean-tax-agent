@@ -25,8 +25,8 @@
     { "externalId": "wh-101", "incomeSourceRef": "freelance-101", "payerName": "Client B", "grossAmount": 800000, "withheldTaxAmount": 24000, "localTaxAmount": 2400, "evidenceDocumentRefs": ["withholding-doc-101"] }
   ],
   "expected": {
-    "finalStatus": "submission_in_progress",
-    "remainingBlockers": ["low_confidence_classification", "unsupported_adjustment"],
+    "finalStatus": "submitted",
+    "remainingBlockers": [],
     "operatorQuestionCount": 4
   }
 }

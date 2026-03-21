@@ -126,9 +126,11 @@ Important rule:
 
 ### Phase 8. Submission result handling
 1. System records whether submission succeeded, failed, or is uncertain.
-2. Agent summarizes the result and next steps.
-3. If the outcome is ambiguous, the system should prefer "unknown/pending verification" over false success.
-4. Completion should include post-submit evidence such as receipt capture, next-step confirmation, and any still-required follow-up actions.
+2. Recording submission result closes the active HomeTax assist session automatically.
+3. Workspace state should converge to `submitted`, `submission_failed`, or `submission_uncertain`.
+4. Agent summarizes the result and next steps.
+5. If the outcome is ambiguous, the system should prefer "unknown/pending verification" over false success.
+6. Completion should include post-submit evidence such as receipt capture, next-step confirmation, and any still-required follow-up actions.
 
 ## Pause/resume model
 The browser flow must support interruption at any of these checkpoints:

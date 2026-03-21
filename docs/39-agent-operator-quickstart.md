@@ -72,6 +72,11 @@ Canonical high-level sequence:
 19. `tax.browser.record_submission_result`
 20. `tax.filing.export_package`
 
+Submission lifecycle policy:
+- `tax.browser.record_submission_result` is the lifecycle-closing step.
+- When success / fail / unknown is recorded, the HomeTax assist session is auto-closed.
+- Final workspace state should converge to `submitted`, `submission_failed`, or `submission_uncertain` before export.
+
 ## Important read models
 If you only remember two read surfaces, remember these:
 - `tax.workspace.get_status`
@@ -84,7 +89,7 @@ They are the preferred surfaces for:
 - next-step routing
 
 ## Important stop reasons
-Treat these as hard workflow truths, not suggestions:
+Treat these as active hard blockers, not suggestions:
 - `missing_consent`
 - `missing_auth`
 - `awaiting_review_decision`

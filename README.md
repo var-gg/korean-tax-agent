@@ -41,7 +41,12 @@ A minimal integration loop is:
 2. Let the external AI agent gather consent/auth, pick files, inspect HomeTax pages, and extract structured values.
 3. Send **artifact refs**, **uploaded file refs**, **structured extracted payloads**, and **portal-observed values** into MCP tools.
 4. Read `tax.workspace.get_status` or `tax.filing.get_summary` and follow `nextRecommendedAction`.
-5. Stop and ask the user for help whenever MCP reports consent/auth/review/coverage/comparison blockers.
+5. Record the observed submission result (`success` / `fail` / `unknown`) before export; this closes the assist session and converges workspace state.
+6. Stop and ask the user for help whenever MCP reports consent/auth/review/coverage/comparison blockers.
+
+Trust-policy note:
+- `stopReasonCodes` are reserved for active blockers that should stop or hard-downgrade progression.
+- Non-blocking downgrade signals should appear as warnings and operator explanation instead of pretending filing is fully blocked.
 
 Runnable examples for this external-agent model:
 - [`examples/external-agent-artifact-ingestion-example.ts`](./examples/external-agent-artifact-ingestion-example.ts)

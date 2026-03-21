@@ -61,7 +61,8 @@ Stop means:
 - approval/result boundaries are respected and ambiguous portal states do not claim success
 
 Trust-policy reminders:
-- low-confidence classification must generate review work and readiness downgrade
+- `stopReasonCodes` should contain only active blockers that actually stop or hard-downgrade progression
+- low-confidence classification must generate review work and readiness downgrade, but may live in warnings until it becomes an active blocker
 - duplicate detection should be deterministic across repeated imports, not heuristic guesswork hidden from the operator
 - operator-facing summaries should explain blockers in plain language while also returning machine-readable stopReasonCodes
 - assumptions used in drafting must be disclosed explicitly

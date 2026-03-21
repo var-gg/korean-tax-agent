@@ -595,6 +595,7 @@ export type TrustPolicySummary = {
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
   stopReasonCodes?: string[];
+  warningCodes?: string[];
   escalationReason?: string;
   reviewBatchId?: string;
   operatorExplanation?: string;
@@ -655,6 +656,7 @@ export type RunClassificationData = {
   duplicateRisk?: 'low' | 'medium' | 'high';
   materiality?: 'low' | 'medium' | 'high';
   stopReasonCodes?: string[];
+  warningCodes?: string[];
   escalationReason?: string;
   reviewBatchId?: string;
   decisions?: ClassificationDecision[];
@@ -695,6 +697,7 @@ export type ComputeDraftData = {
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
   stopReasonCodes?: string[];
+  warningCodes?: string[];
   escalationReason?: string;
   reviewBatchId?: string;
   factCompleteness?: FilingFactCompleteness[];
@@ -754,6 +757,7 @@ export type CompareWithHomeTaxData = {
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
   stopReasonCodes?: string[];
+  warningCodes?: string[];
   escalationReason?: string;
   reviewBatchId?: string;
   sectionResults: Array<{
@@ -875,6 +879,7 @@ export type PrepareHomeTaxData = {
   materiality?: 'low' | 'medium' | 'high';
   mismatchSeverity?: 'low' | 'medium' | 'high' | 'critical';
   stopReasonCodes?: string[];
+  warningCodes?: string[];
   escalationReason?: string;
   reviewBatchId?: string;
   sectionMapping: Record<string, {
@@ -1016,6 +1021,7 @@ export type RuntimeSnapshot = {
 
 export type GetWorkspaceStatusData = {
   stopReasonCodes?: string[];
+  warningCodes?: string[];
   escalationReason?: string;
   operatorExplanation?: string;
   reviewBatchId?: string;
@@ -1065,6 +1071,7 @@ export type GetWorkspaceStatusData = {
 export type GetFilingSummaryData = {
   workspaceId: string;
   stopReasonCodes?: string[];
+  warningCodes?: string[];
   escalationReason?: string;
   operatorExplanation?: string;
   reviewBatchId?: string;
@@ -1302,3 +1309,5 @@ export interface KoreanTaxMCPContracts {
     output: MCPResponseEnvelope<StopHomeTaxAssistData>;
   };
 }
+
+

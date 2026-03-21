@@ -1548,6 +1548,7 @@ export function taxClassifyRun(
       duplicateRisk: trust.duplicateRisk,
       materiality: trust.materiality,
       stopReasonCodes: trust.stopReasonCodes,
+      warningCodes: trust.warningCodes,
       escalationReason: trust.escalationReason,
       reviewBatchId: trust.reviewBatchId,
       decisions: classification.decisions,
@@ -1718,7 +1719,7 @@ export function taxFilingComputeDraft(
   const missingFactsBlockDraft = factCompleteness.some((item) => item.priority === 'high')
     && scopedTransactions.length === 0;
   const computeBlockingReason = readinessBlockingReason === 'awaiting_review_decision'
-    ? readinessBlockingReason
+    ? (trust.stopReasonCodes.length > 0 ? readinessBlockingReason : undefined)
     : missingFactsBlockDraft
       ? 'insufficient_metadata'
       : readinessBlockingReason;
@@ -1735,6 +1736,7 @@ export function taxFilingComputeDraft(
       materiality: trust.materiality,
       mismatchSeverity: trust.mismatchSeverity,
       stopReasonCodes: trust.stopReasonCodes,
+      warningCodes: trust.warningCodes,
       escalationReason: trust.escalationReason,
       reviewBatchId: trust.reviewBatchId,
       unresolvedBlockerCount: readinessSummary.blockerCodes.length,
@@ -1837,6 +1839,7 @@ export function taxFilingCompareWithHomeTax(
       materiality: trust.materiality,
       mismatchSeverity: trust.mismatchSeverity,
       stopReasonCodes: trust.stopReasonCodes,
+      warningCodes: trust.warningCodes,
       escalationReason: trust.escalationReason,
       reviewBatchId: trust.reviewBatchId,
       sectionResults: comparison.sectionResults,
@@ -1944,9 +1947,8 @@ export function taxFilingPrepareHomeTax(
     summary: `Prepared HomeTax mapping state for draft ${input.draftId}.`,
   });
 
-  const prepareBlockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
+  const preliminaryPrepareBlockingReason = derivePrepareHomeTaxBlockingReason(readinessSummary);
 
-  const derivedPreparation = deriveHomeTaxPreparationState(fieldValues, reviewItems, prepareBlockingReason);
   const trust = deriveTrustPolicySummary({
     supportTier: readinessHints?.supportTier ?? 'undetermined',
     reviewItems,
@@ -1955,6 +1957,10 @@ export function taxFilingPrepareHomeTax(
       .filter((field) => (field.portalComparisonState ?? field.comparisonState) === 'mismatch')
       .map((field) => ({ severity: (field.mismatchSeverity ?? 'medium') as 'low' | 'medium' | 'high' | 'critical' })),
   });
+  const prepareBlockingReason = preliminaryPrepareBlockingReason === 'awaiting_review_decision' && trust.stopReasonCodes.length === 0
+    ? undefined
+    : preliminaryPrepareBlockingReason;
+  const derivedPreparation = deriveHomeTaxPreparationState(fieldValues, reviewItems, prepareBlockingReason);
 
   return {
     ok: prepareBlockingReason === undefined,
@@ -1965,6 +1971,7 @@ export function taxFilingPrepareHomeTax(
       materiality: trust.materiality,
       mismatchSeverity: trust.mismatchSeverity,
       stopReasonCodes: trust.stopReasonCodes,
+      warningCodes: trust.warningCodes,
       escalationReason: trust.escalationReason,
       reviewBatchId: trust.reviewBatchId,
       sectionMapping: derivedPreparation.sectionMapping,
@@ -2158,22 +2165,28 @@ function deriveTrustPolicySummary(params: {
   comparisonMismatches?: Array<{ severity: 'low' | 'medium' | 'high' | 'critical' }>;
 }) {
   const stopReasonCodes = new Set<string>();
+  const warningCodes = new Set<string>();
   const reviewItems = params.reviewItems ?? [];
   const coverageGaps = params.coverageGaps ?? [];
   const adjustmentCandidates = params.adjustmentCandidates ?? [];
   const withholdingRecords = params.withholdingRecords ?? [];
   const comparisonMismatches = params.comparisonMismatches ?? [];
-  if ((params.lowConfidenceCount ?? 0) > 0) stopReasonCodes.add('low_confidence_classification');
-  if ((params.duplicateCandidateCount ?? 0) > 0) {
-    stopReasonCodes.add('duplicate_candidate_detected');
-    if (reviewItems.some((item) => item.reasonCode === 'duplicate_conflict' && item.resolutionState !== 'resolved')) stopReasonCodes.add('unresolved_duplicate');
-  }
+  const hasLowConfidenceReview = reviewItems.some((item) => item.reasonCode === 'low_confidence_classification' && item.resolutionState !== 'resolved');
+  const hasUnresolvedDuplicate = reviewItems.some((item) => item.reasonCode === 'duplicate_conflict' && item.resolutionState !== 'resolved');
+  const hasBlockingUnsupportedAdjustment = adjustmentCandidates.some((item) => item.eligibilityState === 'out_of_scope' && item.providedFactKeys.length > 0);
+
+  if ((params.lowConfidenceCount ?? 0) > 0) warningCodes.add('low_confidence_classification');
+  if ((params.duplicateCandidateCount ?? 0) > 0) warningCodes.add('duplicate_candidate_detected');
+  if (hasLowConfidenceReview) warningCodes.add('classification_review_required');
+  if (hasUnresolvedDuplicate) stopReasonCodes.add('unresolved_duplicate');
   if (coverageGaps.some((gap) => gap.gapType === 'missing_withholding_record' && gap.state === 'open')) stopReasonCodes.add('missing_withholding_record');
   if (coverageGaps.some((gap) => gap.gapType === 'missing_deduction_fact' && gap.state === 'open')) stopReasonCodes.add('missing_deduction_fact');
   if (withholdingRecords.some((record) => record.reviewStatus === 'conflict_detected')) stopReasonCodes.add('conflicting_withholding_record');
   if (comparisonMismatches.some((item) => item.severity === 'high' || item.severity === 'critical')) stopReasonCodes.add('severe_mismatch');
-  if (adjustmentCandidates.some((item) => item.eligibilityState === 'out_of_scope')) stopReasonCodes.add('unsupported_adjustment');
+  if (hasBlockingUnsupportedAdjustment) stopReasonCodes.add('unsupported_adjustment');
+  else if (adjustmentCandidates.some((item) => item.eligibilityState === 'out_of_scope')) warningCodes.add('unsupported_adjustment_candidate_present');
   if (params.supportTier === 'tier_c') stopReasonCodes.add('tier_c_stop');
+
   const duplicateRisk: 'low' | 'medium' | 'high' = (params.duplicateCandidateCount ?? 0) > 1 ? 'high' : (params.duplicateCandidateCount ?? 0) === 1 ? 'medium' : 'low';
   const mismatchSeverity: 'low' | 'medium' | 'high' | 'critical' = comparisonMismatches.some((item) => item.severity === 'critical') ? 'critical'
     : comparisonMismatches.some((item) => item.severity === 'high') ? 'high'
@@ -2181,11 +2194,11 @@ function deriveTrustPolicySummary(params: {
     : 'low';
   const materiality: 'low' | 'medium' | 'high' = stopReasonCodes.has('severe_mismatch') || stopReasonCodes.has('missing_withholding_record') ? 'high'
     : stopReasonCodes.size > 0 ? 'medium'
-    : 'low';
+    : warningCodes.size > 0 ? 'low' : 'low';
   const confidenceScore = Math.max(0, Math.min(1,
     1
     - ((params.lowConfidenceCount ?? 0) * 0.18)
-    - ((params.duplicateCandidateCount ?? 0) * 0.12)
+    - ((params.duplicateCandidateCount ?? 0) * 0.08)
     - (stopReasonCodes.has('severe_mismatch') ? 0.25 : 0)
     - (stopReasonCodes.has('unsupported_adjustment') ? 0.2 : 0)
     - (stopReasonCodes.has('conflicting_withholding_record') ? 0.2 : 0)
@@ -2204,15 +2217,16 @@ function deriveTrustPolicySummary(params: {
           ? 'Duplicate candidates remain unresolved and block filing progression.'
           : stopReasonCodes.has('unsupported_adjustment')
             ? 'Unsupported adjustment candidate requires manual handling.'
-            : (params.lowConfidenceCount ?? 0) > 0
+            : hasLowConfidenceReview
               ? 'Low-confidence classification requires review before proceeding.'
               : undefined;
-  const operatorExplanation = stopReasonCodes.size > 0
-    ? `Blocked or downgraded because: ${Array.from(stopReasonCodes).join(', ')}. Assumptions, if any, must be disclosed before filing.`
+  const explanationCodes = stopReasonCodes.size > 0 ? Array.from(stopReasonCodes) : Array.from(warningCodes);
+  const operatorExplanation = explanationCodes.length > 0
+    ? `${stopReasonCodes.size > 0 ? 'Blocked because' : 'Downgraded/warning because'}: ${explanationCodes.join(', ')}. Assumptions, if any, must be disclosed before filing.`
     : params.supportTier === 'tier_b'
       ? 'Tier B path can proceed only with downgraded assist and closer review. Assumptions must be disclosed.'
-      : 'No hard stop reason detected. Any assumptions should still be disclosed to the operator.';
-  return { confidenceScore, confidenceBand, duplicateRisk, materiality, mismatchSeverity, stopReasonCodes: Array.from(stopReasonCodes), escalationReason, reviewBatchId, operatorExplanation };
+      : 'No active blockers detected. Any assumptions should still be disclosed to the operator.';
+  return { confidenceScore, confidenceBand, duplicateRisk, materiality, mismatchSeverity, stopReasonCodes: Array.from(stopReasonCodes), warningCodes: Array.from(warningCodes), escalationReason, reviewBatchId, operatorExplanation };
 }
 
 function derivePrepareHomeTaxBlockingReason(readiness: { blockerCodes: string[]; submissionReadiness: string }): import('../../core/src/types.js').BlockingReason | undefined {
@@ -2427,3 +2441,4 @@ function slugifyWorkspaceSegment(value?: string): string {
   const normalized = value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return normalized || 'default';
 }
+

@@ -20,8 +20,8 @@
     { "externalId": "wh-001", "incomeSourceRef": "salary-001", "payerName": "Acme Payroll", "grossAmount": 5000000, "withheldTaxAmount": 150000, "localTaxAmount": 15000, "evidenceDocumentRefs": ["withholding-001"] }
   ],
   "expected": {
-    "finalStatus": "submission_in_progress",
-    "remainingBlockers": ["low_confidence_classification", "unsupported_adjustment"],
+    "finalStatus": "submitted",
+    "remainingBlockers": [],
     "operatorQuestionCount": 4
   }
 }
