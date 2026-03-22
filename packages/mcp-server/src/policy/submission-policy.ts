@@ -17,6 +17,14 @@ export function deriveAdjacentTaxObligations(facts: TaxpayerFact[]): ListAdjacen
   return items;
 }
 
+export function deriveAdjacentTaxObligationsNextAction(facts: TaxpayerFact[], items: ListAdjacentTaxObligationsData['items']): 'tax.profile.upsert_facts' | 'tax.workspace.get_status' | undefined {
+  if (items.length === 0) return undefined;
+  const hasUnknownForeignScope = facts.some((fact) => fact.status === 'missing' && fact.factKey === 'foreign_income');
+  const hasUnknownLargeShareholderScope = facts.some((fact) => fact.status === 'missing' && fact.factKey === 'special_tax_treatment_choice');
+  if (hasUnknownForeignScope || hasUnknownLargeShareholderScope) return 'tax.profile.upsert_facts';
+  return items.some((item) => item.appliesNow) ? 'tax.workspace.get_status' : undefined;
+}
+
 export function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {
   const comparisonState = getRuntimeComparisonState(workspace);
   const primaryBlockingReason = getPrimaryBlockingReason(workspace);

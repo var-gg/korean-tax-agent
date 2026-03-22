@@ -389,7 +389,10 @@ describe('in-memory runtime filing flow', () => {
     const adjacent = runtime.invoke('tax.profile.list_adjacent_tax_obligations', { workspaceId });
     expect(adjacent.data.items.some((item) => item.obligationCode === 'foreign_stock_capital_gains')).toBe(true);
     expect(adjacent.data.items.some((item) => item.obligationCode === 'domestic_stock_large_shareholder_if_applicable')).toBe(true);
+    expect(adjacent.data.items.some((item) => item.obligationCode === 'local_income_followup_note')).toBe(true);
     expect(adjacent.data.items.every((item) => item.notPartOfThisWorkflow)).toBe(true);
+    expect(adjacent.nextRecommendedAction).toBe('tax.workspace.get_status');
+    expect(adjacent.nextRecommendedAction).not.toBe('tax.profile.list_adjacent_tax_obligations');
 
     const summary = runtime.invoke('tax.filing.get_summary', { workspaceId });
     expect((summary.data.adjacentTaxObligations?.length ?? 0)).toBeGreaterThan(0);

@@ -57,6 +57,20 @@ describe('in-memory runtime', () => {
     expect(planResult.nextRecommendedAction).toBe('tax.sources.connect');
   });
 
+  it('does not self-loop adjacent tax obligation next action', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [{ factKey: 'foreign_income', category: 'income_stream', value: 'foreign_stock_capital_gains_observed', status: 'provided', sourceOfTruth: 'user_asserted' }],
+    });
+    const adjacent = runtime.invoke('tax.profile.list_adjacent_tax_obligations', { workspaceId });
+    expect(adjacent.data.items.some((item) => item.obligationCode === 'foreign_stock_capital_gains')).toBe(true);
+    expect(adjacent.nextRecommendedAction).toBe('tax.workspace.get_status');
+    expect(adjacent.nextRecommendedAction).not.toBe('tax.profile.list_adjacent_tax_obligations');
+  });
+
   it('selects collection profiles from workspace-aware signals', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
 

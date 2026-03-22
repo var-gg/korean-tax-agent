@@ -108,7 +108,7 @@ import type {
   RuntimeSnapshot,
 } from './contracts.js';
 import { taxSourcesPlanCollectionPolicy } from './policy/collection-policy.js';
-import { deriveAdjacentTaxObligations as deriveAdjacentTaxObligationsPolicy, deriveAssistCheckpointContract as deriveAssistCheckpointContractPolicy, deriveExternalSubmitState as deriveExternalSubmitStatePolicy, deriveOperatorTrustState as deriveOperatorTrustStatePolicy, deriveWorkspaceNextRecommendedAction as deriveWorkspaceNextRecommendedActionPolicy, getDraftHomeTaxPreparation as getDraftHomeTaxPreparationPolicy } from './policy/submission-policy.js';
+import { deriveAdjacentTaxObligations as deriveAdjacentTaxObligationsPolicy, deriveAdjacentTaxObligationsNextAction as deriveAdjacentTaxObligationsNextActionPolicy, deriveAssistCheckpointContract as deriveAssistCheckpointContractPolicy, deriveExternalSubmitState as deriveExternalSubmitStatePolicy, deriveOperatorTrustState as deriveOperatorTrustStatePolicy, deriveWorkspaceNextRecommendedAction as deriveWorkspaceNextRecommendedActionPolicy, getDraftHomeTaxPreparation as getDraftHomeTaxPreparationPolicy } from './policy/submission-policy.js';
 import {
   taxBrowserResumeHomeTaxAssist,
   taxBrowserStartHomeTaxAssist,
@@ -986,12 +986,13 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private listAdjacentTaxObligations(input: ListAdjacentTaxObligationsInput): MCPResponseEnvelope<ListAdjacentTaxObligationsData> {
-    const items = deriveAdjacentTaxObligationsPolicy(this.getTaxpayerFacts(input.workspaceId));
+    const facts = this.getTaxpayerFacts(input.workspaceId);
+    const items = deriveAdjacentTaxObligationsPolicy(facts);
     return {
       ok: true,
       status: 'completed',
       data: { items },
-      nextRecommendedAction: items.some((item: ListAdjacentTaxObligationsData['items'][number]) => item.appliesNow) ? 'tax.profile.list_adjacent_tax_obligations' : undefined,
+      nextRecommendedAction: deriveAdjacentTaxObligationsNextActionPolicy(facts, items),
     };
   }
 
@@ -3709,6 +3710,5 @@ function buildRuntimeWithholdingRecords(workspaceId: string, transactions: Ledge
     capturedAt: transaction.occurredAt,
   }));
 }
-
 
 
