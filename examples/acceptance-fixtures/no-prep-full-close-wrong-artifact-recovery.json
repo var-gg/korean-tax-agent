@@ -1,0 +1,33 @@
+{
+  "scenarioId": "no_prep_full_close_wrong_artifact_recovery",
+  "label": "Wrong artifact xls/summary first then recovery to official pdf",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "sole_freelancer_light",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "pure_business", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 }
+  ],
+  "observations": [
+    { "targetArtifactType": "withholding_receipt", "methodTried": "hometax_list_xls_only", "artifactShapeSeen": "withholding xls summary", "outcome": "insufficient_artifact" }
+  ],
+  "hometaxMaterials": [
+    { "ref": "fixture://no_prep_full_close_wrong_artifact_recovery/withholding-official.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://no_prep_full_close_wrong_artifact_recovery/year-end-bundle.pdf", "materialTypeHint": "year_end_tax_bundle" }
+  ],
+  "documents": [
+    { "externalId": "withholding-official", "documentType": "tax_certificate", "issuedAt": "2025-04-09", "issuer": "Client Recover", "fileRef": "file://withholding-official.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "recover-1", "occurredAt": "2025-04-09", "amount": 1900000, "normalizedDirection": "income", "counterparty": "Client Recover", "description": "recovered official receipt revenue", "sourceReference": "recover-1" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-recover", "incomeSourceRef": "recover-1", "payerName": "Client Recover", "grossAmount": 1900000, "withheldTaxAmount": 57000, "localTaxAmount": 5700, "evidenceDocumentRefs": ["withholding-official"] }
+  ],
+  "expected": {
+    "submissionResult": "success",
+    "finalStatus": "submitted",
+    "maxOperatorQuestions": 4,
+    "expectRecoveryFallback": true
+  }
+}

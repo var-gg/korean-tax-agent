@@ -1,0 +1,36 @@
+{
+  "scenarioId": "no_prep_full_close_resident_register_unknown",
+  "label": "Optional resident-register second wave with submission unknown",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "mixed_income_individual",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "mixed_wage_business", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["salary", "freelance"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "deduction_eligibility", "factKey": "deduction_eligibility_facts", "value": { "single_household": true, "resident_register_needed": true }, "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 }
+  ],
+  "observations": [
+    { "targetArtifactType": "secure_mail_attachment", "methodTried": "password_gated_secure_mail_html_only", "artifactShapeSeen": "secure-mail html shell", "outcome": "password_required" }
+  ],
+  "hometaxMaterials": [
+    { "ref": "fixture://no_prep_full_close_resident_register_unknown/withholding-main.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://no_prep_full_close_resident_register_unknown/year-end-bundle.pdf", "materialTypeHint": "year_end_tax_bundle" }
+  ],
+  "documents": [
+    { "externalId": "resident-register", "documentType": "official_record", "issuedAt": "2025-03-15", "issuer": "Gov KR", "fileRef": "file://resident-register.pdf" },
+    { "externalId": "secure-attachment", "documentType": "tax_certificate", "issuedAt": "2025-03-15", "issuer": "Employer", "fileRef": "file://secure-attachment.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "salary-main", "occurredAt": "2025-03-15", "amount": 3300000, "normalizedDirection": "income", "counterparty": "Employer", "description": "salary payroll", "sourceReference": "salary-main" },
+    { "externalId": "side-main", "occurredAt": "2025-06-01", "amount": 700000, "normalizedDirection": "income", "counterparty": "Side Client", "description": "it side work", "sourceReference": "side-main" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-main", "incomeSourceRef": "salary-main", "payerName": "Employer", "grossAmount": 3300000, "withheldTaxAmount": 99000, "localTaxAmount": 9900, "evidenceDocumentRefs": ["secure-attachment"] }
+  ],
+  "expected": {
+    "submissionResult": "unknown",
+    "finalStatus": "submission_uncertain",
+    "maxOperatorQuestions": 5,
+    "expectRecoveryFallback": true
+  }
+}

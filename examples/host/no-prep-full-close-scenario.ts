@@ -1,0 +1,32 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { InMemoryKoreanTaxMCPRuntime } from '../../packages/mcp-server/src/runtime.js';
+
+const fixturePath = process.argv[2] ?? join(process.cwd(), 'examples', 'acceptance-fixtures', 'no-prep-full-close-33-it-freelancer-two-withholding.json');
+const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as any;
+const runtime = new InMemoryKoreanTaxMCPRuntime();
+
+const init = runtime.invoke('tax.setup.init_config', { filingYear: fixture.filingYear, storageMode: 'local', taxpayerTypeHint: fixture.taxpayerTypeHint });
+const workspaceId = init.data.workspaceId;
+const plan = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: fixture.filingYear });
+const connect = runtime.invoke('tax.sources.connect', { workspaceId, sourceType: 'hometax', requestedScope: ['read_documents', 'prepare_import'] });
+for (const observation of fixture.observations ?? []) runtime.invoke('tax.sources.record_collection_observation', { workspaceId, sourceId: connect.data.sourceId, ...observation });
+runtime.invoke('tax.import.import_hometax_materials', { workspaceId, refs: fixture.hometaxMaterials.map((item: any) => ({ ref: item.ref })), materialMetadata: fixture.hometaxMaterials });
+runtime.invoke('tax.import.upload_documents', { workspaceId, sourceType: 'evidence_folder', refs: fixture.documents.map((_: any, i: number) => ({ ref: `fixture://${fixture.scenarioId}/doc-${i + 1}.pdf` })) });
+runtime.invoke('tax.ledger.normalize', { workspaceId, extractedPayloads: [{ sourceType: 'hometax', transactions: fixture.transactions, documents: fixture.documents, withholdingRecords: fixture.withholdingRecords }] });
+runtime.invoke('tax.profile.detect_filing_path', { workspaceId });
+runtime.invoke('tax.profile.upsert_facts', { workspaceId, facts: fixture.facts });
+runtime.invoke('tax.classify.run', { workspaceId });
+const reviewItems = runtime.invoke('tax.classify.list_review_items', { workspaceId }).data.items;
+if (reviewItems.length > 0) runtime.invoke('tax.classify.resolve_review_item', { reviewItemIds: reviewItems.map((x: any) => x.reviewItemId), selectedOption: 'keep_draft_value', rationale: 'host no-prep full-close grouped review resolution', approverIdentity: 'example:operator' });
+const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+runtime.invoke('tax.filing.refresh_official_data', { workspaceId, draftId: draft.data.draftId, recomputeDraft: true });
+runtime.invoke('tax.filing.compare_with_hometax', { workspaceId, draftId: draft.data.draftId, portalObservedFields: (draft.data.draftFieldValues ?? []).map((field: any) => ({ sectionKey: field.sectionKey, fieldKey: field.fieldKey, portalObservedValue: field.value })) });
+const prepare = runtime.invoke('tax.filing.prepare_hometax', { workspaceId, draftId: draft.data.draftId });
+const assist = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId, draftId: draft.data.draftId, mode: 'fill_assist' });
+runtime.invoke('tax.browser.resume_hometax_assist', { workspaceId, assistSessionId: assist.data.assistSessionId });
+runtime.invoke('tax.filing.record_submission_approval', { workspaceId, draftId: draft.data.draftId, approvedBy: 'example:operator' });
+runtime.invoke('tax.browser.record_submission_result', { workspaceId, draftId: draft.data.draftId, result: fixture.expected.submissionResult, receiptArtifactRefs: [`receipt_${fixture.scenarioId}`], receiptNumber: `receipt-${fixture.scenarioId}` });
+const exported = runtime.invoke('tax.filing.export_package', { workspaceId, draftId: draft.data.draftId, formats: ['json_package', 'evidence_index', 'submission_prep_checklist', 'submission_receipt_bundle'] });
+const finalStatus = runtime.invoke('tax.workspace.get_status', { workspaceId });
+console.log(JSON.stringify({ firstWave: plan.data.collectionTasks?.slice(0, 2).map((task: any) => task.targetArtifactType), prepareReady: prepare.ok, finalStatus: finalStatus.data.workspace.status, assistEndedAt: runtime.getBrowserAssistSession(workspaceId)?.endedAt, exportedFormats: exported.data.includedFormats }, null, 2));

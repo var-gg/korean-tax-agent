@@ -55,8 +55,9 @@ Success means:
 - user intervention stays limited to login / consent / judgment / targeted fact answer
 - no-prep collection scenarios still start with HomeTax authoritative materials rather than vague upload requests
 - conditional deduction/supporting documents are requested only when they become the narrow remaining collection truth
-- wrong first artifacts (such as XLS-only withholding lists) recover toward official PDF/print fallback instead of repeating the same bad tactic
+- wrong first artifacts (such as XLS-only withholding lists or summary-only views) recover toward official PDF/print fallback instead of repeating the same bad tactic
 - compare-after-refresh stop/go remains consistent across status/summary/assist gating
+- no-prep full-close acceptance proves result recording and export can be reached from the same collection-first scenario without switching to a separately seeded runtime path
 - result recording auto-closes the assist session and the final workspace converges to `submitted`, `submission_failed`, or `submission_uncertain`
 - export_package includes blockers, checklist, and receipt information when available
 

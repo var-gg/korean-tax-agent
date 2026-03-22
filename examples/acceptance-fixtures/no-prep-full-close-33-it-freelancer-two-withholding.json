@@ -1,0 +1,36 @@
+{
+  "scenarioId": "no_prep_full_close_33_it_freelancer_two_withholding",
+  "label": "3.3% IT freelancer with two official withholding receipts",
+  "filingYear": 2025,
+  "taxpayerTypeHint": "sole_freelancer_light",
+  "facts": [
+    { "category": "taxpayer_profile", "factKey": "taxpayer_posture", "value": "pure_business", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "income_stream", "factKey": "income_streams", "value": ["freelance", "platform"], "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "residency_context", "value": "domestic_only", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.95 },
+    { "category": "taxpayer_profile", "factKey": "bookkeeping_mode", "value": "simple_rate", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 },
+    { "category": "taxpayer_profile", "factKey": "prior_year_regime", "value": "3.3%", "status": "provided", "sourceOfTruth": "user_asserted", "confidence": 0.9 }
+  ],
+  "hometaxMaterials": [
+    { "ref": "fixture://no_prep_full_close_33_it_freelancer_two_withholding/withholding-a.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://no_prep_full_close_33_it_freelancer_two_withholding/withholding-b.pdf", "materialTypeHint": "withholding_receipt" },
+    { "ref": "fixture://no_prep_full_close_33_it_freelancer_two_withholding/year-end-bundle.pdf", "materialTypeHint": "year_end_tax_bundle" }
+  ],
+  "documents": [
+    { "externalId": "withholding-a", "documentType": "tax_certificate", "issuedAt": "2025-03-11", "issuer": "Client A", "fileRef": "file://withholding-a.pdf" },
+    { "externalId": "withholding-b", "documentType": "tax_certificate", "issuedAt": "2025-08-11", "issuer": "Client B", "fileRef": "file://withholding-b.pdf" }
+  ],
+  "transactions": [
+    { "externalId": "income-a", "occurredAt": "2025-03-11", "amount": 2600000, "normalizedDirection": "income", "counterparty": "Client A", "description": "IT contracting revenue", "sourceReference": "income-a" },
+    { "externalId": "income-b", "occurredAt": "2025-08-11", "amount": 2100000, "normalizedDirection": "income", "counterparty": "Client B", "description": "software maintenance revenue", "sourceReference": "income-b" }
+  ],
+  "withholdingRecords": [
+    { "externalId": "wh-a", "incomeSourceRef": "income-a", "payerName": "Client A", "grossAmount": 2600000, "withheldTaxAmount": 78000, "localTaxAmount": 7800, "evidenceDocumentRefs": ["withholding-a"] },
+    { "externalId": "wh-b", "incomeSourceRef": "income-b", "payerName": "Client B", "grossAmount": 2100000, "withheldTaxAmount": 63000, "localTaxAmount": 6300, "evidenceDocumentRefs": ["withholding-b"] }
+  ],
+  "expected": {
+    "submissionResult": "success",
+    "finalStatus": "submitted",
+    "maxOperatorQuestions": 4,
+    "expectRecoveryFallback": false
+  }
+}

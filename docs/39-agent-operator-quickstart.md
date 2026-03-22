@@ -56,6 +56,7 @@ No-prep orchestration success bar:
 - wrong first artifacts (for example XLS-only withholding lists) should recover toward official PDF/print fallback rather than repeating the same bad tactic
 - summary-only bundles should trigger itemized-detail follow-up instead of being treated as sufficient business-expense evidence
 - password-gated secure-mail HTML should be treated as an attachment/password checkpoint, not as importable evidence itself
+- the no-prep full-close suite should prove the workflow can continue through compare / assist / approval / result / export, not only stop at `prepare_hometax`
 
 ## Core tool sequence
 Canonical high-level sequence:
