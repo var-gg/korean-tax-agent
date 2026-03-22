@@ -925,81 +925,7 @@ function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: nu
 }
 
 export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPResponseEnvelope<PlanCollectionData> {
-  const prioritizedGap = enrichCoverageGap({
-    gapId: `gap_plan_${input.workspaceId}_hometax`,
-    workspaceId: input.workspaceId,
-    gapType: 'missing_income_source',
-    severity: 'high',
-    description: 'HomeTax authoritative materials have not been collected yet.',
-    affectedArea: 'income_inventory',
-    affectedDomains: ['incomeInventory'],
-    materiality: 'high',
-    blocksEstimate: true,
-    blocksDraft: true,
-    blocksSubmission: true,
-    recommendedNextSource: 'hometax',
-    relatedSourceIds: [],
-    state: 'open',
-  });
-  const collectionTasks = buildCollectionTasksForProfile(resolveCollectionProfile({}), input.workspaceId, input.filingYear);
-  const nextActionPlan: PlanCollectionData['nextActionPlan'] = {
-    gapId: prioritizedGap.gapId,
-    gapType: prioritizedGap.gapType,
-    recommendedNextAction: collectionTasks[0]?.nextRecommendedAction ?? prioritizedGap.recommendedNextAction!,
-    collectionMode: (prioritizedGap.collectionMode === 'direct_connector' ? 'browser_assist' : prioritizedGap.collectionMode!) as 'browser_assist' | 'export_ingestion' | 'fact_capture',
-    whyThisIsNext: prioritizedGap.whyItBlocks!,
-  };
-
-  const audit = createAuditEvent({
-    workspaceId: input.workspaceId,
-    eventType: 'source_planned',
-    actorType: 'agent',
-    summary: 'Planned recommended collection sources for the workspace.',
-  });
-
-  return {
-    ok: true,
-    status: 'completed',
-    data: {
-      recommendedSources: [
-        {
-          sourceType: 'hometax',
-          priority: 'high',
-          rationale: 'Highest-value authoritative filing source and best first checkpoint.',
-          collectionMode: 'browser_assist',
-          likelyCheckpoints: ['source_consent', 'authentication', 'collection_blocker'],
-          fallbackOptions: ['Import HomeTax-exported files manually', 'Proceed with local evidence and draft a partial workspace'],
-        },
-        {
-          sourceType: 'local_documents',
-          priority: 'medium',
-          rationale: 'Useful for receipts, statements, and evidence gaps after HomeTax collection.',
-          collectionMode: 'export_ingestion',
-          likelyCheckpoints: ['source_consent'],
-          fallbackOptions: ['Upload a targeted set of files', 'Answer focused evidence questions'],
-        },
-      ],
-      collectionTasks,
-      expectedValueBySource: {
-        hometax: 'High authority for filing materials and cross-checks',
-        local_documents: 'High practical value for supporting evidence and missing exports',
-      },
-      likelyUserCheckpoints: ['source_consent', 'authentication', 'collection_blocker'],
-      fallbackPathSuggestions: ['Use exported statements when live collection is blocked', 'Continue with partial collection and targeted follow-up'],
-      prioritizedGap,
-      nextActionPlan,
-    },
-    progress: {
-      phase: 'source_planning',
-      step: 'rank_next_sources',
-      percent: 100,
-    },
-    nextRecommendedAction: 'tax.sources.connect',
-    audit: {
-      eventType: audit.eventType,
-      eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_planned',
-    },
-  };
+  return taxSourcesPlanCollectionPolicy(input, { profileOverride: 'it_freelancer' });
 }
 
 export function taxSourcesGetCollectionStatus(
@@ -1066,7 +992,7 @@ export function taxWorkspaceListCoverageGaps(
     .filter((gap) => !input.gapType || gap.gapType === input.gapType);
   const { prioritizedGap, nextActionPlan } = buildGapNextActionPlanPolicy(filtered);
   const filingYear = Number(input.workspaceId.match(/(20\d{2})/)?.[1] ?? new Date().getFullYear());
-  const collectionTasks = buildCollectionTasksForProfile(resolveCollectionProfile({}), input.workspaceId, filingYear);
+  const collectionTasks = buildCollectionTasksForProfile('it_freelancer', input.workspaceId, filingYear);
   return {
     ok: true,
     status: 'completed',

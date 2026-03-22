@@ -1,5 +1,5 @@
 import { createAuditEvent } from '../../../core/src/state.js';
-import type { CoverageGap } from '../../../core/src/types.js';
+import type { CoverageGap, TaxpayerFact } from '../../../core/src/types.js';
 import type { CollectionTask, MCPResponseEnvelope, PlanCollectionData, PlanCollectionInput, CollectionStatusData, GetCollectionStatusInput, ListCoverageGapsData, ListCoverageGapsInput } from '../contracts.js';
 import { getRegistryFreshness, getSourceMethodRegistryEntry, validateRegistryEntryDates } from '../source-method-registry.js';
 
@@ -33,7 +33,7 @@ export function buildGapNextActionPlan(gaps: CoverageGap[]) {
   return { enriched, prioritizedGap, nextActionPlan };
 }
 
-export function resolveCollectionProfile(params: { facts?: unknown[]; bookkeepingMode?: string; taxpayerPosture?: string }) {
+export function resolveCollectionProfile(params: { facts?: TaxpayerFact[]; bookkeepingMode?: string; taxpayerPosture?: string }) {
   if (params.bookkeepingMode === 'double_entry') return 'double_entry_service' as const;
   if (params.taxpayerPosture === 'pure_business') return 'it_freelancer' as const;
   return 'generic_fallback' as const;
@@ -61,13 +61,80 @@ export function buildCollectionTasksForProfile(profile: 'it_freelancer' | 'doubl
     task({ taskId: `task_${workspaceId}_conditional_supporting_docs_${filingYear}`, sourceCategory: 'conditional_supporting_documents', collectionMode: 'fact_capture', targetArtifactType: 'conditional_deduction_support', acceptedArtifactShapes: ['resident registration certificate when address/family deduction needs proof', 'official donation receipt PDF', 'official disability-related proof document'], rejectedArtifactShapes: ['generic photo of a paper without identifying fields', 'chat message claiming eligibility without supporting document'], portalPathHints: ['Collect only if a deduction fact or review item specifically asks for it'], whyThisSourceNow: 'Conditional supporting documents should be requested only when a concrete deduction fact remains unresolved.', userCheckpointBrief: 'Answer the targeted deduction question first; upload the exact official proof only if MCP asks for it.', sufficiencyRule: 'Only the exact official proof tied to the unresolved deduction fact should be requested.', blockingIfMissing: false, fallbackTaskIds: [], verifiedAt, nextRecommendedAction: 'tax.profile.upsert_facts' }),
     task({ taskId: `task_${workspaceId}_manual_income_facts_${filingYear}`, sourceCategory: 'fact_capture', collectionMode: 'fact_capture', targetArtifactType: 'income_scope_confirmation', acceptedArtifactShapes: ['structured taxpayer fact response naming income streams and missing official exports'], rejectedArtifactShapes: ['vague statement like more files later', 'unstructured request to upload everything'], portalPathHints: ['Use only as fallback when official HomeTax materials are temporarily unavailable'], whyThisSourceNow: 'Fact capture is fallback only; it cannot replace authoritative withholding material for Tier A submission readiness.', userCheckpointBrief: 'Confirm which income streams exist and which official exports are still missing.', sufficiencyRule: 'This confirms scope only; it does not replace authoritative evidence.', blockingIfMissing: false, fallbackTaskIds: [], verifiedAt, nextRecommendedAction: 'tax.profile.upsert_facts' }),
   ];
-  return profile === 'generic_fallback' ? tasks : tasks;
+  if (profile === 'double_entry_service') {
+    const payrollTask = tasks.find((item) => item.targetArtifactType === 'payroll_payment_detail');
+    const rest = tasks.filter((item) => item.targetArtifactType !== 'payroll_payment_detail');
+    return payrollTask ? [tasks[0], tasks[1], payrollTask, ...rest.filter((item) => item.taskId !== payrollTask.taskId)] : tasks;
+  }
+  if (profile === 'generic_fallback') {
+    return tasks.filter((item) => !['secure_mail_attachment', 'payroll_payment_detail'].includes(item.targetArtifactType));
+  }
+  return tasks;
 }
 
-export function taxSourcesPlanCollectionPolicy(input: PlanCollectionInput): MCPResponseEnvelope<PlanCollectionData> {
-  const prioritizedGap = enrichCoverageGap({ gapId: `gap_plan_${input.workspaceId}_hometax`, workspaceId: input.workspaceId, gapType: 'missing_income_source', severity: 'high', description: 'HomeTax authoritative materials have not been collected yet.', affectedArea: 'income_inventory', affectedDomains: ['incomeInventory'], materiality: 'high', blocksEstimate: true, blocksDraft: true, blocksSubmission: true, recommendedNextSource: 'hometax', relatedSourceIds: [], state: 'open' });
-  const collectionTasks = buildCollectionTasksForProfile('it_freelancer', input.workspaceId, input.filingYear);
-  const nextActionPlan: PlanCollectionData['nextActionPlan'] = { gapId: prioritizedGap.gapId, gapType: prioritizedGap.gapType, recommendedNextAction: collectionTasks[0]?.nextRecommendedAction ?? prioritizedGap.recommendedNextAction!, collectionMode: (prioritizedGap.collectionMode === 'direct_connector' ? 'browser_assist' : prioritizedGap.collectionMode!) as 'browser_assist' | 'export_ingestion' | 'fact_capture', whyThisIsNext: prioritizedGap.whyItBlocks! };
+export function taxSourcesPlanCollectionPolicy(
+  input: PlanCollectionInput,
+  signals?: {
+    bookkeepingMode?: string;
+    taxpayerPosture?: string;
+    facts?: TaxpayerFact[];
+    coverageGaps?: CoverageGap[];
+    observations?: Array<{ targetArtifactType: string; outcome: string; methodTried: string }>;
+    profileOverride?: 'it_freelancer' | 'double_entry_service' | 'generic_fallback';
+  },
+): MCPResponseEnvelope<PlanCollectionData> {
+  const openCoverageGaps = signals?.coverageGaps?.filter((gap) => gap.workspaceId === input.workspaceId) ?? [];
+  const derivedGap = openCoverageGaps.length > 0 ? buildGapNextActionPlan(openCoverageGaps).prioritizedGap : undefined;
+  const prioritizedGap = enrichCoverageGap(
+    derivedGap ?? {
+      gapId: `gap_plan_${input.workspaceId}_hometax`,
+      workspaceId: input.workspaceId,
+      gapType: 'missing_income_source',
+      severity: 'high',
+      description: 'HomeTax authoritative materials have not been collected yet.',
+      affectedArea: 'income_inventory',
+      affectedDomains: ['incomeInventory'],
+      materiality: 'high',
+      blocksEstimate: true,
+      blocksDraft: true,
+      blocksSubmission: true,
+      recommendedNextSource: 'hometax',
+      relatedSourceIds: [],
+      state: 'open',
+    },
+  );
+  const profile = signals?.profileOverride ?? resolveCollectionProfile({
+    facts: signals?.facts,
+    bookkeepingMode: signals?.bookkeepingMode,
+    taxpayerPosture: signals?.taxpayerPosture,
+  });
+  const collectionTasks = buildCollectionTasksForProfile(profile, input.workspaceId, input.filingYear);
+  const nextActionPlan: PlanCollectionData['nextActionPlan'] = {
+    gapId: prioritizedGap.gapId,
+    gapType: prioritizedGap.gapType,
+    recommendedNextAction: collectionTasks[0]?.nextRecommendedAction ?? prioritizedGap.recommendedNextAction!,
+    collectionMode: (prioritizedGap.collectionMode === 'direct_connector' ? 'browser_assist' : prioritizedGap.collectionMode!) as 'browser_assist' | 'export_ingestion' | 'fact_capture',
+    whyThisIsNext: prioritizedGap.whyItBlocks!,
+  };
   const audit = createAuditEvent({ workspaceId: input.workspaceId, eventType: 'source_planned', actorType: 'agent', summary: 'Planned recommended collection sources for the workspace.' });
-  return { ok: true, status: 'completed', data: { recommendedSources: [{ sourceType: 'hometax', priority: 'high', rationale: 'Highest-value authoritative filing source and best first checkpoint.', collectionMode: 'browser_assist', likelyCheckpoints: ['source_consent', 'authentication', 'collection_blocker'], fallbackOptions: ['Import HomeTax-exported files manually', 'Proceed with local evidence and draft a partial workspace'] }, { sourceType: 'local_documents', priority: 'medium', rationale: 'Useful for receipts, statements, and evidence gaps after HomeTax collection.', collectionMode: 'export_ingestion', likelyCheckpoints: ['source_consent'], fallbackOptions: ['Upload a targeted set of files', 'Answer focused evidence questions'] }], collectionTasks, expectedValueBySource: { hometax: 'High authority for filing materials and cross-checks', local_documents: 'High practical value for supporting evidence and missing exports' }, likelyUserCheckpoints: ['source_consent', 'authentication', 'collection_blocker'], fallbackPathSuggestions: ['Use exported statements when live collection is blocked', 'Continue with partial collection and targeted follow-up'], prioritizedGap, nextActionPlan }, progress: { phase: 'source_planning', step: 'rank_next_sources', percent: 100 }, nextRecommendedAction: 'tax.sources.connect', audit: { eventType: audit.eventType, eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_planned' } };
+  return {
+    ok: true,
+    status: 'completed',
+    data: {
+      recommendedSources: [
+        { sourceType: 'hometax', priority: 'high', rationale: 'Highest-value authoritative filing source and best first checkpoint.', collectionMode: 'browser_assist', likelyCheckpoints: ['source_consent', 'authentication', 'collection_blocker'], fallbackOptions: ['Import HomeTax-exported files manually', 'Proceed with local evidence and draft a partial workspace'] },
+        { sourceType: 'local_documents', priority: 'medium', rationale: 'Useful for receipts, statements, and evidence gaps after HomeTax collection.', collectionMode: 'export_ingestion', likelyCheckpoints: ['source_consent'], fallbackOptions: ['Upload a targeted set of files', 'Answer focused evidence questions'] },
+      ],
+      collectionTasks,
+      expectedValueBySource: { hometax: 'High authority for filing materials and cross-checks', local_documents: 'High practical value for supporting evidence and missing exports' },
+      likelyUserCheckpoints: ['source_consent', 'authentication', 'collection_blocker'],
+      fallbackPathSuggestions: ['Use exported statements when live collection is blocked', 'Continue with partial collection and targeted follow-up'],
+      prioritizedGap,
+      nextActionPlan,
+      observationSummary: signals?.observations?.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`),
+    },
+    progress: { phase: 'source_planning', step: 'rank_next_sources', percent: 100 },
+    nextRecommendedAction: 'tax.sources.connect',
+    audit: { eventType: audit.eventType, eventId: audit.eventId ?? audit.auditEventId ?? 'evt_source_planned' },
+  };
 }

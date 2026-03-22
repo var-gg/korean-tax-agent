@@ -107,6 +107,7 @@ import type {
   SyncSourceInput,
   RuntimeSnapshot,
 } from './contracts.js';
+import { taxSourcesPlanCollectionPolicy } from './policy/collection-policy.js';
 import { deriveAdjacentTaxObligations as deriveAdjacentTaxObligationsPolicy, deriveAssistCheckpointContract as deriveAssistCheckpointContractPolicy, deriveExternalSubmitState as deriveExternalSubmitStatePolicy, deriveOperatorTrustState as deriveOperatorTrustStatePolicy, deriveWorkspaceNextRecommendedAction as deriveWorkspaceNextRecommendedActionPolicy, getDraftHomeTaxPreparation as getDraftHomeTaxPreparationPolicy } from './policy/submission-policy.js';
 import {
   taxBrowserResumeHomeTaxAssist,
@@ -745,8 +746,18 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private planCollection(input: KoreanTaxMCPContracts['tax.sources.plan_collection']['input']): KoreanTaxMCPContracts['tax.sources.plan_collection']['output'] {
-    const result = taxSourcesPlanCollection(input);
+    const facts = this.getTaxpayerFacts(input.workspaceId);
+    const bookkeepingMode = String(facts.find((fact) => fact.factKey === 'bookkeeping_mode' && fact.status !== 'missing')?.value ?? '');
+    const taxpayerPosture = String(facts.find((fact) => fact.factKey === 'taxpayer_posture' && fact.status !== 'missing')?.value ?? '');
     const observations = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
+    const result = taxSourcesPlanCollectionPolicy(input, {
+      bookkeepingMode,
+      taxpayerPosture,
+      facts,
+      coverageGaps: this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
+      observations,
+      profileOverride: !bookkeepingMode && !taxpayerPosture && facts.length === 0 ? 'it_freelancer' : undefined,
+    });
     const observationSummary = observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`);
     const collectionTasks = this.applyCollectionObservationFreshness(result.data.collectionTasks, input.workspaceId);
     const insufficientOfficialPdf = observations.some((item) => item.targetArtifactType === 'withholding_receipt' && item.outcome === 'insufficient_artifact');

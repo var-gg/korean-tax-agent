@@ -57,6 +57,28 @@ describe('in-memory runtime', () => {
     expect(planResult.nextRecommendedAction).toBe('tax.sources.connect');
   });
 
+  it('selects collection profiles from workspace-aware signals', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+
+    const pure = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    runtime.invoke('tax.profile.upsert_facts', { workspaceId: pure.data.workspaceId, facts: [{ factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'pure_business', status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    const purePlan = runtime.invoke('tax.sources.plan_collection', { workspaceId: pure.data.workspaceId, filingYear: 2025 });
+    expect(purePlan.data.collectionTasks?.[0]?.targetArtifactType).toBe('withholding_receipt');
+    expect(purePlan.data.collectionTasks?.some((task) => task.targetArtifactType === 'secure_mail_attachment')).toBe(true);
+
+    const doubleEntry = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    runtime.invoke('tax.profile.upsert_facts', { workspaceId: doubleEntry.data.workspaceId, facts: [{ factKey: 'bookkeeping_mode', category: 'taxpayer_profile', value: 'double_entry', status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    const doublePlan = runtime.invoke('tax.sources.plan_collection', { workspaceId: doubleEntry.data.workspaceId, filingYear: 2025 });
+    expect(doublePlan.data.collectionTasks?.[0]?.targetArtifactType).toBe('withholding_receipt');
+    expect(doublePlan.data.collectionTasks?.some((task) => task.targetArtifactType === 'payroll_payment_detail')).toBe(true);
+
+    const unknown = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'unknown' });
+    runtime.invoke('tax.profile.upsert_facts', { workspaceId: unknown.data.workspaceId, facts: [{ factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'unknown', status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    const unknownPlan = runtime.invoke('tax.sources.plan_collection', { workspaceId: unknown.data.workspaceId, filingYear: 2025 });
+    expect(unknownPlan.data.collectionTasks?.[0]?.targetArtifactType).toBe('withholding_receipt');
+    expect(unknownPlan.data.collectionTasks?.some((task) => task.targetArtifactType === 'manual_income_facts')).toBe(false);
+  });
+
   it('persists source and sync state across connect/sync/resume/normalize', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime({
       consentRecords: demo.consentRecords,
