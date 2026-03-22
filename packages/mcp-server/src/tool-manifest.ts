@@ -27,6 +27,8 @@ export const CANONICAL_TOOL_MANIFEST = {
   'tax.workspace.get_status': { implemented: true, category: 'workspace' },
   'tax.workspace.list_coverage_gaps': { implemented: true, category: 'workspace', note: 'lists domain-aware coverage gaps and the single highest-priority next action' },
   'tax.filing.get_summary': { implemented: true, category: 'filing' },
+  'tax.filing.estimate_outcome': { implemented: true, category: 'filing', note: 'returns rough or draft-based refund/balance-due estimate ranges with assumptions and missing drivers' },
+  'tax.profile.list_adjacent_tax_obligations': { implemented: true, category: 'profile', note: 'surfaces adjacent tax obligations that should remain outside the comprehensive-income-tax workflow lane' },
   'tax.sources.connect': { implemented: true, category: 'sources' },
   'tax.sources.list': { implemented: true, category: 'sources' },
   'tax.sources.disconnect': { implemented: true, category: 'sources' },

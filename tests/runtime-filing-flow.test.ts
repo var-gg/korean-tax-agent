@@ -323,6 +323,93 @@ describe('in-memory runtime filing flow', () => {
     expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'mixed_posture_credit_review')).toBe(true);
   });
 
+  it('surfaces estimate outcome before and after official withholding plus draft promotion', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+
+    const beforeWithholding = runtime.invoke('tax.filing.estimate_outcome', { workspaceId });
+    expect(beforeWithholding.ok).toBe(false);
+    expect(beforeWithholding.data.confidenceBand).toBe('low');
+    expect(beforeWithholding.data.missingDrivers).toContain('official_withholding_receipt_required');
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'hometax',
+        transactions: [{ externalId: 'mix-1', occurredAt: '2025-04-01', amount: 90000, normalizedDirection: 'expense', counterparty: 'Telecom', description: 'phone bill', sourceReference: 'mix-1' }],
+        withholdingRecords: [
+          { externalId: 'wh-1', payerName: 'Client A', grossAmount: 50000000, withheldTaxAmount: 1500000, localTaxAmount: 150000 },
+        ],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'deduction_eligibility_facts', category: 'deduction_eligibility', value: 'baseline_provided', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+
+    const roughEstimate = runtime.invoke('tax.filing.estimate_outcome', { workspaceId });
+    expect(roughEstimate.ok).toBe(true);
+    expect(roughEstimate.data.estimateMode).toBe('rough');
+    expect(roughEstimate.data.includedPrepayments.length).toBeGreaterThan(0);
+    expect(roughEstimate.data.estimatedAmountRange.max - roughEstimate.data.estimatedAmountRange.min).toBeGreaterThan(300000);
+
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [{ factKey: 'deduction_eligibility_facts', category: 'deduction_eligibility', value: '', status: 'missing', sourceOfTruth: 'user_asserted' }],
+    });
+    const widerEstimate = runtime.invoke('tax.filing.estimate_outcome', { workspaceId });
+    expect(widerEstimate.data.estimatedAmountRange.max - widerEstimate.data.estimatedAmountRange.min).toBeGreaterThan(roughEstimate.data.estimatedAmountRange.max - roughEstimate.data.estimatedAmountRange.min);
+
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+    const draftEstimate = runtime.invoke('tax.filing.estimate_outcome', { workspaceId, draftId: draft.data.draftId });
+    expect(draftEstimate.data.estimateMode).toBe('draft_based');
+    expect(draftEstimate.data.assumptions.some((item) => item.includes('Draft-based'))).toBe(true);
+  });
+
+  it('surfaces adjacent tax obligations separately from the comprehensive-income-tax workflow', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+
+    const none = runtime.invoke('tax.profile.list_adjacent_tax_obligations', { workspaceId });
+    expect(none.data.items.length).toBe(0);
+
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'foreign_income', category: 'income_stream', value: 'foreign_stock_capital_gains_observed', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'special_tax_treatment_choice', category: 'taxpayer_profile', value: 'domestic_stock_large_shareholder_if_applicable', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+
+    const adjacent = runtime.invoke('tax.profile.list_adjacent_tax_obligations', { workspaceId });
+    expect(adjacent.data.items.some((item) => item.obligationCode === 'foreign_stock_capital_gains')).toBe(true);
+    expect(adjacent.data.items.some((item) => item.obligationCode === 'domestic_stock_large_shareholder_if_applicable')).toBe(true);
+    expect(adjacent.data.items.every((item) => item.notPartOfThisWorkflow)).toBe(true);
+
+    const summary = runtime.invoke('tax.filing.get_summary', { workspaceId });
+    expect((summary.data.adjacentTaxObligations?.length ?? 0)).toBeGreaterThan(0);
+    expect(summary.data.adjacentTaxObligations?.every((item) => item.notPartOfThisWorkflow)).toBe(true);
+
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'hometax',
+        withholdingRecords: [{ externalId: 'wh-1', payerName: 'Client A', grossAmount: 20000000, withheldTaxAmount: 600000, localTaxAmount: 60000 }],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', { workspaceId, facts: [{ factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+    const estimate = runtime.invoke('tax.filing.estimate_outcome', { workspaceId, draftId: draft.data.draftId });
+    expect(estimate.data.includedIncomeSources.some((item) => item.includes('Client A'))).toBe(true);
+    const exported = runtime.invoke('tax.filing.export_package', { workspaceId, draftId: draft.data.draftId, formats: ['json_package', 'submission_prep_checklist'] });
+    expect(exported.data.checklistPreview?.some((item) => item.includes('adjacent_tax_obligations='))).toBe(true);
+  });
+
   it('surfaces registry freshness and reverify recommendations in collection read models', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });

@@ -485,6 +485,25 @@ Purpose:
 - list targeted missing taxpayer facts with priority, materiality, why-it-matters, best question, and blocking stage
 - help the external agent decide the next short fact-capture step without turning MCP into a long-form interviewer
 
+#### `tax.profile.list_adjacent_tax_obligations`
+Purpose:
+- surface adjacent tax obligations that are outside the comprehensive-income-tax workflow lane
+- warn when facts or imported materials suggest separate obligations such as foreign stock capital gains or domestic-stock large-shareholder review
+
+Input:
+- workspace id
+
+Output:
+- `obligationCode`
+- `taxType`
+- `triggerFacts[]`
+- `appliesNow`
+- `filingWindowHint`
+- `notPartOfThisWorkflow`
+- `whySeparated`
+- `evidenceNeeded[]`
+- `nextRecommendedAction`
+
 #### `tax.classify.run`
 Purpose:
 - classify normalized records into tax-relevant categories/treatments
@@ -862,9 +881,10 @@ When the workflow is waiting for judgment rather than login:
 6. `tax.profile.detect_filing_path`
 7. `tax.classify.run`
 8. `tax.classify.list_review_items`
-9. `tax.filing.compute_draft`
-10. `tax.classify.resolve_review_item` (for classification/review blockers)
-11. `tax.filing.compute_draft` (recompute)
+9. `tax.filing.estimate_outcome` (rough quote when official withholding is already known)
+10. `tax.filing.compute_draft`
+11. `tax.classify.resolve_review_item` (for classification/review blockers)
+12. `tax.filing.compute_draft` (recompute)
 12. `tax.filing.refresh_official_data`
 13. `tax.filing.compare_with_hometax`
 14. if material mismatches exist: `tax.classify.list_review_items` → `tax.classify.resolve_review_item`
@@ -914,6 +934,18 @@ Implemented tools are tracked in the canonical tool manifest at:
 - `packages/mcp-server/src/tool-manifest.ts`
 
 Future/pending tools are tracked separately from implemented ones.
+
+Maintenance rule:
+- when adding a new MCP tool, update the canonical tool manifest first
+- then wire contracts/runtime/facade/docs/tests
+- drift tests should fail if manifest, facade, runtime, or docs fall out of sync
+
+Current future/pending examples:
+- none currently listed here
+
+Reference:
+- [38-mcp-agent-boundary-and-contract-gaps.md](./38-mcp-agent-boundary-and-contract-gaps.md)
+arately from implemented ones.
 
 Maintenance rule:
 - when adding a new MCP tool, update the canonical tool manifest first

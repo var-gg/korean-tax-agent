@@ -15,6 +15,9 @@ import {
   transitionSourceState,
 } from '../../core/src/state.js';
 import { getRegistryFreshness, getSourceMethodRegistryEntry, validateRegistryEntryDates } from './source-method-registry.js';
+import { deriveBookkeepingRegime as deriveBookkeepingRegimePolicy, deriveTaxProfileSignals as deriveTaxProfileSignalsPolicy } from './policy/regime-policy.js';
+import { buildAllocationCandidates as buildAllocationCandidatesPolicy, buildOpportunityCandidates as buildOpportunityCandidatesPolicy, buildSpecialCreditEligibility as buildSpecialCreditEligibilityPolicy } from './policy/opportunity-policy.js';
+import { buildGapNextActionPlan as buildGapNextActionPlanPolicy, buildRegistryFreshnessSurface as buildRegistryFreshnessSurfacePolicy, buildCollectionTasksForProfile, resolveCollectionProfile, taxSourcesPlanCollectionPolicy } from './policy/collection-policy.js';
 import type {
   ClassificationDecision,
   ConsentRecord,
@@ -938,7 +941,7 @@ export function taxSourcesPlanCollection(input: PlanCollectionInput): MCPRespons
     relatedSourceIds: [],
     state: 'open',
   });
-  const collectionTasks = buildTierAFreelancerCollectionTasks(input.workspaceId, input.filingYear);
+  const collectionTasks = buildCollectionTasksForProfile(resolveCollectionProfile({}), input.workspaceId, input.filingYear);
   const nextActionPlan: PlanCollectionData['nextActionPlan'] = {
     gapId: prioritizedGap.gapId,
     gapType: prioritizedGap.gapType,
@@ -1061,9 +1064,9 @@ export function taxWorkspaceListCoverageGaps(
     .map(enrichCoverageGap)
     .filter((gap) => !input.state || gap.state === input.state)
     .filter((gap) => !input.gapType || gap.gapType === input.gapType);
-  const { prioritizedGap, nextActionPlan } = buildGapNextActionPlan(filtered);
+  const { prioritizedGap, nextActionPlan } = buildGapNextActionPlanPolicy(filtered);
   const filingYear = Number(input.workspaceId.match(/(20\d{2})/)?.[1] ?? new Date().getFullYear());
-  const collectionTasks = buildTierAFreelancerCollectionTasks(input.workspaceId, filingYear);
+  const collectionTasks = buildCollectionTasksForProfile(resolveCollectionProfile({}), input.workspaceId, filingYear);
   return {
     ok: true,
     status: 'completed',
@@ -1961,9 +1964,9 @@ export function taxFilingListAdjustmentCandidates(
     .filter((item) => input.eligibilityState === undefined || item.eligibilityState === input.eligibilityState)
     .filter((item) => input.reviewRequired === undefined || item.reviewRequired === input.reviewRequired);
 
-  const { taxpayerPosture, bookkeepingMode, operatorWarnings: postureWarnings } = deriveTaxProfileSignals(facts, scopedTransactions, scopedWithholding, [], []);
-  const businessExpenseAllocationCandidates = buildAllocationCandidates(input.workspaceId, facts, scopedTransactions);
-  const opportunityCandidates = buildOpportunityCandidates(taxpayerPosture, facts, bookkeepingMode, scopedWithholding, scopedTransactions);
+  const { taxpayerPosture, bookkeepingMode, operatorWarnings: postureWarnings } = deriveTaxProfileSignalsPolicy(facts, scopedTransactions, scopedWithholding, [], []);
+  const businessExpenseAllocationCandidates = buildAllocationCandidatesPolicy(input.workspaceId, facts, scopedTransactions);
+  const opportunityCandidates = buildOpportunityCandidatesPolicy(taxpayerPosture, facts, bookkeepingMode, scopedWithholding, scopedTransactions);
   const submitterProfile = buildSubmitterProfileCompleteness(facts);
   if (taxpayerPosture === 'pure_business') {
     for (const item of items) {
@@ -2084,9 +2087,9 @@ export function taxProfileDetectFilingPath(
     coverageGaps,
   });
   const scopedWithholdingRecords = withholdingRecords.filter((record) => record.workspaceId === input.workspaceId);
-  const { taxpayerPosture, bookkeepingMode, regimeDerivation, regimeConfidenceBand, principalIndustryCode, industryThresholdBasis, operatorWarnings } = deriveTaxProfileSignals(scopedFacts, scopedTransactions, scopedWithholdingRecords, sourceArtifacts, evidenceDocuments);
-  const specialCreditEligibility = buildSpecialCreditEligibility(taxpayerPosture, scopedFacts);
-  const opportunityCandidates = buildOpportunityCandidates(taxpayerPosture, scopedFacts, bookkeepingMode, scopedWithholdingRecords, scopedTransactions);
+  const { taxpayerPosture, bookkeepingMode, regimeDerivation, regimeConfidenceBand, principalIndustryCode, industryThresholdBasis, operatorWarnings } = deriveTaxProfileSignalsPolicy(scopedFacts, scopedTransactions, scopedWithholdingRecords, sourceArtifacts, evidenceDocuments);
+  const specialCreditEligibility = buildSpecialCreditEligibilityPolicy(taxpayerPosture, scopedFacts);
+  const opportunityCandidates = buildOpportunityCandidatesPolicy(taxpayerPosture, scopedFacts, bookkeepingMode, scopedWithholdingRecords, scopedTransactions);
 
   return {
     ok: true,
@@ -2309,7 +2312,7 @@ export function taxFilingComputeDraft(
     : scopedTaxpayerFacts.length === 0
       ? computeMissingFactCompleteness(scopedTaxpayerFacts)
       : computeMissingFactCompleteness(scopedTaxpayerFacts, filingPathDetection.missingFacts);
-  const profileSignals = deriveTaxProfileSignals(scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords, sourceArtifacts, evidenceDocuments);
+  const profileSignals = deriveTaxProfileSignalsPolicy(scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords, sourceArtifacts, evidenceDocuments);
   const adjustmentView = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords).data;
   const submitterProfile = buildSubmitterProfileCompleteness(scopedTaxpayerFacts);
   const adjustmentCandidates = adjustmentView.items;
@@ -2374,7 +2377,7 @@ export function taxFilingComputeDraft(
       principalIndustryCode: profileSignals.principalIndustryCode,
       industryThresholdBasis: profileSignals.industryThresholdBasis,
       taxpayerPosture: profileSignals.taxpayerPosture,
-      specialCreditEligibility: buildSpecialCreditEligibility(profileSignals.taxpayerPosture, scopedTaxpayerFacts),
+      specialCreditEligibility: buildSpecialCreditEligibilityPolicy(profileSignals.taxpayerPosture, scopedTaxpayerFacts),
       businessExpenseAllocationCandidates: adjustmentView.businessExpenseAllocationCandidates,
       opportunityCandidates: adjustmentView.opportunityCandidates,
       submitterProfile,
@@ -3097,4 +3100,5 @@ function slugifyWorkspaceSegment(value?: string): string {
   const normalized = value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return normalized || 'default';
 }
+
 

@@ -55,6 +55,11 @@ Runnable examples for this external-agent model:
 - [`examples/external-agent-compare-with-hometax-example.ts`](./examples/external-agent-compare-with-hometax-example.ts)
 - [`examples/external-agent-next-step-example.ts`](./examples/external-agent-next-step-example.ts)
 
+Policy extraction note:
+- `packages/mcp-server/src/policy/` now holds extracted domain-policy helpers for collection, regime, opportunity, and submission logic.
+- `runtime.ts` and `tools.ts` remain the public orchestration/dispatch surfaces.
+- Public tool names and response envelopes are intentionally unchanged.
+
 ## Durable persistence (opt-in)
 
 Default behavior stays the same: the prototype runtime and browser-assist session store are still **in-memory by default**.

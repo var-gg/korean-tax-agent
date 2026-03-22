@@ -146,6 +146,8 @@ function getMissingRequiredFields(name: SupportedRuntimeToolName, input: Record<
     'tax.workspace.get_status': ['workspaceId'],
     'tax.workspace.list_coverage_gaps': ['workspaceId'],
     'tax.filing.get_summary': ['workspaceId'],
+    'tax.filing.estimate_outcome': ['workspaceId'],
+    'tax.profile.list_adjacent_tax_obligations': ['workspaceId'],
     'tax.sources.connect': ['workspaceId', 'sourceType', 'requestedScope'],
     'tax.sources.list': ['workspaceId'],
     'tax.sources.disconnect': ['workspaceId', 'sourceId'],

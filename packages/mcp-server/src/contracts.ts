@@ -1178,6 +1178,43 @@ export type GetWorkspaceStatusData = {
   nextRecommendedAction?: string;
 };
 
+export type EstimateOutcomeInput = {
+  workspaceId: string;
+  draftId?: string;
+};
+
+export type EstimateOutcomeData = {
+  estimateMode: 'rough' | 'draft_based';
+  estimatedOutcome: 'refund' | 'balance_due' | 'near_zero';
+  estimatedAmountRange: { min: number; max: number; currency: string };
+  confidenceBand: 'low' | 'medium' | 'high';
+  assumptions: string[];
+  includedIncomeSources: string[];
+  includedPrepayments: Array<{ label: string; amount: number; currency: string }>;
+  missingDrivers: string[];
+  nextRecommendedAction?: string;
+};
+
+export type ListAdjacentTaxObligationsInput = {
+  workspaceId: string;
+};
+
+export type AdjacentTaxObligation = {
+  obligationCode: string;
+  taxType: 'capital_gains' | 'local_income' | 'other';
+  triggerFacts: string[];
+  appliesNow: boolean;
+  filingWindowHint: string;
+  notPartOfThisWorkflow: boolean;
+  whySeparated: string;
+  evidenceNeeded: string[];
+  nextRecommendedAction?: string;
+};
+
+export type ListAdjacentTaxObligationsData = {
+  items: AdjacentTaxObligation[];
+};
+
 export type GetFilingSummaryData = {
   workspaceId: string;
   stopReasonCodes?: string[];
@@ -1210,6 +1247,7 @@ export type GetFilingSummaryData = {
   blockers: string[];
   missingFacts?: FilingFactCompleteness[];
   submitterProfile?: SubmitterProfileCompleteness;
+  adjacentTaxObligations?: AdjacentTaxObligation[];
   /**
    * Current workspace runtime view for operator summaries and UI rendering.
    * Prefer this over `blockers` when detailed blocker metadata is needed.
@@ -1266,6 +1304,7 @@ export type ExportPackageData = {
   includedFormats: string[];
   unresolvedBlockers: string[];
   checklistPreview?: string[];
+  adjacentTaxObligations?: AdjacentTaxObligation[];
 };
 
 export interface KoreanTaxMCPContracts {
@@ -1300,6 +1339,14 @@ export interface KoreanTaxMCPContracts {
   'tax.filing.get_summary': {
     input: GetFilingSummaryInput;
     output: MCPResponseEnvelope<GetFilingSummaryData>;
+  };
+  'tax.filing.estimate_outcome': {
+    input: EstimateOutcomeInput;
+    output: MCPResponseEnvelope<EstimateOutcomeData>;
+  };
+  'tax.profile.list_adjacent_tax_obligations': {
+    input: ListAdjacentTaxObligationsInput;
+    output: MCPResponseEnvelope<ListAdjacentTaxObligationsData>;
   };
   'tax.sources.connect': {
     input: ConnectSourceInput;

@@ -28,6 +28,10 @@ import type {
   CollectionTask,
   CompareWithHomeTaxData,
   DisconnectSourceData,
+  EstimateOutcomeData,
+  EstimateOutcomeInput,
+  ListAdjacentTaxObligationsData,
+  ListAdjacentTaxObligationsInput,
   DisconnectSourceInput,
   ImportHomeTaxMaterialsData,
   ImportHomeTaxMaterialsInput,
@@ -103,6 +107,7 @@ import type {
   SyncSourceInput,
   RuntimeSnapshot,
 } from './contracts.js';
+import { deriveAdjacentTaxObligations as deriveAdjacentTaxObligationsPolicy, deriveAssistCheckpointContract as deriveAssistCheckpointContractPolicy, deriveExternalSubmitState as deriveExternalSubmitStatePolicy, deriveOperatorTrustState as deriveOperatorTrustStatePolicy, deriveWorkspaceNextRecommendedAction as deriveWorkspaceNextRecommendedActionPolicy, getDraftHomeTaxPreparation as getDraftHomeTaxPreparationPolicy } from './policy/submission-policy.js';
 import {
   taxBrowserResumeHomeTaxAssist,
   taxBrowserStartHomeTaxAssist,
@@ -143,6 +148,8 @@ export type SupportedRuntimeToolName =
   | 'tax.workspace.get_status'
   | 'tax.workspace.list_coverage_gaps'
   | 'tax.filing.get_summary'
+  | 'tax.filing.estimate_outcome'
+  | 'tax.profile.list_adjacent_tax_obligations'
   | 'tax.sources.connect'
   | 'tax.sources.list'
   | 'tax.sources.disconnect'
@@ -382,6 +389,12 @@ export class InMemoryKoreanTaxMCPRuntime {
       case 'tax.filing.get_summary':
         result = this.getFilingSummary(input as GetFilingSummaryInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
+      case 'tax.filing.estimate_outcome':
+        result = this.estimateOutcome(input as EstimateOutcomeInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
+      case 'tax.profile.list_adjacent_tax_obligations':
+        result = this.listAdjacentTaxObligations(input as ListAdjacentTaxObligationsInput) as KoreanTaxMCPContracts[TName]['output'];
+        break;
       case 'tax.sources.connect':
         result = this.connectSource(input as ConnectSourceInput) as KoreanTaxMCPContracts[TName]['output'];
         break;
@@ -572,7 +585,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       lastCollectionStatus: workspace.lastCollectionStatus,
       openCoverageGapCount: workspace.openCoverageGapCount ?? 0,
       currentDraftId: workspace.currentDraftId,
-      nextRecommendedAction: deriveWorkspaceNextRecommendedAction(workspace),
+      nextRecommendedAction: deriveWorkspaceNextRecommendedActionPolicy(workspace),
     };
   }
 
@@ -898,7 +911,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const businessAccountComplianceWarnings = (adjustmentView.operatorWarnings ?? []).filter((item) => item.code === 'business_account_compliance_required').map((item) => item.code);
 
     const assistSession = this.getBrowserAssistSession(input.workspaceId);
-    const trustState = deriveOperatorTrustState({
+    const trustState = deriveOperatorTrustStatePolicy({
       draft,
       workspace,
       reviewItems: this.listReviewItems(input.workspaceId),
@@ -906,7 +919,8 @@ export class InMemoryKoreanTaxMCPRuntime {
       authCheckpoints: this.getAuthCheckpoints(input.workspaceId),
       assistSession,
     });
-    const submitState = deriveExternalSubmitState(workspace, assistSession);
+    const runtimeSnapshotAligned = { ...runtimeSnapshot, blockerCodes: trustState.stopReasonCodes } as RuntimeSnapshot;
+    const submitState = deriveExternalSubmitStatePolicy(workspace, assistSession);
     return {
       ok: true,
       status: 'completed',
@@ -951,7 +965,7 @@ export class InMemoryKoreanTaxMCPRuntime {
               fieldValueCount: draft.fieldValues?.length ?? 0,
             }
           : undefined,
-        runtimeSnapshot,
+        runtimeSnapshot: runtimeSnapshotAligned,
         nextRecommendedAction: coverageGapView.nextActionPlan?.recommendedNextAction ?? derived.nextRecommendedAction,
       },
       readiness,
@@ -960,16 +974,98 @@ export class InMemoryKoreanTaxMCPRuntime {
     };
   }
 
+  private listAdjacentTaxObligations(input: ListAdjacentTaxObligationsInput): MCPResponseEnvelope<ListAdjacentTaxObligationsData> {
+    const items = deriveAdjacentTaxObligationsPolicy(this.getTaxpayerFacts(input.workspaceId));
+    return {
+      ok: true,
+      status: 'completed',
+      data: { items },
+      nextRecommendedAction: items.some((item: ListAdjacentTaxObligationsData['items'][number]) => item.appliesNow) ? 'tax.profile.list_adjacent_tax_obligations' : undefined,
+    };
+  }
+
+  private estimateOutcome(input: EstimateOutcomeInput): MCPResponseEnvelope<EstimateOutcomeData> {
+    this.syncWorkspaceSnapshot(input.workspaceId);
+    const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
+    const draft = input.draftId ? this.getDraft(input.workspaceId) : this.getDraft(input.workspaceId);
+    const withholdings = this.getWithholdingRecords(input.workspaceId);
+    const taxpayerFacts = this.getTaxpayerFacts(input.workspaceId);
+    const reviewItems = this.listReviewItems(input.workspaceId).filter((item) => item.resolutionState !== 'resolved');
+    const missingFacts = taxListMissingFacts(input.workspaceId, taxpayerFacts, withholdings, Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data.items;
+    const missingDrivers: string[] = [];
+    if (withholdings.length === 0) missingDrivers.push('official_withholding_receipt_required');
+    if (missingFacts.some((item) => item.blockingStage === 'draft')) missingDrivers.push('missing_deduction_fact');
+    if (reviewItems.some((item) => item.reasonCode === 'possible_duplicate' || item.reasonCode === 'duplicate')) missingDrivers.push('unresolved_duplicate');
+    if (Array.from(this.store.transactions.values()).some((tx) => tx.workspaceId === input.workspaceId && /phone|internet|telecom|card|home|vehicle|car/i.test(`${tx.description ?? ''} ${tx.counterparty ?? ''}`))) missingDrivers.push('mixed_use_expense_scope');
+
+    const explicitMissingFactCount = taxpayerFacts.filter((fact) => fact.status === 'missing').length;
+    const grossIncome = withholdings.reduce((sum, item) => sum + (item.grossAmount ?? 0), 0);
+    const prepayments = withholdings.reduce((sum, item) => sum + (item.withheldTaxAmount ?? 0) + (item.localTaxAmount ?? 0), 0);
+    const estimateMode: 'rough' | 'draft_based' = draft ? 'draft_based' : 'rough';
+    if (withholdings.length === 0) {
+      return {
+        ok: false,
+        status: 'blocked',
+        data: {
+          estimateMode,
+          estimatedOutcome: 'near_zero',
+          estimatedAmountRange: { min: 0, max: 0, currency: 'KRW' },
+          confidenceBand: 'low',
+          assumptions: ['No official withholding/prepayment basis is available yet, so the estimate cannot move beyond a placeholder range.'],
+          includedIncomeSources: [],
+          includedPrepayments: [],
+          missingDrivers,
+          nextRecommendedAction: 'tax.sources.plan_collection',
+        },
+        blockingReason: 'missing_material_coverage',
+        nextRecommendedAction: 'tax.sources.plan_collection',
+      };
+    }
+
+    const assumedEffectiveRate = estimateMode === 'draft_based' ? 0.028 : 0.033;
+    const estimatedTax = Math.round(grossIncome * assumedEffectiveRate);
+    const center = prepayments - estimatedTax;
+    const uncertaintyBase = estimateMode === 'draft_based' ? Math.max(100000, Math.round(grossIncome * 0.02)) : Math.max(250000, Math.round(grossIncome * 0.05));
+    const uncertainty = uncertaintyBase + (missingDrivers.length * 150000) + (explicitMissingFactCount * 200000);
+    const estimatedAmountRange = { min: center - uncertainty, max: center + uncertainty, currency: 'KRW' };
+    const estimatedOutcome: 'refund' | 'balance_due' | 'near_zero' = estimatedAmountRange.min > 50000 ? 'refund' : estimatedAmountRange.max < -50000 ? 'balance_due' : 'near_zero';
+    const confidenceBand: 'low' | 'medium' | 'high' = estimateMode === 'draft_based' && missingDrivers.length === 0 ? 'high' : estimateMode === 'draft_based' || missingDrivers.length <= 1 ? 'medium' : 'low';
+    const assumptions = [
+      estimateMode === 'draft_based' ? 'Draft-based estimate uses the latest draft context plus official withholding/prepayment records.' : 'Rough estimate uses official withholding/prepayment records before full draft completion.',
+      'Quick-quote stage shows a range, not a single final tax amount.',
+      ...(missingDrivers.includes('mixed_use_expense_scope') ? ['Mixed-use expense scope can materially widen the outcome range until allocation evidence is settled.'] : []),
+      ...(missingDrivers.includes('unresolved_duplicate') ? ['Unresolved duplicate review can change included income or expense amounts.'] : []),
+      ...(missingDrivers.includes('missing_deduction_fact') ? ['Missing deduction facts can widen the range because credits/deductions are not fully reflected yet.'] : []),
+    ];
+    return {
+      ok: true,
+      status: 'completed',
+      data: {
+        estimateMode,
+        estimatedOutcome,
+        estimatedAmountRange,
+        confidenceBand,
+        assumptions,
+        includedIncomeSources: Array.from(new Set(withholdings.map((item) => item.payerName || item.sourceType || 'official_income_source'))),
+        includedPrepayments: withholdings.map((item) => ({ label: `${item.payerName || item.sourceType || 'withholding'} prepaid tax`, amount: (item.withheldTaxAmount ?? 0) + (item.localTaxAmount ?? 0), currency: item.currency ?? 'KRW' })),
+        missingDrivers,
+        nextRecommendedAction: draft ? (workspace.submissionReadiness === 'submission_assist_ready' ? 'tax.filing.prepare_hometax' : 'tax.filing.get_summary') : 'tax.filing.compute_draft',
+      },
+      nextRecommendedAction: draft ? (workspace.submissionReadiness === 'submission_assist_ready' ? 'tax.filing.prepare_hometax' : 'tax.filing.get_summary') : 'tax.filing.compute_draft',
+    };
+  }
+
   private getFilingSummary(input: GetFilingSummaryInput): MCPResponseEnvelope<GetFilingSummaryData> {
     this.syncWorkspaceSnapshot(input.workspaceId);
     const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
     const draft = this.getDraft(input.workspaceId);
-    const nextAction = deriveWorkspaceNextRecommendedAction(workspace);
-    const runtimeSnapshot = buildRuntimeSnapshot(workspace);
+    const nextAction = deriveWorkspaceNextRecommendedActionPolicy(workspace);
+    let runtimeSnapshot = buildRuntimeSnapshot(workspace);
 
     const missingFactsView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data;
     const missingFacts = missingFactsView.items;
     const coverageGapView = taxWorkspaceListCoverageGaps({ workspaceId: input.workspaceId }, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).data;
+    const adjacentTaxObligations = deriveAdjacentTaxObligationsPolicy(this.getTaxpayerFacts(input.workspaceId));
     const adjustmentCandidates = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, this.getTaxpayerFacts(input.workspaceId), Array.from(this.store.transactions.values()), this.getWithholdingRecords(input.workspaceId)).data.items;
     const keyPoints = [
       `workspace_status=${workspace.status}`,
@@ -982,6 +1078,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       `submitter_profile_missing=${missingFactsView.submitterProfile?.missingRequiredFields.length ?? 0}`,
       `open_coverage_gaps=${coverageGapView.items.length}`,
       `adjustment_candidates=${adjustmentCandidates.length}`,
+      `adjacent_tax_obligations=${adjacentTaxObligations.length}`,
       `submission_approval=${workspace.submissionApproval ? 'recorded' : 'missing'}`,
       `submission_result=${workspace.submissionResult?.result ?? 'none'}`,
     ];
@@ -995,7 +1092,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       unsupported: adjustmentCandidates.filter((item) => item.eligibilityState === 'out_of_scope').length,
     };
     const assistSession = this.getBrowserAssistSession(input.workspaceId);
-    const trustState = deriveOperatorTrustState({
+    const trustState = deriveOperatorTrustStatePolicy({
       draft,
       workspace,
       reviewItems: this.listReviewItems(input.workspaceId),
@@ -1003,7 +1100,14 @@ export class InMemoryKoreanTaxMCPRuntime {
       authCheckpoints: this.getAuthCheckpoints(input.workspaceId),
       assistSession,
     });
-    const submitState = deriveExternalSubmitState(workspace, assistSession);
+    runtimeSnapshot = {
+      blockerCodes: [...trustState.stopReasonCodes],
+      activeBlockers: runtimeSnapshot.activeBlockers ?? [],
+      coverageByDomain: runtimeSnapshot.coverageByDomain,
+      materialCoverageSummary: runtimeSnapshot.materialCoverageSummary,
+      submissionComparison: runtimeSnapshot.submissionComparison,
+    };
+    const submitState = deriveExternalSubmitStatePolicy(workspace, assistSession);
     const blockers = trustState.stopReasonCodes;
     const summaryText = buildFilingSummaryText({
       workspace,
@@ -1041,13 +1145,20 @@ export class InMemoryKoreanTaxMCPRuntime {
         adjustmentSummary,
         missingFacts,
         submitterProfile: missingFactsView.submitterProfile,
+        adjacentTaxObligations,
         headline,
         summaryText,
         operatorUpdate,
         status: workspace.status,
         keyPoints,
         blockers,
-        runtimeSnapshot,
+        runtimeSnapshot: {
+          blockerCodes: runtimeSnapshot.blockerCodes,
+          activeBlockers: runtimeSnapshot.activeBlockers ?? [],
+          coverageByDomain: runtimeSnapshot.coverageByDomain,
+          materialCoverageSummary: runtimeSnapshot.materialCoverageSummary,
+          submissionComparison: runtimeSnapshot.submissionComparison,
+        },
         nextRecommendedAction: blockers.includes('awaiting_review_decision') || blockers.includes('comparison_incomplete')
           ? nextAction
           : coverageGapView.nextActionPlan?.recommendedNextAction ?? nextAction,
@@ -2028,6 +2139,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     const evidenceDocuments = Array.from(this.store.evidenceDocuments.values()).filter((doc) => doc.workspaceId === input.workspaceId);
     const sourceArtifacts = Array.from(this.store.sourceArtifacts.values()).filter((artifact) => artifact.workspaceId === input.workspaceId);
     const submitterProfileView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data.submitterProfile;
+    const adjacentFacts = this.store.taxpayerFactsByWorkspace.get(input.workspaceId) ?? this.getTaxpayerFacts(input.workspaceId);
+    const adjacentTaxObligations = summary.adjacentTaxObligations ?? deriveAdjacentTaxObligationsPolicy(adjacentFacts);
     const businessAccountComplianceWarning = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, this.getTaxpayerFacts(input.workspaceId), Array.from(this.store.transactions.values()), this.getWithholdingRecords(input.workspaceId)).data.operatorWarnings?.some((item) => item.code === 'business_account_compliance_required');
     const checklistPreview = [
       `final_state=${workspace?.status ?? 'unknown'}`,
@@ -2035,6 +2148,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       `material_mismatch=${draft?.stopReasonCodes?.includes('severe_mismatch') ? 'present' : 'none'}`,
       `missing_coverage=${(workspace?.openCoverageGapCount ?? 0) > 0 ? 'present' : 'none'}`,
       `business_account_compliance=${businessAccountComplianceWarning ? 'review_required' : 'none'}`,
+      `adjacent_tax_obligations=${adjacentTaxObligations.map((item: ListAdjacentTaxObligationsData['items'][number]) => item.obligationCode).join('|') || 'none'}`,
       `submitter_profile=${(submitterProfileView?.missingRequiredFields.length ?? 0) === 0 ? 'complete' : `missing:${submitterProfileView?.missingRequiredFields.join('|')}`}`,
       `receipt_confirmation=${workspace?.submissionResult?.receiptNumber || (workspace?.submissionResult?.receiptArtifactRefs?.length ?? 0) > 0 ? 'recorded' : 'pending'}`,
     ];
@@ -2111,6 +2225,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         includedFormats: input.formats.filter((format) => format !== 'submission_receipt_bundle' || Boolean(workspace?.submissionResult)),
         unresolvedBlockers,
         checklistPreview,
+        adjacentTaxObligations,
       },
       nextRecommendedAction: unresolvedBlockers.length > 0 ? 'tax.workspace.get_status' : 'tax.filing.get_summary',
     };
@@ -2177,7 +2292,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const result = taxBrowserStartHomeTaxAssist(input);
     result.data.handoff = prepared.data.handoff;
     result.data.entryPlan = prepared.data.handoff;
-    const assistContract = deriveAssistCheckpointContract({
+    const assistContract = deriveAssistCheckpointContractPolicy({
       draft,
       prepared: prepared.data,
       reviewItems: this.listReviewItems(input.workspaceId),
@@ -2312,7 +2427,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           handoff: {
             provider: 'hometax',
             recommendedTool: 'tax.browser.resume_hometax_assist',
-            entryPlan: getDraftHomeTaxPreparation(this.getDraft(input.workspaceId))?.handoff,
+            entryPlan: getDraftHomeTaxPreparationPolicy(this.getDraft(input.workspaceId))?.handoff,
           },
         },
         errorCode: 'assist_session_not_found',
@@ -2322,10 +2437,10 @@ export class InMemoryKoreanTaxMCPRuntime {
 
     const result = taxBrowserResumeHomeTaxAssist(input, session);
     const currentDraft = this.getDraft(input.workspaceId);
-    const prepared = getDraftHomeTaxPreparation(currentDraft);
+    const prepared = getDraftHomeTaxPreparationPolicy(currentDraft);
     const preparedHandoff = prepared?.handoff;
     result.data.handoff.entryPlan = preparedHandoff;
-    const assistContract = deriveAssistCheckpointContract({
+    const assistContract = deriveAssistCheckpointContractPolicy({
       draft: currentDraft,
       session,
       prepared,
@@ -2382,7 +2497,7 @@ export class InMemoryKoreanTaxMCPRuntime {
           draftRef: this.getDraft(input.workspaceId ?? 'unknown_workspace')?.draftId ?? 'unknown_draft',
           provider: 'hometax',
           recommendedTool: 'tax.browser.get_checkpoint',
-          entryPlan: getDraftHomeTaxPreparation(this.getDraft(input.workspaceId ?? 'unknown_workspace'))?.handoff,
+          entryPlan: getDraftHomeTaxPreparationPolicy(this.getDraft(input.workspaceId ?? 'unknown_workspace'))?.handoff,
           startedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }),
@@ -2396,10 +2511,10 @@ export class InMemoryKoreanTaxMCPRuntime {
     const stopped = Boolean(session.endedAt);
     const workspace = this.store.workspaces.get(session.workspaceId);
     const currentDraft = this.getDraft(session.workspaceId);
-    const prepared = getDraftHomeTaxPreparation(currentDraft);
-    const assistContract = deriveAssistCheckpointContract({ draft: currentDraft, session, prepared, reviewItems: this.listReviewItems(session.workspaceId) });
+    const prepared = getDraftHomeTaxPreparationPolicy(currentDraft);
+    const assistContract = deriveAssistCheckpointContractPolicy({ draft: currentDraft, session, prepared, reviewItems: this.listReviewItems(session.workspaceId) });
     const finalSubmissionState = session.submissionState ?? (workspace?.status === 'submitted' ? 'submitted' : workspace?.status === 'submission_failed' ? 'submission_failed' : workspace?.status === 'submission_uncertain' ? 'submission_uncertain' : undefined);
-    const submitState = deriveExternalSubmitState(workspace, session);
+    const submitState = deriveExternalSubmitStatePolicy(workspace, session);
     const stoppedReason = ((session as BrowserAssistSession & { stopReason?: StopHomeTaxAssistInput['stopReason'] }).stopReason) ?? 'user_pause';
     const stoppedRetryPolicy = stoppedReason === 'auth_expired' ? 'reauth_then_resume' : stoppedReason === 'operator_restart' || stoppedReason === 'browser_closed' ? 'refresh_prepare_then_restart' : 'manual_confirmation_then_resume';
     const stoppedResumePreconditions = stoppedReason === 'auth_expired'
@@ -2437,7 +2552,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         provider: session.provider ?? 'hometax',
         targetSection: session.lastKnownSection,
         recommendedTool: stopped ? 'tax.browser.get_checkpoint' : 'tax.browser.resume_hometax_assist',
-        entryPlan: getDraftHomeTaxPreparation(this.getDraft(session.workspaceId))?.handoff,
+        entryPlan: getDraftHomeTaxPreparationPolicy(this.getDraft(session.workspaceId))?.handoff,
         startedAt: session.startedAt,
         updatedAt: session.updatedAt,
         endedAt: session.endedAt,
@@ -2680,6 +2795,8 @@ function describeRecommendedAction(action: string): string {
       return 'run the HomeTax comparison step';
     case 'tax.filing.prepare_hometax':
       return 'prepare the draft for HomeTax handoff';
+    case 'tax.filing.estimate_outcome':
+      return 'estimate refund or balance-due range';
     case 'tax.sources.resume_sync':
       return 'resume the blocked source sync flow';
     default:
@@ -2973,6 +3090,51 @@ function isBlockingReason(value: string): value is BlockingReason {
   ].includes(value);
 }
 
+function deriveAdjacentTaxObligationsLegacy(facts: TaxpayerFact[]): ListAdjacentTaxObligationsData['items'] {
+  const factText = JSON.stringify(facts.map((fact) => ({ factKey: fact.factKey, value: fact.value, status: fact.status }))).toLowerCase();
+  const hasForeignStock = facts.some((fact) => fact.factKey === 'foreign_income') || factText.includes('foreign_stock') || factText.includes('overseas_stock') || factText.includes('foreign stock') || factText.includes('해외주식');
+  const hasDomesticLargeShareholder = facts.some((fact) => fact.factKey === 'special_tax_treatment_choice' && JSON.stringify(fact.value ?? '').toLowerCase().includes('large_shareholder')) || factText.includes('domestic_stock_large_shareholder') || factText.includes('large_shareholder') || factText.includes('대주주');
+  const items: ListAdjacentTaxObligationsData['items'] = [];
+  if (hasForeignStock) {
+    items.push({
+      obligationCode: 'foreign_stock_capital_gains',
+      taxType: 'capital_gains',
+      triggerFacts: facts.filter((fact) => JSON.stringify(fact.value ?? '').toLowerCase().includes('foreign') || JSON.stringify(fact.value ?? '').includes('해외')).map((fact) => fact.factKey),
+      appliesNow: true,
+      filingWindowHint: 'Foreign stock capital-gains filing/review should be checked in its separate filing window; do not assume it is included in comprehensive income tax workflow.',
+      notPartOfThisWorkflow: true,
+      whySeparated: 'Foreign stock capital gains are a separate lane and must not be auto-mixed into the comprehensive income tax draft or estimate.',
+      evidenceNeeded: ['foreign broker trade history', 'realized gain/loss detail', 'FX/conversion evidence if needed'],
+      nextRecommendedAction: 'collect foreign stock capital-gains materials in a separate specialist lane',
+    });
+    items.push({
+      obligationCode: 'local_income_followup_note',
+      taxType: 'local_income',
+      triggerFacts: ['foreign_stock_capital_gains'],
+      appliesNow: true,
+      filingWindowHint: 'Check whether local-income follow-up applies after the separate capital-gains lane is confirmed.',
+      notPartOfThisWorkflow: true,
+      whySeparated: 'Local-income follow-up may depend on the adjacent capital-gains outcome rather than this comprehensive income tax workflow.',
+      evidenceNeeded: ['capital-gains filing result or advisor confirmation'],
+      nextRecommendedAction: 'carry a local-tax follow-up note with the adjacent capital-gains lane',
+    });
+  }
+  if (hasDomesticLargeShareholder) {
+    items.push({
+      obligationCode: 'domestic_stock_large_shareholder_if_applicable',
+      taxType: 'capital_gains',
+      triggerFacts: facts.filter((fact) => JSON.stringify(fact.value ?? '').toLowerCase().includes('large_shareholder') || JSON.stringify(fact.value ?? '').includes('대주주')).map((fact) => fact.factKey),
+      appliesNow: true,
+      filingWindowHint: 'Confirm domestic large-shareholder capital-gains obligation separately if the taxpayer meets the threshold.',
+      notPartOfThisWorkflow: true,
+      whySeparated: 'Potential domestic-stock large-shareholder capital gains should remain outside the comprehensive income tax computation lane until separately confirmed.',
+      evidenceNeeded: ['shareholding threshold evidence', 'broker trade history', 'sale detail'],
+      nextRecommendedAction: 'confirm large-shareholder applicability in a separate capital-gains review lane',
+    });
+  }
+  return items;
+}
+
 function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {
   const comparisonState = getRuntimeComparisonState(workspace);
   const submissionReadiness = getRuntimeSubmissionReadiness(workspace);
@@ -3140,7 +3302,7 @@ function deriveOperatorTrustState(params: {
   return { stopReasonCodes, warningCodes, escalationReason, operatorExplanation, reviewBatchId };
 }
 
-function getDraftHomeTaxPreparation(draft?: ComputeDraftData): PrepareHomeTaxData | undefined {
+function getDraftHomeTaxPreparationLegacy(draft?: ComputeDraftData): PrepareHomeTaxData | undefined {
   const candidate = draft as ComputeDraftData & { hometaxPreparation?: PrepareHomeTaxData } | undefined;
   return candidate?.hometaxPreparation;
 }
@@ -3536,5 +3698,6 @@ function buildRuntimeWithholdingRecords(workspaceId: string, transactions: Ledge
     capturedAt: transaction.occurredAt,
   }));
 }
+
 
 

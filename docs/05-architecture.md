@@ -31,6 +31,11 @@ Responsibilities:
 - orchestrate workflow state, normalization, classification, review, and draft generation
 - surface consent-required actions clearly
 
+Internal module boundary:
+- `runtime.ts` and `tools.ts` should stay orchestration/dispatch oriented.
+- extracted domain-policy code lives under `packages/mcp-server/src/policy/`.
+- current policy modules: `collection-policy.ts`, `regime-policy.ts`, `opportunity-policy.ts`, `submission-policy.ts`.
+
 Must not become responsible for:
 - directly opening local files
 - directly controlling browser pages or tabs
