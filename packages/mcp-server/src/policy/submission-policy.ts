@@ -25,23 +25,58 @@ export function deriveAdjacentTaxObligationsNextAction(facts: TaxpayerFact[], it
   return items.some((item) => item.appliesNow) ? 'tax.workspace.get_status' : undefined;
 }
 
-export function deriveFilingWindowAwareness(filingYear?: number, now = new Date()): FilingWindowAwareness {
+const KOREAN_PUBLIC_HOLIDAY_OVERRIDES = new Set<string>([
+  '2026-03-02',
+  '2026-05-05',
+]);
+
+function toDateKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function isNonBusinessDay(date: Date): boolean {
+  const day = date.getUTCDay();
+  return day === 0 || day === 6 || KOREAN_PUBLIC_HOLIDAY_OVERRIDES.has(toDateKey(date));
+}
+
+function extendToNextBusinessDay(date: Date): Date {
+  const current = new Date(date);
+  while (isNonBusinessDay(current)) current.setUTCDate(current.getUTCDate() + 1);
+  current.setUTCHours(23, 59, 59, 999);
+  return current;
+}
+
+function hasSincereFilingConfirmationLane(facts: TaxpayerFact[] = []): boolean {
+  return facts.some((fact) =>
+    fact.status !== 'missing' && (
+      (fact.factKey === 'special_tax_treatment_choice' && JSON.stringify(fact.value ?? '').toLowerCase().includes('sincere_filing_confirmation')) ||
+      (fact.factKey === 'bookkeeping_mode' && JSON.stringify(fact.value ?? '').toLowerCase().includes('sincere_filing_confirmation'))
+    )
+  );
+}
+
+export function deriveFilingWindowAwareness(filingYear?: number, now = new Date(), facts: TaxpayerFact[] = []): FilingWindowAwareness {
   if (!filingYear) {
     return { filingWindowState: 'unknown', filingWindowHint: 'Filing year is missing, so submission seasonality cannot be determined yet.', submissionAttemptAllowed: false };
   }
-  const openAt = new Date(Date.UTC(filingYear + 1, 0, 1, 0, 0, 0));
-  const closeAt = new Date(Date.UTC(filingYear + 1, 4, 31, 23, 59, 59));
-  const closingSoonAt = new Date(Date.UTC(filingYear + 1, 4, 25, 0, 0, 0));
+  const usesSincereLane = hasSincereFilingConfirmationLane(facts);
+  const openAt = new Date(Date.UTC(filingYear + 1, 4, 1, 0, 0, 0));
+  const nominalCloseAt = usesSincereLane
+    ? new Date(Date.UTC(filingYear + 1, 5, 30, 23, 59, 59, 999))
+    : new Date(Date.UTC(filingYear + 1, 4, 31, 23, 59, 59, 999));
+  const effectiveCloseAt = extendToNextBusinessDay(nominalCloseAt);
+  const closingSoonAt = new Date(effectiveCloseAt);
+  closingSoonAt.setUTCDate(closingSoonAt.getUTCDate() - 7);
   if (now < openAt) {
     return { filingWindowState: 'preseason_preview', filingWindowHint: `Submission lane is preview-only before ${filingYear + 1}-05-01; collection, normalize, draft, and compare are still allowed.`, seasonalityWarningCode: 'preseason_preview_only', submissionAttemptAllowed: false };
   }
-  if (now > closeAt) {
-    return { filingWindowState: 'closed', filingWindowHint: `The main comprehensive-income-tax submission window for filing year ${filingYear} is closed; continue evidence/draft work but do not treat portal submission issues as generic auth/UI failures.`, seasonalityWarningCode: 'filing_window_closed', submissionAttemptAllowed: false };
+  if (now > effectiveCloseAt) {
+    return { filingWindowState: 'closed', filingWindowHint: `The ${usesSincereLane ? 'sincere-filing-confirmation' : 'main comprehensive-income-tax'} submission window for filing year ${filingYear} is closed; continue evidence/draft work but do not treat portal submission issues as generic auth/UI failures.`, seasonalityWarningCode: 'filing_window_closed', submissionAttemptAllowed: false };
   }
   if (now >= closingSoonAt) {
-    return { filingWindowState: 'closing_soon', filingWindowHint: 'Submission window is currently open but close to deadline; re-check final portal state immediately before final submit.', submissionAttemptAllowed: true };
+    return { filingWindowState: 'closing_soon', filingWindowHint: `Submission window is currently open${usesSincereLane ? ' under the sincere-filing-confirmation lane' : ''} but close to deadline (effective close: ${toDateKey(effectiveCloseAt)}); re-check final portal state immediately before final submit.`, submissionAttemptAllowed: true };
   }
-  return { filingWindowState: 'open', filingWindowHint: 'Submission window is open for live filing actions.', submissionAttemptAllowed: true };
+  return { filingWindowState: 'open', filingWindowHint: `Submission window is open for live filing actions${usesSincereLane ? ' under the sincere-filing-confirmation lane' : ''}.`, submissionAttemptAllowed: true };
 }
 
 export function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {

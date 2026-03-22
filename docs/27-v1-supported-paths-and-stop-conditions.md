@@ -282,7 +282,7 @@ The external AI agent may perform those tasks in its own runtime, but it must ha
 ## Stop conditions
 The external AI agent should stop, pause, or downgrade claims when any of the following holds.
 
-Off-season / preview-only periods should also be surfaced explicitly through filing-window read-model fields (`filingWindowState`, `filingWindowHint`, `seasonalityWarningCode`, `submissionAttemptAllowed`) so submission blocking is distinguishable from generic portal/auth/UI failures.
+Off-season / preview-only periods should also be surfaced explicitly through filing-window read-model fields (`filingWindowState`, `filingWindowHint`, `seasonalityWarningCode`, `submissionAttemptAllowed`) so submission blocking is distinguishable from generic portal/auth/UI failures. The default comprehensive-income-tax lane opens on May 1 and closes on May 31 of the following year, with weekend/non-business-day extension. A sincere-filing-confirmation lane may remain open through June 30, also subject to extension.
 
 ### Stop 1. Unsupported filing path detected
 Examples:

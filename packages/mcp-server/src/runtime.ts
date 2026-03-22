@@ -1074,7 +1074,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const workspace = this.getWorkspace(input.workspaceId) ?? this.ensureWorkspace(input.workspaceId);
     const draft = this.getDraft(input.workspaceId);
     const nextAction = deriveWorkspaceNextRecommendedActionPolicy(workspace);
-    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace.filingYear);
+    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace.filingYear, new Date(), this.getTaxpayerFacts(input.workspaceId));
     let runtimeSnapshot = buildRuntimeSnapshot(workspace);
 
     const missingFactsView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data;
@@ -2082,7 +2082,7 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private prepareHomeTax(input: PrepareHomeTaxInput): MCPResponseEnvelope<PrepareHomeTaxData> {
     const workspace = this.getWorkspace(input.workspaceId);
-    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear);
+    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear, new Date(), this.getTaxpayerFacts(input.workspaceId));
     const draft = this.getDraft(input.workspaceId);
     const result = taxFilingPrepareHomeTax(
       input,
@@ -2278,28 +2278,10 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private startHomeTaxAssist(input: StartHomeTaxAssistInput): MCPResponseEnvelope<StartHomeTaxAssistData> {
     const workspace = this.getWorkspace(input.workspaceId);
-    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear);
+    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear, new Date(), this.getTaxpayerFacts(input.workspaceId));
     const prepared = this.prepareHomeTax({ workspaceId: input.workspaceId, draftId: input.draftId });
     const draft = this.getDraft(input.workspaceId);
     const submissionReadiness = prepared.readiness?.submissionReadiness ?? draft?.submissionReadiness;
-
-    if (!filingWindow.submissionAttemptAllowed) {
-      return {
-        ok: false,
-        status: 'blocked',
-        blockingReason: 'unsupported_hometax_state',
-        nextRecommendedAction: 'tax.workspace.get_status',
-        data: {
-          ...filingWindow,
-          assistSessionId: `assist_${input.workspaceId}_${input.draftId}`,
-          checkpointType: 'review_judgment',
-          authRequired: false,
-          submissionState: undefined,
-          allowedNextActions: ['tax.workspace.get_status'],
-          resumePreconditions: [filingWindow.filingWindowHint],
-        },
-      };
-    }
 
     if (!prepared.ok || submissionReadiness !== 'submission_assist_ready') {
       return {
@@ -2387,29 +2369,7 @@ export class InMemoryKoreanTaxMCPRuntime {
 
   private recordSubmissionResult(input: RecordSubmissionResultInput): MCPResponseEnvelope<RecordSubmissionResultData> {
     const workspace = this.store.workspaces.get(input.workspaceId);
-    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear);
-    if (!filingWindow.submissionAttemptAllowed) {
-      return {
-        ok: false,
-        status: 'blocked',
-        blockingReason: 'unsupported_hometax_state',
-        nextRecommendedAction: 'tax.workspace.get_status',
-        errorCode: filingWindow.seasonalityWarningCode,
-        data: { submissionResult: {
-          submissionResultId: `submission_result_${input.workspaceId}_${input.draftId}`,
-          workspaceId: input.workspaceId,
-          draftId: input.draftId,
-          result: 'unknown',
-          portalObservedAt: input.portalObservedAt ?? new Date().toISOString(),
-          portalSummary: filingWindow.filingWindowHint,
-          receiptArtifactRefs: input.receiptArtifactRefs ?? [],
-          receiptNumber: input.receiptNumber,
-          submittedAt: input.submittedAt,
-          nextSteps: [filingWindow.filingWindowHint],
-          verificationRequired: true,
-        } },
-      };
-    }
+    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear, new Date(), this.getTaxpayerFacts(input.workspaceId));
     if (!workspace?.submissionApproval || workspace.submissionApproval.draftId !== input.draftId) {
       return {
         ok: false,
@@ -2577,7 +2537,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const prepared = getDraftHomeTaxPreparationPolicy(currentDraft);
     const assistContract = deriveAssistCheckpointContractPolicy({ draft: currentDraft, session, prepared, reviewItems: this.listReviewItems(session.workspaceId) });
     const finalSubmissionState = session.submissionState ?? (workspace?.status === 'submitted' ? 'submitted' : workspace?.status === 'submission_failed' ? 'submission_failed' : workspace?.status === 'submission_uncertain' ? 'submission_uncertain' : undefined);
-    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear);
+    const filingWindow = deriveFilingWindowAwarenessPolicy(workspace?.filingYear, new Date(), this.getTaxpayerFacts(session.workspaceId));
     const submitState = deriveExternalSubmitStatePolicy(workspace, session);
     const stoppedReason = ((session as BrowserAssistSession & { stopReason?: StopHomeTaxAssistInput['stopReason'] }).stopReason) ?? 'user_pause';
     const stoppedRetryPolicy = stoppedReason === 'auth_expired' ? 'reauth_then_resume' : stoppedReason === 'operator_restart' || stoppedReason === 'browser_closed' ? 'refresh_prepare_then_restart' : 'manual_confirmation_then_resume';
@@ -3763,5 +3723,6 @@ function buildRuntimeWithholdingRecords(workspaceId: string, transactions: Ledge
     capturedAt: transaction.occurredAt,
   }));
 }
+
 
 

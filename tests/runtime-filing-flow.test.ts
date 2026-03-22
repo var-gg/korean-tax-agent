@@ -327,9 +327,8 @@ describe('in-memory runtime filing flow', () => {
     expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'mixed_posture_credit_review')).toBe(true);
   });
 
-  it('surfaces filing-window awareness across status/summary/prepare/start and blocks off-season submit lane', () => {
+  it('surfaces filing-window awareness across preview/open/closing/extended/sincere/closed states', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2025-12-15T09:00:00Z'));
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
     const workspaceId = init.data.workspaceId;
@@ -337,30 +336,39 @@ describe('in-memory runtime filing flow', () => {
     runtime.invoke('tax.profile.upsert_facts', { workspaceId, facts: [{ factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' }] });
     const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
 
-    const preseasonStatus = runtime.invoke('tax.workspace.get_status', { workspaceId });
-    expect(preseasonStatus.data.filingWindowState).toBe('preseason_preview');
-    const preseasonSummary = runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: draft.data.draftId });
-    expect(preseasonSummary.data.filingWindowState).toBe('preseason_preview');
+    vi.setSystemTime(new Date('2026-02-15T09:00:00Z'));
+    expect(runtime.invoke('tax.workspace.get_status', { workspaceId }).data.filingWindowState).toBe('preseason_preview');
+    vi.setSystemTime(new Date('2026-03-15T09:00:00Z'));
+    expect(runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: draft.data.draftId }).data.filingWindowState).toBe('preseason_preview');
     const preseasonPrepare = runtime.invoke('tax.filing.prepare_hometax', { workspaceId, draftId: draft.data.draftId });
     expect(preseasonPrepare.data.submissionAttemptAllowed).toBe(false);
     const preseasonStart = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId, draftId: draft.data.draftId, mode: 'guide_only' });
     expect(preseasonStart.ok).toBe(false);
     expect(preseasonStart.data.filingWindowState).toBe('preseason_preview');
 
-    vi.setSystemTime(new Date('2026-05-10T09:00:00Z'));
-    const openStatus = runtime.invoke('tax.workspace.get_status', { workspaceId });
-    expect(openStatus.data.filingWindowState).toBe('open');
-    const openPrepare = runtime.invoke('tax.filing.prepare_hometax', { workspaceId, draftId: draft.data.draftId });
-    expect(openPrepare.data.submissionAttemptAllowed).toBe(true);
+    vi.setSystemTime(new Date('2026-05-03T09:00:00Z'));
+    expect(runtime.invoke('tax.workspace.get_status', { workspaceId }).data.filingWindowState).toBe('open');
 
-    vi.setSystemTime(new Date('2026-06-10T09:00:00Z'));
+    vi.setSystemTime(new Date('2026-05-29T09:00:00Z'));
+    expect(runtime.invoke('tax.workspace.get_status', { workspaceId }).data.filingWindowState).toBe('closing_soon');
+
+    vi.setSystemTime(new Date('2026-06-01T09:00:00Z'));
+    const weekendExtended = runtime.invoke('tax.filing.prepare_hometax', { workspaceId, draftId: draft.data.draftId });
+    expect(weekendExtended.data.filingWindowState).toBe('closing_soon');
+    expect(weekendExtended.data.filingWindowHint).toContain('effective close: 2026-06-01');
+
+    runtime.invoke('tax.profile.upsert_facts', { workspaceId, facts: [{ factKey: 'special_tax_treatment_choice', category: 'taxpayer_profile', value: 'sincere_filing_confirmation', status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    vi.setSystemTime(new Date('2026-06-15T09:00:00Z'));
+    expect(runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: draft.data.draftId }).data.filingWindowState).toBe('open');
+
+    vi.setSystemTime(new Date('2026-07-02T09:00:00Z'));
     const closedStatus = runtime.invoke('tax.workspace.get_status', { workspaceId });
     expect(closedStatus.data.filingWindowState).toBe('closed');
     const closedStart = runtime.invoke('tax.browser.start_hometax_assist', { workspaceId, draftId: draft.data.draftId, mode: 'guide_only' });
     expect(closedStart.ok).toBe(false);
     expect(closedStart.data.filingWindowState).toBe('closed');
 
-    vi.setSystemTime(new Date('2025-12-15T09:00:00Z'));
+    vi.setSystemTime(new Date('2026-02-15T09:00:00Z'));
     const preseasonCompare = runtime.invoke('tax.filing.compare_with_hometax', { workspaceId, draftId: draft.data.draftId, observedValues: [] });
     expect(preseasonCompare.status).not.toBe('failed');
   });

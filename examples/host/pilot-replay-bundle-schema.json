@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://var.gg/schemas/pilot-replay-bundle.schema.json",
+  "title": "Pilot Replay Bundle",
+  "type": "object",
+  "required": [
+    "runId",
+    "repoCommit",
+    "workspaceId",
+    "filingYear",
+    "hostRuntime",
+    "startedAt",
+    "endedAt",
+    "userIntent",
+    "toolCallTrace",
+    "collectionObservations",
+    "statusSnapshots",
+    "browserCheckpointSummaries",
+    "operatorQuestions",
+    "artifactsCollected",
+    "exportPackageRefs",
+    "finalOutcome",
+    "unresolvedBlockers",
+    "improvementHypotheses"
+  ],
+  "properties": {
+    "runId": { "type": "string", "minLength": 1 },
+    "repoCommit": { "type": "string", "minLength": 7 },
+    "workspaceId": { "type": "string", "minLength": 1 },
+    "filingYear": { "type": "integer", "minimum": 2000, "maximum": 2100 },
+    "hostRuntime": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "surface": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": "string", "format": "date-time" },
+    "userIntent": { "type": "string", "minLength": 1 },
+    "toolCallTrace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "tool", "inputSummary", "resultStatus"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "tool": { "type": "string" },
+          "inputSummary": { "type": "object" },
+          "resultStatus": { "type": "string" },
+          "blockingReason": { "type": ["string", "null"] },
+          "nextRecommendedAction": { "type": ["string", "null"] },
+          "notes": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "collectionObservations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sourceType", "targetArtifactType", "outcome", "recordedAt"],
+        "properties": {
+          "sourceType": { "type": "string" },
+          "targetArtifactType": { "type": "string" },
+          "outcome": { "type": "string" },
+          "recordedAt": { "type": "string", "format": "date-time" },
+          "methodTried": { "type": ["string", "null"] },
+          "notes": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "statusSnapshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "capturedAt", "snapshotKind", "data"],
+        "properties": {
+          "label": { "type": "string" },
+          "capturedAt": { "type": "string", "format": "date-time" },
+          "snapshotKind": { "type": "string", "enum": ["get_status", "get_summary"] },
+          "data": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "browserCheckpointSummaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["capturedAt", "checkpointType"],
+        "properties": {
+          "capturedAt": { "type": "string", "format": "date-time" },
+          "checkpointType": { "type": "string" },
+          "checkpointKey": { "type": ["string", "null"] },
+          "screenKey": { "type": ["string", "null"] },
+          "authRequired": { "type": ["boolean", "null"] },
+          "pendingUserAction": { "type": ["string", "null"] },
+          "allowedNextActions": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "operatorQuestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["askedAt", "question"],
+        "properties": {
+          "askedAt": { "type": "string", "format": "date-time" },
+          "question": { "type": "string" },
+          "resolved": { "type": ["boolean", "null"] },
+          "answerSummary": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "artifactsCollected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifactType", "ref"],
+        "properties": {
+          "artifactType": { "type": "string" },
+          "ref": { "type": "string" },
+          "note": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "exportPackageRefs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "finalOutcome": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["success", "failure", "partial", "blocked", "unknown"] },
+        "summary": { "type": ["string", "null"] },
+        "submissionResult": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "unresolvedBlockers": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "improvementHypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hypothesis"],
+        "properties": {
+          "hypothesis": { "type": "string" },
+          "priority": { "type": ["string", "null"], "enum": ["high", "medium", "low", null] },
+          "owner": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "runId": "pilot-2026-03-22-success-001",
+      "repoCommit": "8b8b6e4",
+      "workspaceId": "workspace_2025_demo_a",
+      "filingYear": 2025,
+      "hostRuntime": { "name": "openclaw", "version": "local", "surface": "discord" },
+      "startedAt": "2026-03-22T09:00:00Z",
+      "endedAt": "2026-03-22T09:14:00Z",
+      "userIntent": "Run a no-prep assisted filing rehearsal and verify off-season behavior.",
+      "toolCallTrace": [
+        { "at": "2026-03-22T09:00:10Z", "tool": "tax.setup.init_config", "inputSummary": { "filingYear": 2025 }, "resultStatus": "completed", "blockingReason": null, "nextRecommendedAction": "tax.sources.plan_collection", "notes": null },
+        { "at": "2026-03-22T09:06:10Z", "tool": "tax.workspace.get_status", "inputSummary": { "workspaceId": "workspace_2025_demo_a" }, "resultStatus": "completed", "blockingReason": null, "nextRecommendedAction": "tax.filing.prepare_hometax", "notes": "filing window surfaced" }
+      ],
+      "collectionObservations": [
+        { "sourceType": "hometax", "targetArtifactType": "withholding_receipt", "outcome": "official_pdf_collected", "recordedAt": "2026-03-22T09:03:00Z", "methodTried": "browser_assist", "notes": null }
+      ],
+      "statusSnapshots": [
+        { "label": "after-init", "capturedAt": "2026-03-22T09:00:20Z", "snapshotKind": "get_status", "data": { "filingWindowState": "preseason_preview", "submissionAttemptAllowed": false } },
+        { "label": "before-close", "capturedAt": "2026-03-22T09:13:00Z", "snapshotKind": "get_summary", "data": { "workflowState": "awaiting_external_submit_click", "stopReasonCodes": [] } }
+      ],
+      "browserCheckpointSummaries": [
+        { "capturedAt": "2026-03-22T09:10:00Z", "checkpointType": "authentication", "checkpointKey": "hometax.login", "screenKey": "login", "authRequired": true, "pendingUserAction": "User login required", "allowedNextActions": ["tax.browser.resume_hometax_assist"] }
+      ],
+      "operatorQuestions": [
+        { "askedAt": "2026-03-22T09:10:05Z", "question": "Please log into HomeTax in the external browser.", "resolved": true, "answerSummary": "User completed login." }
+      ],
+      "artifactsCollected": [
+        { "artifactType": "withholding_receipt", "ref": "artifact://withholding/official-pdf-1", "note": "official print/pdf" }
+      ],
+      "exportPackageRefs": ["artifact://exports/export_001_json_package"],
+      "finalOutcome": { "status": "success", "summary": "Pilot run reached end-to-end closeout.", "submissionResult": "success" },
+      "unresolvedBlockers": [],
+      "improvementHypotheses": [
+        { "hypothesis": "Auto-suggest itemized card detail when only summary packet is observed.", "priority": "medium", "owner": "host-agent" }
+      ]
+    },
+    {
+      "runId": "pilot-2026-03-22-failure-002",
+      "repoCommit": "8b8b6e4",
+      "workspaceId": "workspace_2025_demo_b",
+      "filingYear": 2025,
+      "hostRuntime": { "name": "openclaw", "version": "local", "surface": "discord" },
+      "startedAt": "2026-03-22T10:00:00Z",
+      "endedAt": "2026-03-22T10:08:00Z",
+      "userIntent": "Test off-season heading loop and failure replay persistence.",
+      "toolCallTrace": [
+        { "at": "2026-03-22T10:00:15Z", "tool": "tax.setup.init_config", "inputSummary": { "filingYear": 2025 }, "resultStatus": "completed", "blockingReason": null, "nextRecommendedAction": "tax.sources.plan_collection", "notes": null },
+        { "at": "2026-03-22T10:07:00Z", "tool": "tax.filing.get_summary", "inputSummary": { "workspaceId": "workspace_2025_demo_b" }, "resultStatus": "completed", "blockingReason": "comparison_incomplete", "nextRecommendedAction": "tax.filing.compare_with_hometax", "notes": "summary captured before stop" }
+      ],
+      "collectionObservations": [
+        { "sourceType": "hometax", "targetArtifactType": "withholding_receipt", "outcome": "xls_only_insufficient_artifact", "recordedAt": "2026-03-22T10:02:00Z", "methodTried": "download_table_xls", "notes": "redacted path [REDACTED_PATH]" }
+      ],
+      "statusSnapshots": [
+        { "label": "after-compare-block", "capturedAt": "2026-03-22T10:07:20Z", "snapshotKind": "get_status", "data": { "filingWindowState": "preseason_preview", "stopReasonCodes": ["comparison_incomplete"] } }
+      ],
+      "browserCheckpointSummaries": [],
+      "operatorQuestions": [
+        { "askedAt": "2026-03-22T10:03:00Z", "question": "Can you provide the official PDF/print instead of XLS?", "resolved": false, "answerSummary": null }
+      ],
+      "artifactsCollected": [],
+      "exportPackageRefs": [],
+      "finalOutcome": { "status": "failure", "summary": "Run stopped before official artifact recovery.", "submissionResult": null },
+      "unresolvedBlockers": ["comparison_incomplete", "missing_withholding_record"],
+      "improvementHypotheses": [
+        { "hypothesis": "Promote official print/PDF fallback earlier after XLS-only observation.", "priority": "high", "owner": "mcp-policy" }
+      ]
+    }
+  ]
+}

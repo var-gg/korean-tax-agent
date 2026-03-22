@@ -54,6 +54,7 @@ Runnable examples for this external-agent model:
 - [`examples/external-agent-artifact-ingestion-example.ts`](./examples/external-agent-artifact-ingestion-example.ts)
 - [`examples/external-agent-compare-with-hometax-example.ts`](./examples/external-agent-compare-with-hometax-example.ts)
 - [`examples/external-agent-next-step-example.ts`](./examples/external-agent-next-step-example.ts)
+- [`examples/host/export-pilot-replay-bundle.ts`](./examples/host/export-pilot-replay-bundle.ts) + [docs/41-pilot-replay-bundle.md](./docs/41-pilot-replay-bundle.md)
 
 Policy extraction note:
 - `packages/mcp-server/src/policy/` now holds extracted domain-policy helpers for collection, regime, opportunity, and submission logic.
