@@ -672,7 +672,7 @@ export type DetectFilingPathData = {
   regimeDerivation?: string;
   regimeConfidenceBand?: 'low' | 'medium' | 'high';
   principalIndustryCode?: string;
-  industryThresholdBasis?: Array<{ industryCode: string; weightedRevenue: number; actualRevenue: number; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; role: 'principal' | 'secondary' }>;
+  industryThresholdBasis?: Array<{ industryCode: string; principalIndustryCode: string; actualRevenue: number; weightedContributionByMode: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; thresholdSource: string; role: 'principal' | 'secondary' }>;
   taxpayerPosture?: 'pure_business' | 'mixed_wage_business' | 'manual_heavy';
   specialCreditEligibility?: Array<{ code: string; state: 'possible' | 'not_applicable' | 'review_required'; rationale: string }>;
   opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string; evidenceNeeded: string[]; horizon?: 'current_year' | 'next_year' }>;
@@ -722,7 +722,7 @@ export type ListMissingFactsData = {
   regimeDerivation?: string;
   regimeConfidenceBand?: 'low' | 'medium' | 'high';
   principalIndustryCode?: string;
-  industryThresholdBasis?: Array<{ industryCode: string; weightedRevenue: number; actualRevenue: number; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; role: 'principal' | 'secondary' }>;
+  industryThresholdBasis?: Array<{ industryCode: string; principalIndustryCode: string; actualRevenue: number; weightedContributionByMode: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; thresholdSource: string; role: 'principal' | 'secondary' }>;
   submitterProfile?: SubmitterProfileCompleteness;
   operatorWarnings?: Array<{ code: string; message: string }>;
 };
@@ -822,7 +822,7 @@ export type ComputeDraftData = {
   regimeDerivation?: string;
   regimeConfidenceBand?: 'low' | 'medium' | 'high';
   principalIndustryCode?: string;
-  industryThresholdBasis?: Array<{ industryCode: string; weightedRevenue: number; actualRevenue: number; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; role: 'principal' | 'secondary' }>;
+  industryThresholdBasis?: Array<{ industryCode: string; principalIndustryCode: string; actualRevenue: number; weightedContributionByMode: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; thresholdSource: string; role: 'principal' | 'secondary' }>;
   taxpayerPosture?: 'pure_business' | 'mixed_wage_business' | 'manual_heavy';
   specialCreditEligibility?: Array<{ code: string; state: 'possible' | 'not_applicable' | 'review_required'; rationale: string }>;
   businessExpenseAllocationCandidates?: Array<{ code: string; allocationBasis: string; businessUseRatio?: number; evidenceRefs: string[]; reviewLevel: 'high' | 'medium' }>;

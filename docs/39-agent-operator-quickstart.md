@@ -108,7 +108,7 @@ Read-model contract:
 - collection read surfaces (`plan_collection`, `get_collection_status`, `list_coverage_gaps`) should expose executable `collectionTasks[]`, not vague "send more files" requests
 - collection task guidance should be interpreted through the canonical source-method registry (preferred/fallback/known-invalid methods plus re-verify timing)
 - collection read models should surface registry freshness directly through fields like `registryEntryId`, `registryVerifiedAt`, `registryReviewAfter`, `reverifyRecommended`, `knownInvalidMethods`, and `methodFreshnessWarning` so the agent can decide when re-verification is needed
-- filing-path/draft surfaces should expose posture-aware regime and allocation signals such as `bookkeepingMode`, `regimeDerivation`, `regimeConfidenceBand`, `principalIndustryCode`, `industryThresholdBasis`, `taxpayerPosture`, `specialCreditEligibility`, `businessExpenseAllocationCandidates`, `opportunityCandidates` (with rationale + evidenceNeeded + horizon), and machine-readable/operator-readable warnings
+- filing-path/draft surfaces should expose posture-aware regime and allocation signals such as `bookkeepingMode`, `regimeDerivation`, `regimeConfidenceBand`, `principalIndustryCode`, `industryThresholdBasis` (including actual revenue, mode-specific weighted contribution, and threshold source), `taxpayerPosture`, `specialCreditEligibility`, `businessExpenseAllocationCandidates`, `opportunityCandidates` (with rationale + evidenceNeeded + horizon), and machine-readable/operator-readable warnings
 - when a browser/export tactic fails or yields an insufficient artifact, record it with `tax.sources.record_collection_observation` so MCP can steer to a better fallback next time
 
 ## Important stop reasons

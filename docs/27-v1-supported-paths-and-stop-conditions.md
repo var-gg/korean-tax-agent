@@ -73,7 +73,7 @@ Trust-policy reminders:
 - operator-facing summaries should explain blockers in plain language while also returning machine-readable stopReasonCodes
 - regime shifts (for example prior-year 3.3% posture to current double-entry/bookkeeping-heavy posture) should surface as first-class warnings, not hidden assumptions
 - current-year regime should be inferred from imported official materials when possible; prior-year regime is only a warning hint, not the sole automatic basis
-- multi-industry cases (for example 940926 + 940909) should use a principal-industry plus secondary-industry weighting rule rather than naïve summation
+- multi-industry cases (for example 940926 + 940909) should use the official principal-industry formula: principal revenue + secondary revenue × (principal threshold / secondary threshold), calculated separately for each threshold family rather than naïve summation or fixed 0.5 weighting
 - wage-income-oriented credits should not auto-apply to pure business posture
 - mixed-use phone/internet/card/home/vehicle costs need allocation basis, business-use ratio, and evidence before tax benefit is treated as settled
 - legal opportunity signals (for example bookkeeping tax-credit possibility, business-account/card ergonomics, resident-register skip when no dependents, official withholding receipt necessity, and itemized-card-detail follow-up) should be surfaced as structured opportunity/warning fields rather than vague prose

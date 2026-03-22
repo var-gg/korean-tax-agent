@@ -54,6 +54,7 @@ describe('in-memory runtime filing flow', () => {
       { workspaceId: 'workspace_940926_single', industryRows: [{ code: '940926', gross: 34000000 }], expectedMode: 'simple_rate', expectedPrincipal: '940926' },
       { workspaceId: 'workspace_940909_single', industryRows: [{ code: '940909', gross: 50000000 }], expectedMode: 'simple_book', expectedPrincipal: '940909' },
       { workspaceId: 'workspace_multi_industry', industryRows: [{ code: '940926', gross: 70000000 }, { code: '940909', gross: 30000000 }], expectedMode: 'simple_book', expectedPrincipal: '940926', expectMulti: true },
+      { workspaceId: 'workspace_threshold_below', industryRows: [{ code: '940926', gross: 149000000 }], expectedMode: 'simple_book', expectedPrincipal: '940926' },
       { workspaceId: 'workspace_threshold_above', industryRows: [{ code: '940926', gross: 160000000 }], expectedMode: 'double_entry', expectedPrincipal: '940926', priorYear: '3.3%' },
     ] as const;
 
@@ -95,6 +96,13 @@ describe('in-memory runtime filing flow', () => {
       expect(draft.data.bookkeepingMode).toBe(item.expectedMode);
       expect(draft.data.principalIndustryCode).toBe(item.expectedPrincipal);
       expect((draft.data.industryThresholdBasis ?? []).length).toBeGreaterThan(0);
+      expect(draft.data.industryThresholdBasis?.every((basis) => basis.principalIndustryCode === item.expectedPrincipal)).toBe(true);
+      expect(draft.data.industryThresholdBasis?.every((basis) => typeof basis.weightedContributionByMode.double_entry === 'number')).toBe(true);
+      expect(draft.data.industryThresholdBasis?.every((basis) => basis.thresholdSource.includes(item.expectedPrincipal))).toBe(true);
+      if (item.expectMulti) {
+        const secondary = draft.data.industryThresholdBasis?.find((basis) => basis.industryCode === '940909');
+        expect((secondary?.weightedContributionByMode.simple_book ?? 0)).toBeGreaterThan(secondary?.actualRevenue ?? 0);
+      }
     }
   });
 

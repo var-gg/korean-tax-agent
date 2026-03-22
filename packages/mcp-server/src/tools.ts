@@ -374,21 +374,44 @@ function deriveBookkeepingRegime(input: { workspaceId: string; facts: TaxpayerFa
   }
 
   const principal = industrySignals[0];
-  const secondaryTotal = industrySignals.slice(1).reduce((sum, item) => sum + item.actualRevenue, 0);
   const principalThresholds = INDUSTRY_THRESHOLD_TABLE[principal.industryCode] ?? INDUSTRY_THRESHOLD_TABLE.default;
-  const weightedPrincipalRevenue = principal.actualRevenue + secondaryTotal * 0.5;
-  const industryThresholdBasis = industrySignals.map((item, index) => ({
-    industryCode: item.industryCode,
-    weightedRevenue: index === 0 ? weightedPrincipalRevenue : item.actualRevenue * 0.5,
-    actualRevenue: item.actualRevenue,
-    thresholds: INDUSTRY_THRESHOLD_TABLE[item.industryCode] ?? INDUSTRY_THRESHOLD_TABLE.default,
-    role: (index === 0 ? 'principal' : 'secondary') as 'principal' | 'secondary',
-  }));
-  const bookkeepingMode: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry' = weightedPrincipalRevenue >= principalThresholds.double_entry
+  const weightedContributionByIndustry = industrySignals.map((item, index) => {
+    const thresholds = INDUSTRY_THRESHOLD_TABLE[item.industryCode] ?? INDUSTRY_THRESHOLD_TABLE.default;
+    const contribution = index === 0
+      ? {
+          double_entry: item.actualRevenue,
+          simple_book: item.actualRevenue,
+          standard_rate: item.actualRevenue,
+          simple_rate: item.actualRevenue,
+        }
+      : {
+          double_entry: item.actualRevenue * (principalThresholds.double_entry / thresholds.double_entry),
+          simple_book: item.actualRevenue * (principalThresholds.simple_book / thresholds.simple_book),
+          standard_rate: item.actualRevenue * (principalThresholds.standard_rate / thresholds.standard_rate),
+          simple_rate: item.actualRevenue * (principalThresholds.simple_rate / thresholds.simple_rate),
+        };
+    return {
+      industryCode: item.industryCode,
+      principalIndustryCode: principal.industryCode,
+      actualRevenue: item.actualRevenue,
+      weightedContributionByMode: contribution,
+      thresholds,
+      thresholdSource: index === 0 ? `principal:${principal.industryCode}` : `principal:${principal.industryCode}->secondary:${item.industryCode}`,
+      role: (index === 0 ? 'principal' : 'secondary') as 'principal' | 'secondary',
+    };
+  });
+  const weightedRevenueByMode = weightedContributionByIndustry.reduce((acc, item) => ({
+    double_entry: acc.double_entry + item.weightedContributionByMode.double_entry,
+    simple_book: acc.simple_book + item.weightedContributionByMode.simple_book,
+    standard_rate: acc.standard_rate + item.weightedContributionByMode.standard_rate,
+    simple_rate: acc.simple_rate + item.weightedContributionByMode.simple_rate,
+  }), { double_entry: 0, simple_book: 0, standard_rate: 0, simple_rate: 0 });
+  const industryThresholdBasis = weightedContributionByIndustry;
+  const bookkeepingMode: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry' = weightedRevenueByMode.double_entry >= principalThresholds.double_entry
     ? 'double_entry'
-    : weightedPrincipalRevenue >= principalThresholds.simple_book
+    : weightedRevenueByMode.simple_book >= principalThresholds.simple_book
       ? 'simple_book'
-      : weightedPrincipalRevenue >= principalThresholds.standard_rate
+      : weightedRevenueByMode.standard_rate >= principalThresholds.standard_rate
         ? 'standard_rate'
         : 'simple_rate';
 
@@ -401,7 +424,7 @@ function deriveBookkeepingRegime(input: { workspaceId: string; facts: TaxpayerFa
 
   return {
     bookkeepingMode,
-    regimeDerivation: `official_materials_threshold_engine:${principal.industryCode}:${weightedPrincipalRevenue}`,
+    regimeDerivation: `official_materials_threshold_engine:${principal.industryCode}:double_entry=${weightedRevenueByMode.double_entry}:simple_book=${weightedRevenueByMode.simple_book}:standard_rate=${weightedRevenueByMode.standard_rate}:simple_rate=${weightedRevenueByMode.simple_rate}`,
     regimeConfidenceBand: industrySignals.every((item) => item.actualRevenue > 0) ? 'high' as const : 'medium' as const,
     principalIndustryCode: principal.industryCode,
     industryThresholdBasis,
