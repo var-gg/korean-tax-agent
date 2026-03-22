@@ -1,5 +1,5 @@
 import type { AuthCheckpoint, BlockingReason, BrowserAssistSession, FilingWorkspace, ReviewItem, TaxpayerFact } from '../../../core/src/types.js';
-import type { ComputeDraftData, ListAdjacentTaxObligationsData, CompareWithHomeTaxData, PrepareHomeTaxData, RuntimeSnapshot } from '../contracts.js';
+import type { ComputeDraftData, FilingWindowAwareness, ListAdjacentTaxObligationsData, CompareWithHomeTaxData, PrepareHomeTaxData, RuntimeSnapshot } from '../contracts.js';
 
 function getRuntimeComparisonState(workspace?: FilingWorkspace) { return workspace?.comparisonSummaryState; }
 function getRuntimeSubmissionReadiness(workspace?: FilingWorkspace) { return workspace?.submissionReadiness; }
@@ -23,6 +23,25 @@ export function deriveAdjacentTaxObligationsNextAction(facts: TaxpayerFact[], it
   const hasUnknownLargeShareholderScope = facts.some((fact) => fact.status === 'missing' && fact.factKey === 'special_tax_treatment_choice');
   if (hasUnknownForeignScope || hasUnknownLargeShareholderScope) return 'tax.profile.upsert_facts';
   return items.some((item) => item.appliesNow) ? 'tax.workspace.get_status' : undefined;
+}
+
+export function deriveFilingWindowAwareness(filingYear?: number, now = new Date()): FilingWindowAwareness {
+  if (!filingYear) {
+    return { filingWindowState: 'unknown', filingWindowHint: 'Filing year is missing, so submission seasonality cannot be determined yet.', submissionAttemptAllowed: false };
+  }
+  const openAt = new Date(Date.UTC(filingYear + 1, 0, 1, 0, 0, 0));
+  const closeAt = new Date(Date.UTC(filingYear + 1, 4, 31, 23, 59, 59));
+  const closingSoonAt = new Date(Date.UTC(filingYear + 1, 4, 25, 0, 0, 0));
+  if (now < openAt) {
+    return { filingWindowState: 'preseason_preview', filingWindowHint: `Submission lane is preview-only before ${filingYear + 1}-05-01; collection, normalize, draft, and compare are still allowed.`, seasonalityWarningCode: 'preseason_preview_only', submissionAttemptAllowed: false };
+  }
+  if (now > closeAt) {
+    return { filingWindowState: 'closed', filingWindowHint: `The main comprehensive-income-tax submission window for filing year ${filingYear} is closed; continue evidence/draft work but do not treat portal submission issues as generic auth/UI failures.`, seasonalityWarningCode: 'filing_window_closed', submissionAttemptAllowed: false };
+  }
+  if (now >= closingSoonAt) {
+    return { filingWindowState: 'closing_soon', filingWindowHint: 'Submission window is currently open but close to deadline; re-check final portal state immediately before final submit.', submissionAttemptAllowed: true };
+  }
+  return { filingWindowState: 'open', filingWindowHint: 'Submission window is open for live filing actions.', submissionAttemptAllowed: true };
 }
 
 export function deriveWorkspaceNextRecommendedAction(workspace: FilingWorkspace): string | undefined {

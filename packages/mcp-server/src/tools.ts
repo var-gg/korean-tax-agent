@@ -2603,6 +2603,9 @@ export function taxBrowserStartHomeTaxAssist(input: StartHomeTaxAssistInput): MC
     ok: true,
     status: 'awaiting_auth',
     data: {
+      filingWindowState: 'unknown',
+      filingWindowHint: 'Filing window is not evaluated in the stateless tool helper.',
+      submissionAttemptAllowed: false,
       assistSessionId: `assist_${input.workspaceId}_${input.draftId}`,
       checkpointType: 'authentication',
       authRequired: true,

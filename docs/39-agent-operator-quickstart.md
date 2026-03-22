@@ -110,6 +110,7 @@ Read-model contract:
 - collection read models should surface registry freshness directly through fields like `registryEntryId`, `registryVerifiedAt`, `registryReviewAfter`, `reverifyRecommended`, `knownInvalidMethods`, and `methodFreshnessWarning` so the agent can decide when re-verification is needed
 - internal MCP policy code is now split under `packages/mcp-server/src/policy/` so runtime/tool entrypoints stay focused on orchestration rather than embedding every policy branch inline
 - filing-path/draft surfaces should expose posture-aware regime and allocation signals such as `bookkeepingMode`, `regimeDerivation`, `regimeConfidenceBand`, `principalIndustryCode`, `industryThresholdBasis` (including actual revenue, mode-specific weighted contribution, and threshold source), `taxpayerPosture`, `specialCreditEligibility`, `businessExpenseAllocationCandidates`, `opportunityCandidates` (with rationale + evidenceNeeded + horizon), and machine-readable/operator-readable warnings; for double-entry posture, business-account signals should be treated as current-year compliance warnings rather than only next-year ergonomics
+- submission-facing read models should surface `filingWindowState`, `filingWindowHint`, `seasonalityWarningCode`, and `submissionAttemptAllowed` so off-season portal behavior is not misread as a generic auth/UI failure
 - when a browser/export tactic fails or yields an insufficient artifact, record it with `tax.sources.record_collection_observation` so MCP can steer to a better fallback next time
 
 ## Important stop reasons

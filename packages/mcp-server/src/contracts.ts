@@ -1009,7 +1009,7 @@ export type StartHomeTaxAssistInput = {
   mode: 'guide_only' | 'fill_assist';
 };
 
-export type StartHomeTaxAssistData = {
+export type StartHomeTaxAssistData = FilingWindowAwareness & {
   assistSessionId: string;
   checkpointType: CheckpointType;
   checkpointKey?: string;
@@ -1197,6 +1197,13 @@ export type EstimateOutcomeData = {
 
 export type ListAdjacentTaxObligationsInput = {
   workspaceId: string;
+};
+
+export type FilingWindowAwareness = {
+  filingWindowState: 'preseason_preview' | 'open' | 'closing_soon' | 'closed' | 'unknown';
+  filingWindowHint: string;
+  seasonalityWarningCode?: 'preseason_preview_only' | 'filing_window_closed';
+  submissionAttemptAllowed: boolean;
 };
 
 export type AdjacentTaxObligation = {
