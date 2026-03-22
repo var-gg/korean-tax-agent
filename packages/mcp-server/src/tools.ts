@@ -511,9 +511,13 @@ function buildOpportunityCandidates(posture: 'pure_business' | 'mixed_wage_busin
     {
       code: 'business_account_required',
       status: hasBusinessAccount ? 'possible' as const : 'review_required' as const,
-      rationale: 'A dedicated business account improves current-year traceability and next-year collection ergonomics.',
-      evidenceNeeded: ['business account registration or account separation evidence'],
-      horizon: 'next_year' as const,
+      rationale: bookkeepingMode === 'double_entry'
+        ? 'Double-entry/compliance-heavy posture should confirm registered business-account use in the current year because non-registration/non-use can create compliance and penalty exposure.'
+        : 'A dedicated business account improves current-year traceability and next-year collection ergonomics.',
+      evidenceNeeded: bookkeepingMode === 'double_entry'
+        ? ['business account registration/use evidence for the current filing year']
+        : ['business account registration or account separation evidence'],
+      horizon: bookkeepingMode === 'double_entry' ? 'current_year' as const : 'next_year' as const,
     },
     {
       code: 'business_credit_card_registration_recommended',
@@ -1974,6 +1978,7 @@ export function taxFilingListAdjustmentCandidates(
     ...(taxpayerPosture === 'pure_business' ? [{ code: 'wage_credit_not_auto_applicable', message: 'Pure business posture should not auto-confirm wage-income-oriented credit benefits.' }] : []),
     ...((businessExpenseAllocationCandidates.some((item) => item.allocationBasis === 'missing_allocation_basis')) ? [{ code: 'mixed_use_allocation_required', message: 'Mixed-use expenses need allocation basis, business-use ratio, and evidence before final treatment.' }] : []),
     ...(opportunityCandidates.some((item) => item.code === 'itemized_card_detail_required_for_expense_review' && item.status === 'review_required') ? [{ code: 'itemized_card_detail_required_for_expense_review', message: 'Summary-only card bundle is not enough for business-expense review; itemized detail is required.' }] : []),
+    ...(opportunityCandidates.some((item) => item.code === 'business_account_required' && item.horizon === 'current_year' && item.status === 'review_required') ? [{ code: 'business_account_compliance_required', message: 'Double-entry posture should confirm current-year registered business-account use because compliance/penalty exposure may apply.' }] : []),
   ];
   const warnings = items.some((item) => item.eligibilityState === 'out_of_scope')
     ? ['unsupported_adjustment_candidates_present']

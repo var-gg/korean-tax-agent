@@ -209,6 +209,50 @@ describe('in-memory runtime filing flow', () => {
     expect(exported.data.checklistPreview.some((item) => item.includes('submitter_profile=missing:refundAccount'))).toBe(true);
   });
 
+  it('treats business account as current-year compliance signal for double-entry and recommendation for simple-book', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_business_account_compliance';
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [{ externalId: 'rev-1', occurredAt: '2025-01-10', amount: 42000000, normalizedDirection: 'income', counterparty: 'Client A', description: 'service revenue', sourceReference: 'rev-1' }],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'pure_business', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'bookkeeping_mode', category: 'taxpayer_profile', value: 'double_entry', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    const adjustments = runtime.invoke('tax.filing.list_adjustment_candidates', { workspaceId });
+    const accountCandidate = adjustments.data.opportunityCandidates?.find((item) => item.code === 'business_account_required');
+    expect(accountCandidate?.horizon).toBe('current_year');
+    expect(accountCandidate?.rationale).toContain('compliance');
+    expect(adjustments.data.operatorWarnings?.some((item) => item.code === 'business_account_compliance_required')).toBe(true);
+
+    const status = runtime.invoke('tax.workspace.get_status', { workspaceId });
+    expect(status.data.warningCodes).toContain('business_account_compliance_required');
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+    const summary = runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: draft.data.draftId });
+    expect(summary.data.warningCodes).toContain('business_account_compliance_required');
+    const exported = runtime.invoke('tax.filing.export_package', { workspaceId, draftId: draft.data.draftId, formats: ['json_package', 'submission_prep_checklist'] });
+    expect(exported.data.checklistPreview.some((item) => item.includes('business_account_compliance=review_required'))).toBe(true);
+
+    runtime.invoke('tax.profile.upsert_facts', { workspaceId, facts: [{ factKey: 'business_account_registered', category: 'taxpayer_profile', value: true, status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    const afterRegistered = runtime.invoke('tax.filing.list_adjustment_candidates', { workspaceId });
+    expect(afterRegistered.data.operatorWarnings?.some((item) => item.code === 'business_account_compliance_required')).toBe(false);
+
+    const simpleRuntime = new InMemoryKoreanTaxMCPRuntime();
+    const simpleWorkspaceId = 'workspace_business_account_simple';
+    simpleRuntime.invoke('tax.ledger.normalize', { workspaceId: simpleWorkspaceId, extractedPayloads: [{ sourceType: 'statement_pdf', transactions: [{ externalId: 'rev-1', occurredAt: '2025-01-10', amount: 10000000, normalizedDirection: 'income', counterparty: 'Client B', description: 'service revenue', sourceReference: 'rev-1' }] }] });
+    simpleRuntime.invoke('tax.profile.upsert_facts', { workspaceId: simpleWorkspaceId, facts: [{ factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' }, { factKey: 'bookkeeping_mode', category: 'taxpayer_profile', value: 'simple_book', status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    const simpleAdjustments = simpleRuntime.invoke('tax.filing.list_adjustment_candidates', { workspaceId: simpleWorkspaceId });
+    expect(simpleAdjustments.data.opportunityCandidates?.some((item) => item.code === 'business_account_required' && item.horizon === 'next_year')).toBe(true);
+  });
+
   it('formalizes legal opportunity candidates for pure business, simple-book, business account, and summary-only bundles', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const workspaceId = 'workspace_opportunity_engine';

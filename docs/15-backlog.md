@@ -1,7 +1,7 @@
 # Backlog
 
 ## Recently productized from backlog
-- Structured legal opportunity engine now surfaces official-rule-based candidates such as bookkeeping tax credit possibility, business account/card ergonomics, mixed-use allocation review, wage-credit non-auto-application for pure business, resident-register skip when no dependents, official withholding receipt requirement, and itemized card detail follow-up.
+- Structured legal opportunity engine now surfaces official-rule-based candidates such as bookkeeping tax credit possibility, business-account compliance/current-year warning for double-entry cases, business card ergonomics, mixed-use allocation review, wage-credit non-auto-application for pure business, resident-register skip when no dependents, official withholding receipt requirement, and itemized card detail follow-up.
 
 - Status: active
 - Canonical: English

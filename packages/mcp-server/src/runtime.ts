@@ -894,6 +894,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     const derived = this.getWorkspaceDerivedStatus(input.workspaceId);
     const missingFactsView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data;
     const missingFacts = missingFactsView.items;
+    const adjustmentView = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, this.getTaxpayerFacts(input.workspaceId), Array.from(this.store.transactions.values()), this.getWithholdingRecords(input.workspaceId)).data;
+    const businessAccountComplianceWarnings = (adjustmentView.operatorWarnings ?? []).filter((item) => item.code === 'business_account_compliance_required').map((item) => item.code);
 
     const assistSession = this.getBrowserAssistSession(input.workspaceId);
     const trustState = deriveOperatorTrustState({
@@ -910,7 +912,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       status: 'completed',
       data: {
         stopReasonCodes: trustState.stopReasonCodes,
-        warningCodes: trustState.warningCodes,
+        warningCodes: [...new Set([...trustState.warningCodes, ...businessAccountComplianceWarnings, ...((adjustmentView.operatorWarnings ?? []).map((item) => item.code))])],
         escalationReason: trustState.escalationReason,
         operatorExplanation: trustState.operatorExplanation,
         reviewBatchId: trustState.reviewBatchId,
@@ -1026,7 +1028,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       data: {
         workspaceId: input.workspaceId,
         stopReasonCodes: trustState.stopReasonCodes,
-        warningCodes: trustState.warningCodes,
+        warningCodes: [...trustState.warningCodes, ...((taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, this.getTaxpayerFacts(input.workspaceId), Array.from(this.store.transactions.values()), this.getWithholdingRecords(input.workspaceId)).data.operatorWarnings ?? []).map((item) => item.code))],
         escalationReason: trustState.escalationReason,
         operatorExplanation: trustState.operatorExplanation,
         reviewBatchId: trustState.reviewBatchId,
@@ -2026,11 +2028,13 @@ export class InMemoryKoreanTaxMCPRuntime {
     const evidenceDocuments = Array.from(this.store.evidenceDocuments.values()).filter((doc) => doc.workspaceId === input.workspaceId);
     const sourceArtifacts = Array.from(this.store.sourceArtifacts.values()).filter((artifact) => artifact.workspaceId === input.workspaceId);
     const submitterProfileView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data.submitterProfile;
+    const businessAccountComplianceWarning = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, this.getTaxpayerFacts(input.workspaceId), Array.from(this.store.transactions.values()), this.getWithholdingRecords(input.workspaceId)).data.operatorWarnings?.some((item) => item.code === 'business_account_compliance_required');
     const checklistPreview = [
       `final_state=${workspace?.status ?? 'unknown'}`,
       `final_approval=${workspace?.submissionApproval ? 'recorded' : 'missing'}`,
       `material_mismatch=${draft?.stopReasonCodes?.includes('severe_mismatch') ? 'present' : 'none'}`,
       `missing_coverage=${(workspace?.openCoverageGapCount ?? 0) > 0 ? 'present' : 'none'}`,
+      `business_account_compliance=${businessAccountComplianceWarning ? 'review_required' : 'none'}`,
       `submitter_profile=${(submitterProfileView?.missingRequiredFields.length ?? 0) === 0 ? 'complete' : `missing:${submitterProfileView?.missingRequiredFields.join('|')}`}`,
       `receipt_confirmation=${workspace?.submissionResult?.receiptNumber || (workspace?.submissionResult?.receiptArtifactRefs?.length ?? 0) > 0 ? 'recorded' : 'pending'}`,
     ];

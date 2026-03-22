@@ -76,7 +76,7 @@ Trust-policy reminders:
 - multi-industry cases (for example 940926 + 940909) should use the official principal-industry formula: principal revenue + secondary revenue × (principal threshold / secondary threshold), calculated separately for each threshold family rather than naïve summation or fixed 0.5 weighting
 - wage-income-oriented credits should not auto-apply to pure business posture
 - mixed-use phone/internet/card/home/vehicle costs need allocation basis, business-use ratio, and evidence before tax benefit is treated as settled
-- legal opportunity signals (for example bookkeeping tax-credit possibility, business-account/card ergonomics, resident-register skip when no dependents, official withholding receipt necessity, and itemized-card-detail follow-up) should be surfaced as structured opportunity/warning fields rather than vague prose
+- legal opportunity signals (for example bookkeeping tax-credit possibility, business-account compliance for double-entry cases, business-card ergonomics, resident-register skip when no dependents, official withholding receipt necessity, and itemized-card-detail follow-up) should be surfaced as structured opportunity/warning fields rather than vague prose
 - assumptions used in drafting must be disclosed explicitly
 
 ## Support tier definitions
