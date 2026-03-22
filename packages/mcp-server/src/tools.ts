@@ -326,23 +326,109 @@ function getFactValue(facts: TaxpayerFact[], key: string) {
   return facts.find((fact) => fact.factKey === key && fact.status !== 'missing')?.value;
 }
 
-function deriveTaxProfileSignals(facts: TaxpayerFact[], transactions: LedgerTransaction[]) {
+const INDUSTRY_THRESHOLD_TABLE: Record<string, { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number; label: string }> = {
+  '940926': { double_entry: 150_000_000, simple_book: 75_000_000, standard_rate: 36_000_000, simple_rate: 36_000_000, label: 'IT freelancer / software services' },
+  '940909': { double_entry: 75_000_000, simple_book: 36_000_000, standard_rate: 24_000_000, simple_rate: 24_000_000, label: 'specialized freelance / technical services' },
+  default: { double_entry: 75_000_000, simple_book: 36_000_000, standard_rate: 24_000_000, simple_rate: 24_000_000, label: 'fallback service business' },
+};
+
+function readIndustryRevenueSignals(input: { workspaceId: string; withholdings: WithholdingRecord[]; sourceArtifacts: SourceArtifact[]; evidenceDocuments: EvidenceDocument[] }) {
+  const byCode = new Map<string, { actualRevenue: number; sources: string[] }>();
+  const add = (industryCode: string | undefined, amount: number | undefined, sourceRef: string) => {
+    if (!industryCode || !amount || amount <= 0) return;
+    const key = String(industryCode);
+    const current = byCode.get(key) ?? { actualRevenue: 0, sources: [] };
+    current.actualRevenue += amount;
+    current.sources.push(sourceRef);
+    byCode.set(key, current);
+  };
+
+  for (const artifact of input.sourceArtifacts.filter((item) => item.workspaceId === input.workspaceId)) {
+    const metadata = (artifact.provenance?.metadata ?? {}) as Record<string, unknown>;
+    add((metadata.industryCode as string | undefined) ?? (metadata.businessCode as string | undefined), Number(metadata.grossAmount ?? metadata.payerIncomeTotal ?? metadata.totalIncome ?? 0), artifact.artifactId);
+  }
+  for (const record of input.withholdings.filter((item) => item.workspaceId === input.workspaceId)) {
+    const matchingDoc = input.evidenceDocuments.find((doc) => doc.workspaceId === input.workspaceId && record.evidenceRefs.includes(doc.documentId));
+    const extracted = (matchingDoc?.extractedFields ?? {}) as Record<string, unknown>;
+    add((extracted.industryCode as string | undefined) ?? (extracted.businessCode as string | undefined), record.grossAmount, record.withholdingRecordId);
+  }
+  return Array.from(byCode.entries()).map(([industryCode, value]) => ({ industryCode, actualRevenue: value.actualRevenue, sources: value.sources }));
+}
+
+function deriveBookkeepingRegime(input: { workspaceId: string; facts: TaxpayerFact[]; withholdings: WithholdingRecord[]; sourceArtifacts: SourceArtifact[]; evidenceDocuments: EvidenceDocument[] }) {
+  const industrySignals = readIndustryRevenueSignals(input).sort((a, b) => b.actualRevenue - a.actualRevenue);
+  const priorYearText = JSON.stringify(getFactValue(input.facts, 'prior_year_regime') ?? '').toLowerCase();
+  const explicitBookkeeping = String(getFactValue(input.facts, 'bookkeeping_mode') ?? '').toLowerCase();
+  const operatorWarnings: Array<{ code: string; message: string }> = [];
+
+  if (industrySignals.length === 0) {
+    if (explicitBookkeeping) {
+      const bookkeepingMode: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry' = explicitBookkeeping.includes('double') || explicitBookkeeping.includes('복식') ? 'double_entry' : explicitBookkeeping.includes('simple_book') || explicitBookkeeping.includes('간편장부') ? 'simple_book' : explicitBookkeeping.includes('standard') ? 'standard_rate' : 'simple_rate';
+      if ((priorYearText.includes('3.3') || priorYearText.includes('simple_rate')) && bookkeepingMode === 'double_entry') {
+        operatorWarnings.push({ code: 'regime_shift_detected', message: 'Prior-year 3.3%/simple posture differs from current-year bookkeeping posture, but prior year alone is not the deciding basis.' });
+      }
+      return { bookkeepingMode, regimeDerivation: 'user_provided_bookkeeping_mode', regimeConfidenceBand: 'medium' as const, principalIndustryCode: undefined, industryThresholdBasis: [], operatorWarnings };
+    }
+    operatorWarnings.push({ code: 'industry_threshold_evidence_missing', message: 'Official material metadata is not yet sufficient to infer industry-threshold bookkeeping automatically.' });
+    return { bookkeepingMode: 'simple_rate' as const, regimeDerivation: 'insufficient_official_material_metadata', regimeConfidenceBand: 'low' as const, principalIndustryCode: undefined, industryThresholdBasis: [], operatorWarnings };
+  }
+
+  const principal = industrySignals[0];
+  const secondaryTotal = industrySignals.slice(1).reduce((sum, item) => sum + item.actualRevenue, 0);
+  const principalThresholds = INDUSTRY_THRESHOLD_TABLE[principal.industryCode] ?? INDUSTRY_THRESHOLD_TABLE.default;
+  const weightedPrincipalRevenue = principal.actualRevenue + secondaryTotal * 0.5;
+  const industryThresholdBasis = industrySignals.map((item, index) => ({
+    industryCode: item.industryCode,
+    weightedRevenue: index === 0 ? weightedPrincipalRevenue : item.actualRevenue * 0.5,
+    actualRevenue: item.actualRevenue,
+    thresholds: INDUSTRY_THRESHOLD_TABLE[item.industryCode] ?? INDUSTRY_THRESHOLD_TABLE.default,
+    role: (index === 0 ? 'principal' : 'secondary') as 'principal' | 'secondary',
+  }));
+  const bookkeepingMode: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry' = weightedPrincipalRevenue >= principalThresholds.double_entry
+    ? 'double_entry'
+    : weightedPrincipalRevenue >= principalThresholds.simple_book
+      ? 'simple_book'
+      : weightedPrincipalRevenue >= principalThresholds.standard_rate
+        ? 'standard_rate'
+        : 'simple_rate';
+
+  if ((priorYearText.includes('3.3') || priorYearText.includes('simple_rate')) && bookkeepingMode === 'double_entry') {
+    operatorWarnings.push({ code: 'regime_shift_detected', message: 'Prior-year 3.3%/simple posture differs from current-year imported-official-material regime, but prior year alone is not the deciding basis.' });
+  }
+  if (industrySignals.length > 1) {
+    operatorWarnings.push({ code: 'multi_industry_threshold_formula_applied', message: 'Multiple industries detected; principal-industry plus secondary-industry weighting was applied instead of plain summation.' });
+  }
+
+  return {
+    bookkeepingMode,
+    regimeDerivation: `official_materials_threshold_engine:${principal.industryCode}:${weightedPrincipalRevenue}`,
+    regimeConfidenceBand: industrySignals.every((item) => item.actualRevenue > 0) ? 'high' as const : 'medium' as const,
+    principalIndustryCode: principal.industryCode,
+    industryThresholdBasis,
+    operatorWarnings,
+  };
+}
+
+function deriveTaxProfileSignals(facts: TaxpayerFact[], transactions: LedgerTransaction[], withholdings: WithholdingRecord[] = [], sourceArtifacts: SourceArtifact[] = [], evidenceDocuments: EvidenceDocument[] = []) {
   const streamsText = JSON.stringify(getFactValue(facts, 'income_streams') ?? '').toLowerCase();
   const postureText = String(getFactValue(facts, 'taxpayer_posture') ?? '').toLowerCase();
-  const bookkeepingText = String(getFactValue(facts, 'bookkeeping_mode') ?? '').toLowerCase();
-  const priorYearText = JSON.stringify(getFactValue(facts, 'prior_year_regime') ?? '').toLowerCase();
   const hasWage = streamsText.includes('salary') || streamsText.includes('wage') || postureText.includes('wage') || postureText.includes('근로');
-  const hasBusiness = streamsText.includes('business') || streamsText.includes('freelance') || streamsText.includes('platform') || postureText.includes('business') || postureText.includes('프리랜서') || postureText.includes('사업');
+  const hasBusiness = streamsText.includes('business') || streamsText.includes('freelance') || streamsText.includes('platform') || postureText.includes('business') || postureText.includes('프리랜서') || postureText.includes('사업') || withholdings.length > 0;
   const taxpayerPosture: 'pure_business' | 'mixed_wage_business' | 'manual_heavy' = hasWage && hasBusiness ? 'mixed_wage_business' : hasBusiness ? 'pure_business' : 'manual_heavy';
-  const bookkeepingMode: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry' = bookkeepingText.includes('double') || bookkeepingText.includes('복식') ? 'double_entry' : bookkeepingText.includes('simple_book') || bookkeepingText.includes('간편장부') ? 'simple_book' : bookkeepingText.includes('standard') ? 'standard_rate' : 'simple_rate';
-  const operatorWarnings: Array<{ code: string; message: string }> = [];
-  if ((priorYearText.includes('3.3') || priorYearText.includes('simple_rate')) && bookkeepingMode === 'double_entry') {
-    operatorWarnings.push({ code: 'regime_shift_detected', message: 'Year-over-year regime shift detected: prior year 3.3%/simple treatment versus current double-entry posture.' });
-  }
+  const regime = deriveBookkeepingRegime({ workspaceId: facts[0]?.workspaceId ?? transactions[0]?.workspaceId ?? withholdings[0]?.workspaceId ?? 'workspace', facts, withholdings, sourceArtifacts, evidenceDocuments });
+  const operatorWarnings: Array<{ code: string; message: string }> = [...regime.operatorWarnings];
   if (transactions.some((tx) => /vehicle|car|phone|internet|telecom|home/i.test(`${tx.description ?? ''} ${tx.counterparty ?? ''}`))) {
     operatorWarnings.push({ code: 'mixed_use_review_scope', message: 'Mixed-use expense candidates detected; allocation basis and evidence must be reviewed before applying benefits.' });
   }
-  return { taxpayerPosture, bookkeepingMode, operatorWarnings };
+  return {
+    taxpayerPosture,
+    bookkeepingMode: regime.bookkeepingMode,
+    regimeDerivation: regime.regimeDerivation,
+    regimeConfidenceBand: regime.regimeConfidenceBand,
+    principalIndustryCode: regime.principalIndustryCode,
+    industryThresholdBasis: regime.industryThresholdBasis,
+    operatorWarnings,
+  };
 }
 
 function buildAllocationCandidates(workspaceId: string, facts: TaxpayerFact[], transactions: LedgerTransaction[]) {
@@ -368,12 +454,132 @@ function buildSpecialCreditEligibility(posture: 'pure_business' | 'mixed_wage_bu
   }];
 }
 
-function buildOpportunityCandidates(posture: 'pure_business' | 'mixed_wage_business' | 'manual_heavy', facts: TaxpayerFact[]) {
+function buildOpportunityCandidates(posture: 'pure_business' | 'mixed_wage_business' | 'manual_heavy', facts: TaxpayerFact[], bookkeepingMode?: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry', withholdings: WithholdingRecord[] = [], transactions: LedgerTransaction[] = []) {
   const deductionFacts = JSON.stringify(getFactValue(facts, 'deduction_eligibility_facts') ?? '').toLowerCase();
-  return [
-    { code: 'card_summary_opportunity', status: deductionFacts.includes('card') ? 'review_required' as const : 'possible' as const, rationale: 'Card/insurance/cash-receipt summaries create opportunity signals only; they do not confirm a tax benefit.' },
-    { code: posture === 'mixed_wage_business' ? 'mixed_posture_credit_review' : 'business_expense_review', status: 'review_required' as const, rationale: 'Opportunity depends on taxpayer posture, regime, and evidence-backed allocation.' },
+  const bundleText = JSON.stringify(getFactValue(facts, 'year_end_tax_bundle') ?? getFactValue(facts, 'deduction_eligibility_facts') ?? '').toLowerCase();
+  const dependentPlan = String(getFactValue(facts, 'dependentClaimPlan') ?? '').toLowerCase();
+  const residentRegisterSkip = !dependentPlan.includes('claim') && dependentPlan !== '';
+  const hasBusinessAccount = JSON.stringify(getFactValue(facts, 'business_account_registered') ?? '').toLowerCase().includes('true');
+  const hasBusinessCard = JSON.stringify(getFactValue(facts, 'business_credit_card_registered') ?? '').toLowerCase().includes('true');
+  const mixedUseDetected = transactions.some((tx) => /phone|internet|telecom|card|home|vehicle|car/i.test(`${tx.description ?? ''} ${tx.counterparty ?? ''}`));
+  const hasOfficialWithholding = withholdings.some((item) => (item.evidenceRefs?.length ?? 0) > 0 || item.sourceOfTruth === 'official');
+  const candidates = [
+    {
+      code: posture === 'mixed_wage_business' ? 'mixed_posture_credit_review' : 'business_expense_review',
+      status: 'review_required' as const,
+      rationale: 'Opportunity depends on taxpayer posture, official rules, and evidence-backed allocation rather than automatic benefit confirmation.',
+      evidenceNeeded: ['taxpayer posture facts', 'supporting evidence for the relevant deduction/expense path'],
+      horizon: 'current_year' as const,
+    },
+    {
+      code: 'official_withholding_receipt_required',
+      status: hasOfficialWithholding ? 'possible' as const : 'review_required' as const,
+      rationale: 'Official withholding receipts are the most reliable basis for prepaid-tax credit and filing-path confidence.',
+      evidenceNeeded: ['official withholding receipt PDF/print or equivalent HomeTax official receipt'],
+      horizon: 'current_year' as const,
+    },
+    {
+      code: 'itemized_card_detail_required_for_expense_review',
+      status: bundleText.includes('summary') || deductionFacts.includes('card') ? 'review_required' as const : 'possible' as const,
+      rationale: 'Summary-only card bundles are useful for opportunity detection but do not settle business-expense treatment without line-item review.',
+      evidenceNeeded: ['itemized card transaction detail with merchant/date/amount'],
+      horizon: 'current_year' as const,
+    },
+    {
+      code: 'business_account_required',
+      status: hasBusinessAccount ? 'possible' as const : 'review_required' as const,
+      rationale: 'A dedicated business account improves current-year traceability and next-year collection ergonomics.',
+      evidenceNeeded: ['business account registration or account separation evidence'],
+      horizon: 'next_year' as const,
+    },
+    {
+      code: 'business_credit_card_registration_recommended',
+      status: hasBusinessCard ? 'possible' as const : 'review_required' as const,
+      rationale: 'Registering a business credit card reduces next-year expense review friction and helps separate personal spend.',
+      evidenceNeeded: ['business credit card registration or dedicated card usage evidence'],
+      horizon: 'next_year' as const,
+    },
+    {
+      code: 'resident_register_not_required_if_no_dependents',
+      status: residentRegisterSkip ? 'possible' as const : 'review_required' as const,
+      rationale: residentRegisterSkip ? 'If no dependent claim is planned, resident register collection can usually be skipped.' : 'Dependent-claim posture may require resident-register proof.',
+      evidenceNeeded: ['dependent claim plan confirmation'],
+      horizon: 'current_year' as const,
+    },
   ];
+
+  if (posture === 'pure_business') {
+    candidates.push({
+      code: 'wage_credit_not_auto_applicable',
+      status: 'review_required',
+      rationale: 'Wage-income-based card/insurance/cash-receipt benefits must not be auto-confirmed for pure business posture.',
+      evidenceNeeded: ['explicit wage-income eligibility facts if such benefits are considered'],
+      horizon: 'current_year',
+    });
+  }
+  if (bookkeepingMode === 'simple_book') {
+    candidates.push({
+      code: 'bookkeeping_tax_credit_possible',
+      status: 'possible',
+      rationale: 'A simple-book target who keeps compliant books may have a bookkeeping-related tax-credit opportunity, subject to official rule confirmation.',
+      evidenceNeeded: ['bookkeeping records showing compliant bookkeeping method and eligible filing status'],
+      horizon: 'current_year',
+    });
+  }
+  if (mixedUseDetected) {
+    candidates.push({
+      code: 'mixed_use_allocation_required',
+      status: 'review_required',
+      rationale: 'Phone/internet/card/home/vehicle costs require allocation basis, business-use ratio, and evidence before benefit treatment is settled.',
+      evidenceNeeded: ['allocation basis', 'business use ratio', 'supporting receipts/evidence refs'],
+      horizon: 'current_year',
+    });
+  }
+  return candidates;
+}
+
+function buildSubmitterProfileCompleteness(facts: TaxpayerFact[]) {
+  const portalPrepopulatedStatus = String(getFactValue(facts, 'portalPrepopulatedStatus') ?? '').toLowerCase();
+  const dependentClaimPlan = getFactValue(facts, 'dependentClaimPlan');
+  const residentRegisterRequired = portalPrepopulatedStatus.includes('dependent') || String(dependentClaimPlan ?? '').toLowerCase().includes('claim') || JSON.stringify(dependentClaimPlan ?? '').toLowerCase().includes('true');
+  const portalRefundConfirmed = portalPrepopulatedStatus.includes('refund_prepopulated_confirmed') || portalPrepopulatedStatus.includes('refund_confirmed');
+  const stateForRefund = (key: string) => {
+    const value = getFactValue(facts, key);
+    if (portalRefundConfirmed) {
+      return { state: 'portal_prepopulated' as const, value: typeof value === 'string' ? value : undefined };
+    }
+    return value ? { state: 'confirmed' as const, value: typeof value === 'string' ? value : undefined } : { state: 'missing' as const, value: undefined };
+  };
+  const stateForBasic = (key: string) => {
+    const value = getFactValue(facts, key);
+    return value ? { state: 'confirmed' as const, value: typeof value === 'string' ? value : undefined } : { state: 'missing' as const, value: undefined };
+  };
+  const profile = {
+    refundAccount: stateForRefund('refundAccount'),
+    refundBank: stateForRefund('refundBank'),
+    accountHolder: stateForRefund('accountHolder'),
+    contactPhone: stateForBasic('contactPhone'),
+    filingAddress: stateForBasic('filingAddress'),
+    dependentClaimPlan: dependentClaimPlan ? { state: 'confirmed' as const, value: String(dependentClaimPlan) } : { state: 'missing' as const, value: undefined },
+    residentRegisterRequired,
+    portalPrepopulatedStatus: portalPrepopulatedStatus || undefined,
+    missingRequiredFields: [] as string[],
+    targetedQuestions: [] as string[],
+  };
+  for (const field of ['refundAccount', 'refundBank', 'accountHolder', 'contactPhone', 'filingAddress'] as const) {
+    if (profile[field].state === 'missing') profile.missingRequiredFields.push(field);
+  }
+  if (profile.dependentClaimPlan.state === 'missing') {
+    profile.missingRequiredFields.push('dependentClaimPlan');
+    profile.targetedQuestions.push('부양가족 공제 청구 계획이 있는지 확인해 주세요.');
+  }
+  if (profile.refundAccount.state === 'missing' || profile.refundBank.state === 'missing' || profile.accountHolder.state === 'missing') {
+    profile.targetedQuestions.push('환급계좌가 미확정이면 은행/계좌/예금주를 targeted question으로만 확인해 주세요.');
+  }
+  if (residentRegisterRequired) {
+    profile.targetedQuestions.push('부양가족 공제 청구 예정이면 주민등록등본 필요 여부를 확인해 주세요.');
+  }
+  return profile;
 }
 
 function enrichCoverageGap(gap: CoverageGap): CoverageGap {
@@ -418,6 +624,26 @@ function enrichCoverageGap(gap: CoverageGap): CoverageGap {
   };
 }
 
+function buildRegistryFreshnessSurface(sourceCategory: string, targetArtifactType: string, nowIso = new Date().toISOString()) {
+  const entry = getSourceMethodRegistryEntry(sourceCategory, targetArtifactType);
+  if (!entry) return undefined;
+  const freshness = getRegistryFreshness(entry, nowIso);
+  const dateWarnings = validateRegistryEntryDates(entry, nowIso);
+  const methodFreshnessWarning = dateWarnings.length > 0
+    ? `Registry date anomaly: ${dateWarnings.join(', ')}`
+    : freshness.reverifyRecommended
+      ? `Registry guidance is stale relative to freshness window; re-verify before relying on ${entry.preferredMethod}.`
+      : undefined;
+  return {
+    registryEntryId: entry.entryId,
+    registryVerifiedAt: entry.verifiedAt,
+    registryReviewAfter: entry.reviewAfter,
+    reverifyRecommended: freshness.reverifyRecommended || dateWarnings.length > 0,
+    knownInvalidMethods: entry.knownInvalidMethods,
+    methodFreshnessWarning,
+  };
+}
+
 function buildGapNextActionPlan(gaps: CoverageGap[]) {
   const enriched = gaps.filter((gap) => gap.state === 'open').map(enrichCoverageGap);
   const rank = (gap: CoverageGap) => {
@@ -441,17 +667,18 @@ function buildGapNextActionPlan(gaps: CoverageGap[]) {
 function buildTierAFreelancerCollectionTasks(workspaceId: string, filingYear: number, verifiedAt?: string): CollectionTask[] {
   const task = (base: CollectionTask): CollectionTask => {
     const entry = getSourceMethodRegistryEntry(base.sourceCategory, base.targetArtifactType);
-    const freshness = entry ? getRegistryFreshness(entry) : undefined;
-    const dateWarnings = entry ? validateRegistryEntryDates(entry) : [];
+    const freshness = buildRegistryFreshnessSurface(base.sourceCategory, base.targetArtifactType);
+    const freshnessMeta = entry ? getRegistryFreshness(entry) : undefined;
     return {
       ...base,
-      whyThisSourceNow: `${base.whyThisSourceNow}${entry ? ` Preferred method: ${entry.preferredMethod}.` : ''}${freshness?.reverifyRecommended ? ' Re-verify recommended before relying on this method guidance.' : ''}${dateWarnings.length ? ` Registry date warning: ${dateWarnings.join(', ')}.` : ''}`,
+      whyThisSourceNow: `${base.whyThisSourceNow}${entry ? ` Preferred method: ${entry.preferredMethod}.` : ''}${freshness?.reverifyRecommended ? ' Re-verify recommended before relying on this method guidance.' : ''}${freshness?.methodFreshnessWarning ? ` ${freshness.methodFreshnessWarning}` : ''}`,
       portalPathHints: [
         ...base.portalPathHints,
-        ...(entry?.knownInvalidMethods.length ? [`Known invalid methods: ${entry.knownInvalidMethods.map((item) => `${item.method} (invalid as of ${item.invalidAsOf})`).join(', ')}`] : []),
-        ...(freshness ? [`Registry verifiedAt=${entry?.verifiedAt}; reviewAfter=${entry?.reviewAfter}; expiresAt=${freshness.expiresAt}`] : []),
+        ...(freshness?.knownInvalidMethods?.length ? [`Known invalid methods: ${freshness.knownInvalidMethods.map((item) => `${item.method} (invalid as of ${item.invalidAsOf})`).join(', ')}`] : []),
+        ...(freshnessMeta ? [`Registry verifiedAt=${entry?.verifiedAt}; reviewAfter=${entry?.reviewAfter}; expiresAt=${freshnessMeta.expiresAt}`] : []),
       ],
       verifiedAt: verifiedAt ?? entry?.verifiedAt,
+      ...freshness,
     };
   };
 
@@ -753,11 +980,20 @@ export function taxSourcesGetCollectionStatus(
   const { enriched, prioritizedGap, nextActionPlan } = buildGapNextActionPlan(coverageGaps);
   const filingYear = Number(input.workspaceId.match(/(20\d{2})/)?.[1] ?? new Date().getFullYear());
   const collectionTasks = buildTierAFreelancerCollectionTasks(input.workspaceId, filingYear);
-  const connectedSources = sources.map((source) => ({
-    sourceId: source.sourceId,
-    sourceType: source.sourceType,
-    state: source.state ?? source.connectionStatus ?? 'planned',
-  }));
+  const connectedSources = sources.map((source) => {
+    const firstTaskForSource = collectionTasks.find((task) => task.sourceCategory === source.sourceType || (source.sourceType === 'hometax' && task.sourceCategory === 'hometax'));
+    return {
+      sourceId: source.sourceId,
+      sourceType: source.sourceType,
+      state: source.state ?? source.connectionStatus ?? 'planned',
+      registryEntryId: firstTaskForSource?.registryEntryId,
+      registryVerifiedAt: firstTaskForSource?.registryVerifiedAt,
+      registryReviewAfter: firstTaskForSource?.registryReviewAfter,
+      reverifyRecommended: firstTaskForSource?.reverifyRecommended,
+      knownInvalidMethods: firstTaskForSource?.knownInvalidMethods,
+      methodFreshnessWarning: firstTaskForSource?.methodFreshnessWarning,
+    };
+  });
 
   const pendingCheckpoints = sources
     .flatMap((source) => {
@@ -1698,9 +1934,10 @@ export function taxFilingListAdjustmentCandidates(
     .filter((item) => input.eligibilityState === undefined || item.eligibilityState === input.eligibilityState)
     .filter((item) => input.reviewRequired === undefined || item.reviewRequired === input.reviewRequired);
 
-  const { taxpayerPosture, operatorWarnings: postureWarnings } = deriveTaxProfileSignals(facts, scopedTransactions);
+  const { taxpayerPosture, bookkeepingMode, operatorWarnings: postureWarnings } = deriveTaxProfileSignals(facts, scopedTransactions, scopedWithholding, [], []);
   const businessExpenseAllocationCandidates = buildAllocationCandidates(input.workspaceId, facts, scopedTransactions);
-  const opportunityCandidates = buildOpportunityCandidates(taxpayerPosture, facts);
+  const opportunityCandidates = buildOpportunityCandidates(taxpayerPosture, facts, bookkeepingMode, scopedWithholding, scopedTransactions);
+  const submitterProfile = buildSubmitterProfileCompleteness(facts);
   if (taxpayerPosture === 'pure_business') {
     for (const item of items) {
       if (item.adjustmentType !== 'withholding_tax_credit' && /credit|insurance|card|cash/i.test(item.adjustmentType)) {
@@ -1710,6 +1947,11 @@ export function taxFilingListAdjustmentCandidates(
       }
     }
   }
+  const extraOpportunityWarnings = [
+    ...(taxpayerPosture === 'pure_business' ? [{ code: 'wage_credit_not_auto_applicable', message: 'Pure business posture should not auto-confirm wage-income-oriented credit benefits.' }] : []),
+    ...((businessExpenseAllocationCandidates.some((item) => item.allocationBasis === 'missing_allocation_basis')) ? [{ code: 'mixed_use_allocation_required', message: 'Mixed-use expenses need allocation basis, business-use ratio, and evidence before final treatment.' }] : []),
+    ...(opportunityCandidates.some((item) => item.code === 'itemized_card_detail_required_for_expense_review' && item.status === 'review_required') ? [{ code: 'itemized_card_detail_required_for_expense_review', message: 'Summary-only card bundle is not enough for business-expense review; itemized detail is required.' }] : []),
+  ];
   const warnings = items.some((item) => item.eligibilityState === 'out_of_scope')
     ? ['unsupported_adjustment_candidates_present']
     : items.some((item) => item.reviewRequired)
@@ -1719,7 +1961,7 @@ export function taxFilingListAdjustmentCandidates(
   return {
     ok: true,
     status: 'completed',
-    data: { workspaceId: input.workspaceId, items, warnings, businessExpenseAllocationCandidates, opportunityCandidates, operatorWarnings: postureWarnings },
+    data: { workspaceId: input.workspaceId, items, warnings, businessExpenseAllocationCandidates, opportunityCandidates, submitterProfile, operatorWarnings: [...postureWarnings, ...extraOpportunityWarnings] },
     nextRecommendedAction: warnings.length > 0 ? 'tax.classify.list_review_items' : 'tax.filing.compute_draft',
   };
 }
@@ -1754,17 +1996,29 @@ export function taxProfileUpsertFacts(input: UpsertTaxpayerFactsInput, existingF
   };
 }
 
-export function taxListMissingFacts(workspaceId: string, facts: TaxpayerFact[] = []): MCPResponseEnvelope<ListMissingFactsData> {
+export function taxListMissingFacts(workspaceId: string, facts: TaxpayerFact[] = [], withholdingRecords: WithholdingRecord[] = [], sourceArtifacts: SourceArtifact[] = [], evidenceDocuments: EvidenceDocument[] = []): MCPResponseEnvelope<ListMissingFactsData> {
   const scopedFacts = facts.filter((fact) => fact.workspaceId === workspaceId);
-  const bookkeepingMode = String(getFactValue(scopedFacts, 'bookkeeping_mode') ?? '').toLowerCase();
-  const operatorWarnings = (bookkeepingMode.includes('double') || bookkeepingMode.includes('복식')) && !getFactValue(scopedFacts, 'business_use_explanations')
-    ? [{ code: 'mixed_use_allocation_basis_missing', message: 'Double-entry/business-heavy posture needs allocation basis for mixed-use expense claims.' }]
-    : [];
+  const scopedWithholding = withholdingRecords.filter((record) => record.workspaceId === workspaceId);
+  const regime = deriveBookkeepingRegime({ workspaceId, facts: scopedFacts, withholdings: scopedWithholding, sourceArtifacts, evidenceDocuments });
+  const submitterProfile = buildSubmitterProfileCompleteness(scopedFacts);
+  const operatorWarnings = [
+    ...regime.operatorWarnings,
+    ...((regime.bookkeepingMode === 'double_entry' || regime.bookkeepingMode === 'simple_book') && !getFactValue(scopedFacts, 'business_use_explanations')
+      ? [{ code: 'mixed_use_allocation_basis_missing', message: 'Business-heavy posture needs allocation basis for mixed-use expense claims.' }]
+      : []),
+    ...(submitterProfile.missingRequiredFields.length > 0 ? [{ code: 'submitter_profile_incomplete', message: 'Submitter profile fields required for final filing are still incomplete.' }] : []),
+  ];
   return {
     ok: true,
     status: 'completed',
     data: {
       items: computeMissingFactCompleteness(scopedFacts),
+      bookkeepingMode: regime.bookkeepingMode,
+      regimeDerivation: regime.regimeDerivation,
+      regimeConfidenceBand: regime.regimeConfidenceBand,
+      principalIndustryCode: regime.principalIndustryCode,
+      industryThresholdBasis: regime.industryThresholdBasis,
+      submitterProfile,
       operatorWarnings,
     },
   };
@@ -1776,6 +2030,9 @@ export function taxProfileDetectFilingPath(
   reviewItems: ReviewItem[] = [],
   coverageGaps: import('../../core/src/types.js').CoverageGap[] = [],
   taxpayerFacts: TaxpayerFact[] = [],
+  withholdingRecords: WithholdingRecord[] = [],
+  sourceArtifacts: SourceArtifact[] = [],
+  evidenceDocuments: EvidenceDocument[] = [],
 ): MCPResponseEnvelope<DetectFilingPathData> {
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
   const scopedReviewItems = reviewItems.filter((item) => item.workspaceId === input.workspaceId);
@@ -1798,8 +2055,10 @@ export function taxProfileDetectFilingPath(
     reviewItems: scopedReviewItems,
     coverageGaps,
   });
-  const { taxpayerPosture, bookkeepingMode, operatorWarnings } = deriveTaxProfileSignals(scopedFacts, scopedTransactions);
+  const scopedWithholdingRecords = withholdingRecords.filter((record) => record.workspaceId === input.workspaceId);
+  const { taxpayerPosture, bookkeepingMode, regimeDerivation, regimeConfidenceBand, principalIndustryCode, industryThresholdBasis, operatorWarnings } = deriveTaxProfileSignals(scopedFacts, scopedTransactions, scopedWithholdingRecords, sourceArtifacts, evidenceDocuments);
   const specialCreditEligibility = buildSpecialCreditEligibility(taxpayerPosture, scopedFacts);
+  const opportunityCandidates = buildOpportunityCandidates(taxpayerPosture, scopedFacts, bookkeepingMode, scopedWithholdingRecords, scopedTransactions);
 
   return {
     ok: true,
@@ -1814,8 +2073,13 @@ export function taxProfileDetectFilingPath(
       missingFactDetails: computeMissingFactCompleteness(scopedFacts, detection.missingFacts),
       escalationFlags: detection.escalationFlags,
       bookkeepingMode,
+      regimeDerivation,
+      regimeConfidenceBand,
+      principalIndustryCode,
+      industryThresholdBasis,
       taxpayerPosture,
       specialCreditEligibility,
+      opportunityCandidates,
       operatorWarnings,
     },
     readiness: readiness,
@@ -1946,6 +2210,8 @@ export function taxFilingComputeDraft(
   withholdingRecords: WithholdingRecord[] = [],
   coverageGaps: CoverageGap[] = [],
   existingFieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
+  sourceArtifacts: SourceArtifact[] = [],
+  evidenceDocuments: EvidenceDocument[] = [],
 ): MCPResponseEnvelope<ComputeDraftData> {
   const filingYear = input.workspaceId.match(/(20\d{2})/)?.[1];
   const scopedTransactions = transactions.filter((tx) => tx.workspaceId === input.workspaceId);
@@ -2015,8 +2281,9 @@ export function taxFilingComputeDraft(
     : scopedTaxpayerFacts.length === 0
       ? computeMissingFactCompleteness(scopedTaxpayerFacts)
       : computeMissingFactCompleteness(scopedTaxpayerFacts, filingPathDetection.missingFacts);
-  const profileSignals = deriveTaxProfileSignals(scopedTaxpayerFacts, scopedTransactions);
+  const profileSignals = deriveTaxProfileSignals(scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords, sourceArtifacts, evidenceDocuments);
   const adjustmentView = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, scopedTaxpayerFacts, scopedTransactions, scopedWithholdingRecords).data;
+  const submitterProfile = buildSubmitterProfileCompleteness(scopedTaxpayerFacts);
   const adjustmentCandidates = adjustmentView.items;
   const adjustmentSummary = {
     considered: adjustmentCandidates.length,
@@ -2038,6 +2305,7 @@ export function taxFilingComputeDraft(
   const missingFactsBlockDraft = factCompleteness.some((item) => item.priority === 'high')
     && scopedTransactions.length === 0;
   const highAllocationMissing = (adjustmentView.businessExpenseAllocationCandidates ?? []).some((item) => item.reviewLevel === 'high' && item.allocationBasis === 'missing_allocation_basis');
+  const missingSubmitterProfile = submitterProfile.missingRequiredFields.length > 0;
   const computeBlockingReason = readinessBlockingReason === 'awaiting_review_decision'
     ? (trust.stopReasonCodes.length > 0 ? readinessBlockingReason : undefined)
     : missingFactsBlockDraft || highAllocationMissing
@@ -2073,11 +2341,16 @@ export function taxFilingComputeDraft(
       adjustmentCandidates,
       adjustmentSummary,
       bookkeepingMode: profileSignals.bookkeepingMode,
+      regimeDerivation: profileSignals.regimeDerivation,
+      regimeConfidenceBand: profileSignals.regimeConfidenceBand,
+      principalIndustryCode: profileSignals.principalIndustryCode,
+      industryThresholdBasis: profileSignals.industryThresholdBasis,
       taxpayerPosture: profileSignals.taxpayerPosture,
       specialCreditEligibility: buildSpecialCreditEligibility(profileSignals.taxpayerPosture, scopedTaxpayerFacts),
       businessExpenseAllocationCandidates: adjustmentView.businessExpenseAllocationCandidates,
       opportunityCandidates: adjustmentView.opportunityCandidates,
-      operatorWarnings: [...profileSignals.operatorWarnings, ...(adjustmentView.operatorWarnings ?? [])],
+      submitterProfile,
+      operatorWarnings: [...profileSignals.operatorWarnings, ...(adjustmentView.operatorWarnings ?? []), ...(missingSubmitterProfile ? [{ code: 'submitter_profile_incomplete', message: 'Submitter profile fields needed for final filing are still incomplete.' }] : [])],
       fieldValues: draft.fieldValues,
       draftFieldValues: draft.fieldValues,
       filingSections: buildFilingSections(draft.draftId, draft.fieldValues),
@@ -2254,6 +2527,7 @@ export function taxFilingPrepareHomeTax(
   reviewItems: ReviewItem[],
   existingFieldValues: import('../../core/src/types.js').FilingFieldValue[] = [],
   readinessHints?: { supportTier?: import('../../core/src/types.js').FilingSupportTier; filingPathKind?: import('../../core/src/types.js').FilingPathKind },
+  taxpayerFacts: TaxpayerFact[] = [],
 ): MCPResponseEnvelope<PrepareHomeTaxData> {
   const fieldValues = existingFieldValues;
   const readinessSummary = deriveReadinessSummary({
@@ -2283,10 +2557,37 @@ export function taxFilingPrepareHomeTax(
       .filter((field) => (field.portalComparisonState ?? field.comparisonState) === 'mismatch')
       .map((field) => ({ severity: (field.mismatchSeverity ?? 'medium') as 'low' | 'medium' | 'high' | 'critical' })),
   });
+  const submitterProfile = buildSubmitterProfileCompleteness(taxpayerFacts);
   const prepareBlockingReason = preliminaryPrepareBlockingReason === 'awaiting_review_decision' && trust.stopReasonCodes.length === 0
     ? undefined
     : preliminaryPrepareBlockingReason;
   const derivedPreparation = deriveHomeTaxPreparationState(fieldValues, reviewItems, prepareBlockingReason);
+  if (submitterProfile.missingRequiredFields.length > 0 || submitterProfile.residentRegisterRequired) {
+    derivedPreparation.handoff.manualVerificationChecklist.push('제출자 프로필(환급계좌/연락처/주소/부양가족 계획) 완결 여부를 확인');
+    derivedPreparation.handoff.immediateUserConfirmations.push(...submitterProfile.targetedQuestions);
+    derivedPreparation.orderedSections.push({
+      order: derivedPreparation.orderedSections.length + 1,
+      sectionKey: 'submitter_profile',
+      checkpointType: 'review_judgment',
+      fieldRefs: ['submitter.refundAccount', 'submitter.refundBank', 'submitter.accountHolder', 'submitter.contactPhone', 'submitter.filingAddress', 'submitter.dependentClaimPlan'],
+      mappedFields: [
+        { fieldKey: 'refundAccount', fieldRef: 'submitter.refundAccount', value: submitterProfile.refundAccount?.value ?? submitterProfile.refundAccount?.state, comparisonState: 'not_compared', sourceOfTruth: 'user_asserted', requiresManualEntry: submitterProfile.refundAccount?.state === 'missing', blocked: false, comparisonNeeded: false, sourceProvenanceRefs: [], mismatchState: 'matched', reviewStatus: 'none', entryInstruction: '포털에 이미 채워져 있으면 confirmed 상태로만 유지하고, 아니면 은행/계좌/예금주를 targeted question으로 확인' },
+        { fieldKey: 'refundBank', fieldRef: 'submitter.refundBank', value: submitterProfile.refundBank?.value ?? submitterProfile.refundBank?.state, comparisonState: 'not_compared', sourceOfTruth: 'user_asserted', requiresManualEntry: submitterProfile.refundBank?.state === 'missing', blocked: false, comparisonNeeded: false, sourceProvenanceRefs: [], mismatchState: 'matched', reviewStatus: 'none', entryInstruction: '환급은행이 비어 있으면 targeted question으로만 확인' },
+        { fieldKey: 'accountHolder', fieldRef: 'submitter.accountHolder', value: submitterProfile.accountHolder?.value ?? submitterProfile.accountHolder?.state, comparisonState: 'not_compared', sourceOfTruth: 'user_asserted', requiresManualEntry: submitterProfile.accountHolder?.state === 'missing', blocked: false, comparisonNeeded: false, sourceProvenanceRefs: [], mismatchState: 'matched', reviewStatus: 'none', entryInstruction: '예금주명을 확인' },
+        { fieldKey: 'contactPhone', fieldRef: 'submitter.contactPhone', value: submitterProfile.contactPhone?.value ?? submitterProfile.contactPhone?.state, comparisonState: 'not_compared', sourceOfTruth: 'user_asserted', requiresManualEntry: submitterProfile.contactPhone?.state === 'missing', blocked: false, comparisonNeeded: false, sourceProvenanceRefs: [], mismatchState: 'matched', reviewStatus: 'none', entryInstruction: '제출자 연락처 확인' },
+        { fieldKey: 'filingAddress', fieldRef: 'submitter.filingAddress', value: submitterProfile.filingAddress?.value ?? submitterProfile.filingAddress?.state, comparisonState: 'not_compared', sourceOfTruth: 'user_asserted', requiresManualEntry: submitterProfile.filingAddress?.state === 'missing', blocked: false, comparisonNeeded: false, sourceProvenanceRefs: [], mismatchState: 'matched', reviewStatus: 'none', entryInstruction: '신고 주소 확인' },
+        { fieldKey: 'dependentClaimPlan', fieldRef: 'submitter.dependentClaimPlan', value: submitterProfile.dependentClaimPlan?.value ?? submitterProfile.dependentClaimPlan?.state, comparisonState: 'not_compared', sourceOfTruth: 'user_asserted', requiresManualEntry: submitterProfile.dependentClaimPlan?.state === 'missing', blocked: false, comparisonNeeded: false, sourceProvenanceRefs: [], mismatchState: 'matched', reviewStatus: 'none', entryInstruction: submitterProfile.residentRegisterRequired ? '부양가족 청구 예정이면 주민등록등본 필요 여부를 같이 확인' : '부양가족 청구 계획 없음이면 주민등록등본은 skip 가능' },
+      ],
+      manualOnlyFields: submitterProfile.missingRequiredFields.map((field) => `submitter.${field}`),
+      blockedFields: [],
+      comparisonNeededFields: [],
+      mismatchFields: [],
+      allowedNextActions: ['pause_and_return_to_mcp', 'resolve_blockers'],
+      resumePreconditions: ['submitter profile should be confirmed before final submit click'],
+      retryPolicy: 'manual_confirmation_then_resume',
+      blockingItems: [],
+    });
+  }
 
   return {
     ok: prepareBlockingReason === undefined,
@@ -2297,7 +2598,7 @@ export function taxFilingPrepareHomeTax(
       materiality: trust.materiality,
       mismatchSeverity: trust.mismatchSeverity,
       stopReasonCodes: trust.stopReasonCodes,
-      warningCodes: trust.warningCodes,
+      warningCodes: [...trust.warningCodes, ...(submitterProfile.missingRequiredFields.length > 0 ? ['submitter_profile_incomplete'] : [])],
       escalationReason: trust.escalationReason,
       reviewBatchId: trust.reviewBatchId,
       sectionMapping: derivedPreparation.sectionMapping,
@@ -2307,6 +2608,7 @@ export function taxFilingPrepareHomeTax(
       blockedFields: derivedPreparation.blockedFields,
       comparisonNeededFields: derivedPreparation.comparisonNeededFields,
       browserAssistReady: prepareBlockingReason === undefined,
+      submitterProfile,
       handoff: derivedPreparation.handoff,
       fieldValues,
       draftFieldValues: fieldValues,

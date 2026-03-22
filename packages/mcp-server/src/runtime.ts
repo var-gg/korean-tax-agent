@@ -25,6 +25,7 @@ import type {
 import type { SnapshotPersistenceAdapter } from '../../core/src/persistence.js';
 import type {
   CollectionStatusData,
+  CollectionTask,
   CompareWithHomeTaxData,
   DisconnectSourceData,
   DisconnectSourceInput,
@@ -708,11 +709,33 @@ export class InMemoryKoreanTaxMCPRuntime {
     return result;
   }
 
+  private applyCollectionObservationFreshness(collectionTasks: CollectionTask[] | undefined, workspaceId: string): CollectionTask[] {
+    const tasks: CollectionTask[] = [...(collectionTasks ?? [])];
+    const observations = this.store.collectionObservationsByWorkspace.get(workspaceId) ?? [];
+    const knownInvalidReplay = new Set(observations.filter((item) => tasks.some((task) => task.targetArtifactType === item.targetArtifactType && (task.knownInvalidMethods ?? []).some((method: { method: string }) => method.method === item.methodTried))).map((item) => `${item.targetArtifactType}:${item.methodTried}`));
+    return tasks
+      .map((task) => {
+        const replayedInvalid = (task.knownInvalidMethods ?? []).find((method: { method: string; invalidAsOf: string; reason: string }) => knownInvalidReplay.has(`${task.targetArtifactType}:${method.method}`));
+        return replayedInvalid
+          ? {
+              ...task,
+              methodFreshnessWarning: [task.methodFreshnessWarning, `Known-invalid method replayed: ${replayedInvalid.method}. Prefer fallback now.`].filter(Boolean).join(' '),
+              fallbackTaskIds: task.fallbackTaskIds,
+            }
+          : task;
+      })
+      .sort((a, b) => {
+        const aReplay = /Known-invalid method replayed/.test(a.methodFreshnessWarning ?? '') ? 1 : 0;
+        const bReplay = /Known-invalid method replayed/.test(b.methodFreshnessWarning ?? '') ? 1 : 0;
+        return aReplay - bReplay;
+      });
+  }
+
   private planCollection(input: KoreanTaxMCPContracts['tax.sources.plan_collection']['input']): KoreanTaxMCPContracts['tax.sources.plan_collection']['output'] {
     const result = taxSourcesPlanCollection(input);
     const observations = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
     const observationSummary = observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`);
-    const collectionTasks = [...(result.data.collectionTasks ?? [])];
+    const collectionTasks = this.applyCollectionObservationFreshness(result.data.collectionTasks, input.workspaceId);
     const insufficientOfficialPdf = observations.some((item) => item.targetArtifactType === 'withholding_receipt' && item.outcome === 'insufficient_artifact');
     const summaryOnlyCard = observations.some((item) => item.targetArtifactType === 'card_itemized_detail' && item.outcome === 'summary_only');
     const secureMailBlocked = observations.some((item) => item.targetArtifactType === 'secure_mail_attachment' && (item.outcome === 'attachment_required' || item.outcome === 'password_required'));
@@ -745,6 +768,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     const observations = this.store.collectionObservationsByWorkspace.get(input.workspaceId) ?? [];
     const latest = observations[observations.length - 1];
     const observationSummary = observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`);
+    const collectionTasks = this.applyCollectionObservationFreshness(result.data.collectionTasks, input.workspaceId);
     const pendingCheckpoints = [...result.data.pendingCheckpoints];
     if (latest?.outcome === 'auth_expired' && !pendingCheckpoints.includes('authentication')) pendingCheckpoints.push('authentication');
     return {
@@ -758,6 +782,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       data: {
         ...result.data,
         pendingCheckpoints,
+        collectionTasks,
         observationSummary,
       },
     };
@@ -770,6 +795,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       ...result,
       data: {
         ...result.data,
+        collectionTasks: this.applyCollectionObservationFreshness(result.data.collectionTasks, input.workspaceId),
         observationSummary: observations.slice(-5).map((item) => `${item.targetArtifactType}:${item.outcome}:${item.methodTried}`),
       },
     };
@@ -866,6 +892,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     const readinessState = buildRuntimeReadinessState(workspace);
     const coverageGapView = taxWorkspaceListCoverageGaps({ workspaceId: input.workspaceId }, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).data;
     const derived = this.getWorkspaceDerivedStatus(input.workspaceId);
+    const missingFactsView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data;
+    const missingFacts = missingFactsView.items;
 
     const assistSession = this.getBrowserAssistSession(input.workspaceId);
     const trustState = deriveOperatorTrustState({
@@ -893,7 +921,8 @@ export class InMemoryKoreanTaxMCPRuntime {
           status: workspace.status,
           submissionApproval: workspace.submissionApproval,
           submissionResult: workspace.submissionResult,
-          missingFacts: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items,
+          missingFacts,
+          submitterProfile: missingFactsView.submitterProfile,
           coverageGaps: coverageGapView.items,
           prioritizedGap: coverageGapView.prioritizedGap,
           nextActionPlan: coverageGapView.nextActionPlan,
@@ -936,7 +965,8 @@ export class InMemoryKoreanTaxMCPRuntime {
     const nextAction = deriveWorkspaceNextRecommendedAction(workspace);
     const runtimeSnapshot = buildRuntimeSnapshot(workspace);
 
-    const missingFacts = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items;
+    const missingFactsView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data;
+    const missingFacts = missingFactsView.items;
     const coverageGapView = taxWorkspaceListCoverageGaps({ workspaceId: input.workspaceId }, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? []).data;
     const adjustmentCandidates = taxFilingListAdjustmentCandidates({ workspaceId: input.workspaceId }, this.getTaxpayerFacts(input.workspaceId), Array.from(this.store.transactions.values()), this.getWithholdingRecords(input.workspaceId)).data.items;
     const keyPoints = [
@@ -947,6 +977,7 @@ export class InMemoryKoreanTaxMCPRuntime {
       `comparison=${getRuntimeComparisonState(workspace)}`,
       `freshness=${workspace.freshnessState ?? 'stale_unknown'}`,
       `missing_facts=${missingFacts.length}`,
+      `submitter_profile_missing=${missingFactsView.submitterProfile?.missingRequiredFields.length ?? 0}`,
       `open_coverage_gaps=${coverageGapView.items.length}`,
       `adjustment_candidates=${adjustmentCandidates.length}`,
       `submission_approval=${workspace.submissionApproval ? 'recorded' : 'missing'}`,
@@ -1006,7 +1037,8 @@ export class InMemoryKoreanTaxMCPRuntime {
         submissionResult: workspace.submissionResult,
         adjustmentCandidates,
         adjustmentSummary,
-        missingFacts: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items,
+        missingFacts,
+        submitterProfile: missingFactsView.submitterProfile,
         headline,
         summaryText,
         operatorUpdate,
@@ -1612,13 +1644,16 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private detectFilingPath(input: DetectFilingPathInput): MCPResponseEnvelope<DetectFilingPathData> {
-    const missingFacts = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items;
+    const missingFacts = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data.items;
     const result = taxProfileDetectFilingPath(
       input,
       Array.from(this.store.transactions.values()),
       this.listReviewItems(input.workspaceId),
       this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
       this.getTaxpayerFacts(input.workspaceId),
+      this.getWithholdingRecords(input.workspaceId),
+      Array.from(this.store.sourceArtifacts.values()),
+      Array.from(this.store.evidenceDocuments.values()),
     );
     this.syncWorkspaceSnapshot(input.workspaceId);
     return {
@@ -1652,7 +1687,7 @@ export class InMemoryKoreanTaxMCPRuntime {
     for (const fact of updatedFacts) merged.set(fact.factKey, fact);
     this.store.taxpayerFactsByWorkspace.set(input.workspaceId, Array.from(merged.values()));
 
-    const missingFactSummary = taxListMissingFacts(input.workspaceId, Array.from(merged.values())).data.items;
+    const missingFactSummary = taxListMissingFacts(input.workspaceId, Array.from(merged.values()), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data.items;
     this.store.coverageGapsByWorkspace.set(
       input.workspaceId,
       reconcileFactCoverageGaps(input.workspaceId, this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [], missingFactSummary),
@@ -1670,7 +1705,7 @@ export class InMemoryKoreanTaxMCPRuntime {
   }
 
   private listMissingFacts(input: ListMissingFactsInput): MCPResponseEnvelope<ListMissingFactsData> {
-    const result = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId));
+    const result = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values()));
     return {
       ...result,
       blockingReason: result.data.items.some((item) => item.priority === 'high') ? 'insufficient_metadata' : result.blockingReason,
@@ -1816,10 +1851,12 @@ export class InMemoryKoreanTaxMCPRuntime {
       this.getWithholdingRecords(input.workspaceId),
       this.store.coverageGapsByWorkspace.get(input.workspaceId) ?? [],
       this.getFilingFieldValues(input.workspaceId),
+      Array.from(this.store.sourceArtifacts.values()),
+      Array.from(this.store.evidenceDocuments.values()),
     );
     this.store.draftsByWorkspace.set(input.workspaceId, {
       ...result.data,
-      factCompleteness: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId)).data.items,
+      factCompleteness: taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data.items,
     });
     this.store.taxpayerFactsByWorkspace.set(input.workspaceId, result.data.taxpayerFacts ?? this.getTaxpayerFacts(input.workspaceId));
     this.store.withholdingRecordsByWorkspace.set(input.workspaceId, result.data.withholdingRecords ?? this.getWithholdingRecords(input.workspaceId));
@@ -1924,6 +1961,7 @@ export class InMemoryKoreanTaxMCPRuntime {
         supportTier: draft?.supportTier ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'tier_a' : 'undetermined'),
         filingPathKind: draft?.filingPathKind ?? (draft?.fieldValues && draft.fieldValues.length > 0 ? 'mixed_income_limited' : 'unknown'),
       },
+      this.getTaxpayerFacts(input.workspaceId),
     );
     const adjustmentCandidates = taxFilingListAdjustmentCandidates(
       { workspaceId: input.workspaceId },
@@ -1987,11 +2025,13 @@ export class InMemoryKoreanTaxMCPRuntime {
     const reviewItems = this.listReviewItems(input.workspaceId);
     const evidenceDocuments = Array.from(this.store.evidenceDocuments.values()).filter((doc) => doc.workspaceId === input.workspaceId);
     const sourceArtifacts = Array.from(this.store.sourceArtifacts.values()).filter((artifact) => artifact.workspaceId === input.workspaceId);
+    const submitterProfileView = taxListMissingFacts(input.workspaceId, this.getTaxpayerFacts(input.workspaceId), this.getWithholdingRecords(input.workspaceId), Array.from(this.store.sourceArtifacts.values()), Array.from(this.store.evidenceDocuments.values())).data.submitterProfile;
     const checklistPreview = [
       `final_state=${workspace?.status ?? 'unknown'}`,
       `final_approval=${workspace?.submissionApproval ? 'recorded' : 'missing'}`,
       `material_mismatch=${draft?.stopReasonCodes?.includes('severe_mismatch') ? 'present' : 'none'}`,
       `missing_coverage=${(workspace?.openCoverageGapCount ?? 0) > 0 ? 'present' : 'none'}`,
+      `submitter_profile=${(submitterProfileView?.missingRequiredFields.length ?? 0) === 0 ? 'complete' : `missing:${submitterProfileView?.missingRequiredFields.join('|')}`}`,
       `receipt_confirmation=${workspace?.submissionResult?.receiptNumber || (workspace?.submissionResult?.receiptArtifactRefs?.length ?? 0) > 0 ? 'recorded' : 'pending'}`,
     ];
     const unresolvedBlockers = summary.stopReasonCodes ?? draft?.stopReasonCodes ?? [];

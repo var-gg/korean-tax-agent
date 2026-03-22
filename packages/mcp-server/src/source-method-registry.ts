@@ -1,4 +1,5 @@
 export type SourceMethodRegistryEntry = {
+  entryId: string;
   sourceCategory: string;
   targetArtifactType: string;
   preferredMethod: string;
@@ -18,6 +19,7 @@ export type SourceMethodRegistryEntry = {
 
 export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
   {
+    entryId: 'registry_hometax_withholding_receipt',
     sourceCategory: 'hometax',
     targetArtifactType: 'withholding_receipt',
     preferredMethod: 'browser_assist_official_pdf_print',
@@ -34,6 +36,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     notes: 'HomeTax withholding is sufficient only when the official PDF/print or equivalent official printable certificate is captured.',
   },
   {
+    entryId: 'registry_hometax_filing_guidance_notice',
     sourceCategory: 'hometax',
     targetArtifactType: 'filing_guidance_notice',
     preferredMethod: 'browser_assist_notice_print_pdf',
@@ -47,6 +50,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     notes: 'Re-verify when HomeTax seasonal UI changes are suspected.',
   },
   {
+    entryId: 'registry_hometax_year_end_tax_bundle',
     sourceCategory: 'hometax',
     targetArtifactType: 'year_end_tax_bundle',
     preferredMethod: 'export_ingestion_simplified_pdf_bundle',
@@ -61,6 +65,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_government_record_resident_register',
     sourceCategory: 'government_record',
     targetArtifactType: 'resident_register',
     preferredMethod: 'export_ingestion_official_resident_register_pdf',
@@ -73,6 +78,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_health_insurance_payment_history',
     sourceCategory: 'health_insurance',
     targetArtifactType: 'health_insurance_payment_history',
     preferredMethod: 'export_ingestion_official_payment_history_pdf',
@@ -85,6 +91,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_telecom_payment_history',
     sourceCategory: 'telecom',
     targetArtifactType: 'telecom_payment_history',
     preferredMethod: 'export_ingestion_itemized_statement_pdf',
@@ -97,6 +104,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_card_statement_itemized_detail',
     sourceCategory: 'card_statement',
     targetArtifactType: 'card_itemized_detail',
     preferredMethod: 'export_ingestion_itemized_card_statement',
@@ -111,6 +119,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_housing_rent_contract',
     sourceCategory: 'housing',
     targetArtifactType: 'rent_contract',
     preferredMethod: 'export_ingestion_signed_contract_pdf',
@@ -123,6 +132,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_local_documents_petty_receipts_bundle',
     sourceCategory: 'local_documents',
     targetArtifactType: 'petty_receipts_bundle',
     preferredMethod: 'upload_curated_receipts_bundle',
@@ -135,6 +145,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_payroll_payment_detail',
     sourceCategory: 'payroll',
     targetArtifactType: 'payroll_payment_detail',
     preferredMethod: 'export_ingestion_payroll_detail_pdf',
@@ -147,6 +158,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_secure_mail_attachment',
     sourceCategory: 'secure_mail',
     targetArtifactType: 'secure_mail_attachment',
     preferredMethod: 'attachment_download_then_upload',
@@ -161,6 +173,7 @@ export const SOURCE_METHOD_REGISTRY: SourceMethodRegistryEntry[] = [
     jurisdiction: 'KR',
   },
   {
+    entryId: 'registry_conditional_deduction_support',
     sourceCategory: 'conditional_supporting_documents',
     targetArtifactType: 'conditional_deduction_support',
     preferredMethod: 'fact_capture_then_targeted_upload',
@@ -197,3 +210,4 @@ export function getRegistryFreshness(entry: SourceMethodRegistryEntry, nowIso = 
     expiresAt: expires.toISOString(),
   };
 }
+

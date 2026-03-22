@@ -186,6 +186,7 @@ Purpose:
 Output:
 - recommended next sources
 - `collectionTasks[]` with source-specific playbook detail
+- registry freshness/readiness fields such as `registryEntryId`, `registryVerifiedAt`, `registryReviewAfter`, `reverifyRecommended`, `knownInvalidMethods[]`, and `methodFreshnessWarning`
 - expected value by source
 - likely user checkpoints
 - fallback path suggestions
@@ -223,6 +224,7 @@ Output:
 - pending checkpoints
 - coverage gaps
 - `collectionTasks[]` aligned to the prioritized collection plan
+- registry freshness/readiness fields on `collectionTasks[]` and source summaries (`registryEntryId`, `registryVerifiedAt`, `registryReviewAfter`, `reverifyRecommended`, `knownInvalidMethods[]`, `methodFreshnessWarning`)
 - blocked attempts
 - prioritized gap
 - single next-action plan

@@ -173,6 +173,12 @@ export type CollectionTask = {
   blockingIfMissing: boolean;
   fallbackTaskIds: string[];
   verifiedAt?: string;
+  registryEntryId?: string;
+  registryVerifiedAt?: string;
+  registryReviewAfter?: string;
+  reverifyRecommended?: boolean;
+  knownInvalidMethods?: Array<{ method: string; invalidAsOf: string; reason: string }>;
+  methodFreshnessWarning?: string;
   nextRecommendedAction: string;
 };
 
@@ -234,6 +240,12 @@ export type CollectionStatusData = {
     sourceId: string;
     sourceType: string;
     state: SourceState | string;
+    registryEntryId?: string;
+    registryVerifiedAt?: string;
+    registryReviewAfter?: string;
+    reverifyRecommended?: boolean;
+    knownInvalidMethods?: Array<{ method: string; invalidAsOf: string; reason: string }>;
+    methodFreshnessWarning?: string;
   }>;
   pendingCheckpoints: CheckpointType[];
   coverageGaps: CoverageGap[];
@@ -621,7 +633,8 @@ export type ListAdjustmentCandidatesData = {
   items: FilingAdjustmentCandidate[];
   warnings: string[];
   businessExpenseAllocationCandidates?: Array<{ code: string; allocationBasis: string; businessUseRatio?: number; evidenceRefs: string[]; reviewLevel: 'high' | 'medium' }>;
-  opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string }>;
+  opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string; evidenceNeeded: string[]; horizon?: 'current_year' | 'next_year' }>;
+  submitterProfile?: SubmitterProfileCompleteness;
   operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
@@ -656,8 +669,13 @@ export type DetectFilingPathData = {
   missingFactDetails?: FilingFactCompleteness[];
   escalationFlags: string[];
   bookkeepingMode?: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry';
+  regimeDerivation?: string;
+  regimeConfidenceBand?: 'low' | 'medium' | 'high';
+  principalIndustryCode?: string;
+  industryThresholdBasis?: Array<{ industryCode: string; weightedRevenue: number; actualRevenue: number; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; role: 'principal' | 'secondary' }>;
   taxpayerPosture?: 'pure_business' | 'mixed_wage_business' | 'manual_heavy';
   specialCreditEligibility?: Array<{ code: string; state: 'possible' | 'not_applicable' | 'review_required'; rationale: string }>;
+  opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string; evidenceNeeded: string[]; horizon?: 'current_year' | 'next_year' }>;
   operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
@@ -685,8 +703,27 @@ export type ListMissingFactsInput = {
   workspaceId: string;
 };
 
+export type SubmitterProfileCompleteness = {
+  refundAccount?: { state: 'missing' | 'confirmed' | 'portal_prepopulated'; value?: string };
+  refundBank?: { state: 'missing' | 'confirmed' | 'portal_prepopulated'; value?: string };
+  accountHolder?: { state: 'missing' | 'confirmed' | 'portal_prepopulated'; value?: string };
+  contactPhone?: { state: 'missing' | 'confirmed'; value?: string };
+  filingAddress?: { state: 'missing' | 'confirmed'; value?: string };
+  dependentClaimPlan?: { state: 'missing' | 'confirmed'; value?: string };
+  residentRegisterRequired?: boolean;
+  portalPrepopulatedStatus?: string;
+  missingRequiredFields: string[];
+  targetedQuestions: string[];
+};
+
 export type ListMissingFactsData = {
   items: FilingFactCompleteness[];
+  bookkeepingMode?: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry';
+  regimeDerivation?: string;
+  regimeConfidenceBand?: 'low' | 'medium' | 'high';
+  principalIndustryCode?: string;
+  industryThresholdBasis?: Array<{ industryCode: string; weightedRevenue: number; actualRevenue: number; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; role: 'principal' | 'secondary' }>;
+  submitterProfile?: SubmitterProfileCompleteness;
   operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
@@ -782,10 +819,15 @@ export type ComputeDraftData = {
   majorUnknowns?: string[];
   calibration?: DraftCalibrationSnapshot;
   bookkeepingMode?: 'simple_rate' | 'standard_rate' | 'simple_book' | 'double_entry';
+  regimeDerivation?: string;
+  regimeConfidenceBand?: 'low' | 'medium' | 'high';
+  principalIndustryCode?: string;
+  industryThresholdBasis?: Array<{ industryCode: string; weightedRevenue: number; actualRevenue: number; thresholds: { double_entry: number; simple_book: number; standard_rate: number; simple_rate: number }; role: 'principal' | 'secondary' }>;
   taxpayerPosture?: 'pure_business' | 'mixed_wage_business' | 'manual_heavy';
   specialCreditEligibility?: Array<{ code: string; state: 'possible' | 'not_applicable' | 'review_required'; rationale: string }>;
   businessExpenseAllocationCandidates?: Array<{ code: string; allocationBasis: string; businessUseRatio?: number; evidenceRefs: string[]; reviewLevel: 'high' | 'medium' }>;
-  opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string }>;
+  opportunityCandidates?: Array<{ code: string; status: 'possible' | 'review_required'; rationale: string; evidenceNeeded: string[]; horizon?: 'current_year' | 'next_year' }>;
+  submitterProfile?: SubmitterProfileCompleteness;
   operatorWarnings?: Array<{ code: string; message: string }>;
 };
 
@@ -930,6 +972,7 @@ export type HomeTaxHandoffPayload = {
 
 export type PrepareHomeTaxData = {
   confidenceScore?: number;
+  submitterProfile?: SubmitterProfileCompleteness;
   confidenceBand?: 'low' | 'medium' | 'high';
   duplicateRisk?: 'low' | 'medium' | 'high';
   materiality?: 'low' | 'medium' | 'high';
@@ -1097,6 +1140,7 @@ export type GetWorkspaceStatusData = {
     submissionApproval?: SubmissionApprovalRecord;
     submissionResult?: SubmissionResultRecord;
     missingFacts?: FilingFactCompleteness[];
+    submitterProfile?: SubmitterProfileCompleteness;
     coverageGaps?: CoverageGap[];
     prioritizedGap?: CoverageGap;
     nextActionPlan?: GapNextActionPlan;
@@ -1165,6 +1209,7 @@ export type GetFilingSummaryData = {
    */
   blockers: string[];
   missingFacts?: FilingFactCompleteness[];
+  submitterProfile?: SubmitterProfileCompleteness;
   /**
    * Current workspace runtime view for operator summaries and UI rendering.
    * Prefer this over `blockers` when detailed blocker metadata is needed.

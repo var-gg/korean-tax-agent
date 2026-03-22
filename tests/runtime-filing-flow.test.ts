@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import rawDemo from '../examples/demo-workspace.json';
 import { InMemoryKoreanTaxMCPRuntime } from '../packages/mcp-server/src/runtime.js';
+import { SOURCE_METHOD_REGISTRY } from '../packages/mcp-server/src/source-method-registry.js';
 import type { ClassificationDecision, ConsentRecord, FilingFieldValue, LedgerTransaction, ReviewItem, SourceConnection, SyncAttempt, TaxpayerFact, WithholdingRecord } from '../packages/core/src/types.js';
 
 const demo = rawDemo as {
@@ -48,6 +49,55 @@ const seededWithholdingRecords: WithholdingRecord[] = [
 ];
 
 describe('in-memory runtime filing flow', () => {
+  it('derives bookkeeping regime from imported official material industry thresholds', () => {
+    const cases = [
+      { workspaceId: 'workspace_940926_single', industryRows: [{ code: '940926', gross: 34000000 }], expectedMode: 'simple_rate', expectedPrincipal: '940926' },
+      { workspaceId: 'workspace_940909_single', industryRows: [{ code: '940909', gross: 50000000 }], expectedMode: 'simple_book', expectedPrincipal: '940909' },
+      { workspaceId: 'workspace_multi_industry', industryRows: [{ code: '940926', gross: 70000000 }, { code: '940909', gross: 30000000 }], expectedMode: 'simple_book', expectedPrincipal: '940926', expectMulti: true },
+      { workspaceId: 'workspace_threshold_above', industryRows: [{ code: '940926', gross: 160000000 }], expectedMode: 'double_entry', expectedPrincipal: '940926', priorYear: '3.3%' },
+    ] as const;
+
+    for (const item of cases) {
+      const runtime = new InMemoryKoreanTaxMCPRuntime();
+      const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole_freelancer_light' });
+      const workspaceId = init.data.workspaceId;
+      runtime.invoke('tax.import.import_hometax_materials', {
+        workspaceId,
+        refs: item.industryRows.map((row, index) => ({ ref: `fixture://${item.workspaceId}/withholding-${index + 1}.pdf` })),
+        materialMetadata: item.industryRows.map((row, index) => ({ ref: `fixture://${item.workspaceId}/withholding-${index + 1}.pdf`, materialTypeHint: 'withholding_doc', metadata: { industryCode: row.code, grossAmount: row.gross } })),
+      });
+      runtime.invoke('tax.ledger.normalize', {
+        workspaceId: item.workspaceId,
+        extractedPayloads: [{
+          sourceType: 'hometax',
+          withholdingRecords: item.industryRows.map((row, index) => ({ externalId: `${item.workspaceId}-wh-${index + 1}`, payerName: `Payer ${index + 1}`, grossAmount: row.gross, withheldTaxAmount: Math.round(row.gross * 0.03), localTaxAmount: Math.round(row.gross * 0.003) })),
+        }],
+      });
+      runtime.invoke('tax.profile.upsert_facts', {
+        workspaceId,
+        facts: [
+          { factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' },
+          ...(item.priorYear ? [{ factKey: 'prior_year_regime', category: 'taxpayer_profile', value: item.priorYear, status: 'provided', sourceOfTruth: 'user_asserted' }] : []),
+        ],
+      });
+
+      const path = runtime.invoke('tax.profile.detect_filing_path', { workspaceId });
+      expect(path.data.bookkeepingMode).toBe(item.expectedMode);
+      expect(path.data.principalIndustryCode).toBe(item.expectedPrincipal);
+      expect(path.data.regimeDerivation).toContain('official_materials_threshold_engine');
+
+      const missing = runtime.invoke('tax.profile.list_missing_facts', { workspaceId });
+      expect(missing.data.bookkeepingMode).toBe(item.expectedMode);
+      if (item.expectMulti) expect(missing.data.operatorWarnings?.some((warning) => warning.code === 'multi_industry_threshold_formula_applied')).toBe(true);
+      if (item.priorYear) expect(path.data.operatorWarnings?.some((warning) => warning.code === 'regime_shift_detected')).toBe(true);
+
+      const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+      expect(draft.data.bookkeepingMode).toBe(item.expectedMode);
+      expect(draft.data.principalIndustryCode).toBe(item.expectedPrincipal);
+      expect((draft.data.industryThresholdBasis ?? []).length).toBeGreaterThan(0);
+    }
+  });
+
   it('surfaces posture-aware filing regime, eligibility, and allocation warnings', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const workspaceId = 'workspace_2025_posture_matrix';
@@ -92,6 +142,110 @@ describe('in-memory runtime filing flow', () => {
     expect(draft.data.operatorWarnings?.some((item) => item.code === 'mixed_use_review_scope')).toBe(true);
   });
 
+  it('models submitter profile completeness and resident-register gating', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'dependentClaimPlan', category: 'deduction_eligibility', value: 'none', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'contactPhone', category: 'taxpayer_profile', value: '010-1111-2222', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'filingAddress', category: 'taxpayer_profile', value: 'Seoul', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    const missing = runtime.invoke('tax.profile.list_missing_facts', { workspaceId });
+    expect(missing.data.submitterProfile?.residentRegisterRequired).toBe(false);
+    expect(missing.data.submitterProfile?.missingRequiredFields).toContain('refundAccount');
+
+    const prepareBlockedDraft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+    expect(prepareBlockedDraft.data.submitterProfile?.missingRequiredFields).toContain('refundAccount');
+
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'portalPrepopulatedStatus', category: 'taxpayer_profile', value: 'refund_prepopulated_confirmed', status: 'provided', sourceOfTruth: 'official' },
+        { factKey: 'accountHolder', category: 'taxpayer_profile', value: 'Kim Dev', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+    const missingAfterPortal = runtime.invoke('tax.profile.list_missing_facts', { workspaceId });
+    expect(missingAfterPortal.data.submitterProfile?.refundAccount?.state).toBe('portal_prepopulated');
+    expect(missingAfterPortal.data.submitterProfile?.missingRequiredFields).not.toContain('refundAccount');
+
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [{ factKey: 'dependentClaimPlan', category: 'deduction_eligibility', value: 'claim_child', status: 'provided', sourceOfTruth: 'user_asserted' }],
+    });
+    const dependentMissing = runtime.invoke('tax.profile.list_missing_facts', { workspaceId });
+    expect(dependentMissing.data.submitterProfile?.residentRegisterRequired).toBe(true);
+  });
+
+  it('prepare_hometax blocks on missing submitter profile and surfaces handoff checkpoint', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    runtime.invoke('tax.profile.upsert_facts', { workspaceId, facts: [{ factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' }] });
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+    const prepare = runtime.invoke('tax.filing.prepare_hometax', { workspaceId, draftId: draft.data.draftId });
+    expect(prepare.ok).toBe(true);
+    expect(prepare.data.warningCodes).toContain('submitter_profile_incomplete');
+    expect(prepare.data.submitterProfile?.missingRequiredFields).toContain('refundAccount');
+    expect(prepare.data.handoff.immediateUserConfirmations.length).toBeGreaterThan(0);
+    expect(prepare.data.orderedSections.some((section) => section.sectionKey === 'submitter_profile')).toBe(true);
+
+    const status = runtime.invoke('tax.workspace.get_status', { workspaceId });
+    expect(status.data.workspace.submitterProfile?.missingRequiredFields).toContain('refundAccount');
+    const summary = runtime.invoke('tax.filing.get_summary', { workspaceId, draftId: draft.data.draftId });
+    expect(summary.data.submitterProfile?.missingRequiredFields).toContain('refundAccount');
+    const exported = runtime.invoke('tax.filing.export_package', { workspaceId, draftId: draft.data.draftId, formats: ['json_package', 'submission_prep_checklist'] });
+    expect(exported.data.checklistPreview.some((item) => item.includes('submitter_profile=missing:refundAccount'))).toBe(true);
+  });
+
+  it('formalizes legal opportunity candidates for pure business, simple-book, business account, and summary-only bundles', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const workspaceId = 'workspace_opportunity_engine';
+    runtime.invoke('tax.ledger.normalize', {
+      workspaceId,
+      extractedPayloads: [{
+        sourceType: 'statement_pdf',
+        transactions: [
+          { externalId: 'rev-1', occurredAt: '2025-01-10', amount: 42000000, normalizedDirection: 'income', counterparty: 'Client A', description: 'service revenue', sourceReference: 'rev-1' },
+          { externalId: 'phone-1', occurredAt: '2025-01-12', amount: 80000, normalizedDirection: 'expense', counterparty: 'Telecom', description: 'phone bill', sourceReference: 'phone-1' },
+          { externalId: 'card-1', occurredAt: '2025-01-13', amount: 120000, normalizedDirection: 'expense', counterparty: 'Card Co', description: 'business card summary only', sourceReference: 'card-1' },
+        ],
+        withholdingRecords: [
+          { externalId: 'wh-1', payerName: 'Client A', grossAmount: 42000000, withheldTaxAmount: 1260000, localTaxAmount: 126000 },
+        ],
+      }],
+    });
+    runtime.invoke('tax.profile.upsert_facts', {
+      workspaceId,
+      facts: [
+        { factKey: 'income_streams', category: 'income_stream', value: ['freelance'], status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'taxpayer_posture', category: 'taxpayer_profile', value: 'pure_business', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'bookkeeping_mode', category: 'taxpayer_profile', value: 'simple_book', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'dependentClaimPlan', category: 'deduction_eligibility', value: 'none', status: 'provided', sourceOfTruth: 'user_asserted' },
+        { factKey: 'deduction_eligibility_facts', category: 'deduction_eligibility', value: 'card summary only', status: 'provided', sourceOfTruth: 'user_asserted' },
+      ],
+    });
+
+    const detect = runtime.invoke('tax.profile.detect_filing_path', { workspaceId });
+    expect(detect.data.opportunityCandidates?.some((item) => item.code === 'bookkeeping_tax_credit_possible')).toBe(true);
+    expect(detect.data.opportunityCandidates?.some((item) => item.code === 'resident_register_not_required_if_no_dependents')).toBe(true);
+
+    const adjustments = runtime.invoke('tax.filing.list_adjustment_candidates', { workspaceId });
+    expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'business_account_required' && item.horizon === 'next_year')).toBe(true);
+    expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'business_credit_card_registration_recommended')).toBe(true);
+    expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'itemized_card_detail_required_for_expense_review' && item.status === 'review_required')).toBe(true);
+    expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'wage_credit_not_auto_applicable')).toBe(true);
+    expect(adjustments.data.operatorWarnings?.some((item) => item.code === 'mixed_use_allocation_required')).toBe(true);
+
+    const draft = runtime.invoke('tax.filing.compute_draft', { workspaceId, includeAssumptions: true });
+    expect(draft.data.opportunityCandidates?.some((item) => item.code === 'bookkeeping_tax_credit_possible')).toBe(true);
+    expect(draft.data.opportunityCandidates?.some((item) => item.code === 'official_withholding_receipt_required')).toBe(true);
+    expect(draft.data.operatorWarnings?.some((item) => item.code === 'wage_credit_not_auto_applicable')).toBe(true);
+  });
+
   it('handles mixed wage and business posture without auto-denying wage-linked opportunities', () => {
     const runtime = new InMemoryKoreanTaxMCPRuntime();
     const workspaceId = 'workspace_2025_mixed_posture';
@@ -115,6 +269,57 @@ describe('in-memory runtime filing flow', () => {
     expect(path.data.specialCreditEligibility?.[0]?.state).not.toBe('not_applicable');
     const adjustments = runtime.invoke('tax.filing.list_adjustment_candidates', { workspaceId });
     expect(adjustments.data.opportunityCandidates?.some((item) => item.code === 'mixed_posture_credit_review')).toBe(true);
+  });
+
+  it('surfaces registry freshness and reverify recommendations in collection read models', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    const plan = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: 2025 });
+    const staleNoticeTask = plan.data.collectionTasks?.find((task) => task.targetArtifactType === 'filing_guidance_notice');
+    expect(staleNoticeTask?.registryEntryId).toBe('registry_hometax_filing_guidance_notice');
+    expect(staleNoticeTask?.reverifyRecommended).toBe(true);
+    expect(staleNoticeTask?.methodFreshnessWarning).toContain('stale');
+
+    const source = runtime.invoke('tax.sources.connect', { workspaceId, sourceType: 'hometax', requestedScope: ['read_documents'] });
+    const status = runtime.invoke('tax.sources.get_collection_status', { workspaceId });
+    const hometaxSource = status.data.connectedSources.find((item) => item.sourceId === source.data.sourceId);
+    expect(hometaxSource?.registryEntryId).toBe('registry_hometax_withholding_receipt');
+    expect(Array.isArray(hometaxSource?.knownInvalidMethods)).toBe(true);
+  });
+
+  it('surfaces future-date registry anomalies and known-invalid method replay', () => {
+    const runtime = new InMemoryKoreanTaxMCPRuntime();
+    const init = runtime.invoke('tax.setup.init_config', { filingYear: 2025, storageMode: 'local', taxpayerTypeHint: 'sole proprietor' });
+    const workspaceId = init.data.workspaceId;
+    const entry = SOURCE_METHOD_REGISTRY.find((item) => item.entryId === 'registry_hometax_withholding_receipt');
+    if (!entry) throw new Error('registry entry missing');
+    const originalVerifiedAt = entry.verifiedAt;
+    const originalReviewAfter = entry.reviewAfter;
+    entry.verifiedAt = '2099-01-01';
+    entry.reviewAfter = '2099-02-01';
+    try {
+      const futurePlan = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: 2025 });
+      const withholdingTask = futurePlan.data.collectionTasks?.find((task) => task.targetArtifactType === 'withholding_receipt');
+      expect(withholdingTask?.reverifyRecommended).toBe(true);
+      expect(withholdingTask?.methodFreshnessWarning).toContain('future_date');
+    } finally {
+      entry.verifiedAt = originalVerifiedAt;
+      entry.reviewAfter = originalReviewAfter;
+    }
+
+    const connect = runtime.invoke('tax.sources.connect', { workspaceId, sourceType: 'hometax', requestedScope: ['read_documents'] });
+    runtime.invoke('tax.sources.record_collection_observation', {
+      workspaceId,
+      sourceId: connect.data.sourceId,
+      targetArtifactType: 'withholding_receipt',
+      methodTried: 'hometax_list_xls_only',
+      outcome: 'insufficient_artifact',
+    });
+    const replayPlan = runtime.invoke('tax.sources.plan_collection', { workspaceId, filingYear: 2025 });
+    const replayTask = replayPlan.data.collectionTasks?.find((task) => task.targetArtifactType === 'withholding_receipt');
+    expect(replayTask?.methodFreshnessWarning).toContain('Known-invalid method replayed');
+    expect(replayPlan.data.collectionTasks?.[0]?.collectionMode).toBe('export_ingestion');
   });
 
   it('persists classification, review resolution, drafting, and hometax assist state', () => {
